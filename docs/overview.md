@@ -1,36 +1,30 @@
 # Overview
 
-Karafriends is a karaoke jukebox you run yourself. This page explains what it
-does in plain language, with no assumptions about karaoke or about the
-technologies it's built on. If a term feels unfamiliar, check the
+Karafriends is a karaoke jukebox you run yourself.
+
+If a term feels unfamiliar, check the
 [Glossary](glossary.md) — it covers both the karaoke domain (DAM, JOYSOUND,
 romaji, furigana) and the stack (Electron, GraphQL, Relay, Rust/Neon,
 Parcel, mDNS).
 
 ## The user story
 
-You and some friends want to do karaoke at home. You have a TV, a computer
-that can plug into it, some microphones, and everyone's phones.
+You want to run a karaoke session somewhere. You have a TV, a computer
+that can plug into it, some microphones, and everyone's phones (likely on the same network).
 
 1. You start karafriends on the computer. A fullscreen window appears on the
    TV showing a big QR code, a (currently empty) queue, and a placeholder for
    the song video.
-2. Each friend points their phone camera at the QR code, taps the link, and
+2. Participants point their phone cameras at the QR code, tap the link, and
    their phone's browser opens the **remocon** ("remote control") — a touch
    UI for finding and queuing songs.
-3. Friends search for songs by title or artist, or paste a YouTube link, and
+3. Participants search for songs by title or artist, or paste a YouTube link, and
    tap "queue". The TV's queue updates instantly. Their nickname appears next
    to the song so everyone sees who picked it.
 4. As songs play, the lyrics scroll on the TV in sync with the music.
-   Whoever is singing into the microphone sees a real-time pitch graph
-   showing how close they are to the target notes — that's the scoring
-   feature, just like a real karaoke machine.
-5. Anyone with the remocon can pause, skip, reorder, change the key (pitch
+5. (Configurable) Anyone with the remocon can pause, skip, reorder, change the key (pitch
    shift the music up or down a few semitones), or send emote reactions
    that float across the TV screen.
-
-That's the whole product. Everything else in this codebase exists to make
-those five steps work.
 
 ## What makes it different from "just play a YouTube video"
 
@@ -49,8 +43,7 @@ goes out of its way to recreate:
   called Kuroshiro along with a kanji-reading dictionary.
 - **Pitch scoring.** A native (Rust) audio module listens to your mic, runs
   a pitch-detection algorithm, and the renderer overlays your detected
-  pitch against the song's pitch track on a piano-roll-style graph. Karaoke
-  machines have done this since the 90s; karafriends does it too.
+  pitch against the song's pitch track on a piano-roll-style graph.
 - **Pitch shift.** Songs can be transposed up or down in semitones so they
   fit a singer's vocal range. This applies to both the music playback and
   the scoring target.
@@ -60,7 +53,7 @@ goes out of its way to recreate:
 - **Reactions.** While someone sings, anyone holding the remocon can fire
   off emote characters that briefly fly across the TV.
 
-## Four song sources, two flavors
+## Song sources
 
 Karafriends supports four places a song can come from. They fall into two
 groups:
@@ -81,8 +74,7 @@ groups:
   songs.
 
 The remocon's home screen shows all four sources as tiles so guests pick
-one before searching. From the application's point of view they're four
-separate code paths that converge into the same queue.
+one before searching.
 
 ## What you, the operator, do
 
