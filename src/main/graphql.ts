@@ -21,6 +21,8 @@ import isDev from "electron-is-dev";
 import express, { Application } from "express";
 import { PubSub } from "graphql-subscriptions";
 import { useServer } from "graphql-ws/use/ws"; // tslint:disable-line:no-submodule-imports
+import Kuroshiro from "kuroshiro";
+import KuromojiAnalyzer from "kuroshiro-analyzer-kuromoji";
 import { Nicovideo } from "niconico";
 import nodeFetch from "node-fetch";
 import tunnel from "tunnel";
@@ -55,6 +57,44 @@ export interface IDataSources {
     youtube: Innertube;
   };
 }
+
+// Joysound's search API returns no reading data for song/artist names, unlike
+// DAM's dkwebsys API. We fall back to guessing a reading via the same
+// kuromoji dictionary-based analyzer already used for Joysound lyric
+// furigana (see src/common/joysoundParser.ts), running it here in the main
+// process so the dictionary never ships to the remocon's mobile bundle.
+// Parcel bundles bake in each module's *source* directory as __dirname
+// rather than its built location (see remoconReverseProxy.ts for the same
+// pattern), so we have to walk back up to the repo root and back down into
+// whichever build output directory is actually running.
+const kuroshiro = new Kuroshiro();
+const kuroshiroReady = kuroshiro.init(
+  new KuromojiAnalyzer({
+    dictPath: path.join(
+      __dirname,
+      "..",
+      "..",
+      "build",
+      isDev ? "dev" : "prod",
+      "main_",
+      "dict",
+    ),
+  }),
+);
+
+async function toYomi(text: string): Promise<string> {
+  await kuroshiroReady;
+  return kuroshiro.convert(text, { to: "hiragana", mode: "normal" });
+}
+
+const nameYomiResolvers = {
+  nameYomi(parent: { name: string }) {
+    return toYomi(parent.name);
+  },
+  artistNameYomi(parent: { artistName: string }) {
+    return toYomi(parent.artistName);
+  },
+};
 
 interface JoysoundSongParent {
   readonly id: string;
@@ -464,6 +504,7 @@ const resolvers = {
     artistName(parent: JoysoundSongParent) {
       return parent.artistName;
     },
+    ...nameYomiResolvers,
   },
 
   Song: {
@@ -552,6 +593,11 @@ const resolvers = {
         }));
     },
   },
+  JoysoundArtist: {
+    nameYomi(parent: JoysoundArtistParent) {
+      return toYomi(parent.name);
+    },
+  },
   DamQueueItem: {
     streamingUrls(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
       return dataSources.minsei
@@ -569,6 +615,16 @@ const resolvers = {
         .getScoringData(parent.songId)
         .then((data) => Array.from(new Uint8Array(data)));
     },
+    ...nameYomiResolvers,
+  },
+  JoysoundQueueItem: {
+    ...nameYomiResolvers,
+  },
+  YoutubeQueueItem: {
+    ...nameYomiResolvers,
+  },
+  NicoQueueItem: {
+    ...nameYomiResolvers,
   },
   Query: {
     adhocLyrics(_: any, args: { id: string }): string[] {

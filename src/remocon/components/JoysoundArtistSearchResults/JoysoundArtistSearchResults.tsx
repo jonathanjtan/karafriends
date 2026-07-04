@@ -32,6 +32,7 @@ const joysoundArtistSearchResultsPaginationQuery = graphql`
         node {
           id
           name
+          nameYomi
         }
       }
     }
@@ -47,7 +48,7 @@ const JoysoundArtistSearchResults = ({ query }: Props) => {
 
   const queryData = useLazyLoadQuery<JoysoundArtistSearchResultsViewQuery>(
     joysoundArtistSearchResultsViewQuery,
-    { keyword: query }
+    { keyword: query },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment<

@@ -29,6 +29,7 @@ const joysoundArtistPaginationQuery = graphql`
         node {
           id
           name
+          nameYomi
           artistName
         }
       }
@@ -45,7 +46,7 @@ const JoysoundArtist = ({ id }: Props) => {
     joysoundArtistViewQuery,
     {
       artistId: id,
-    }
+    },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment<

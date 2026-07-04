@@ -32,7 +32,9 @@ const historyPaginationQuery = graphql`
               __typename
               songId
               name
+              nameYomi
               artistName
+              artistNameYomi
               timestamp
               userIdentity {
                 nickname
@@ -43,7 +45,9 @@ const historyPaginationQuery = graphql`
               __typename
               songId
               name
+              nameYomi
               artistName
+              artistNameYomi
               timestamp
               userIdentity {
                 nickname
@@ -54,7 +58,9 @@ const historyPaginationQuery = graphql`
               __typename
               songId
               name
+              nameYomi
               artistName
+              artistNameYomi
               timestamp
               userIdentity {
                 nickname
@@ -65,7 +71,9 @@ const historyPaginationQuery = graphql`
               __typename
               songId
               name
+              nameYomi
               artistName
+              artistNameYomi
               timestamp
               userIdentity {
                 nickname
@@ -82,7 +90,7 @@ const History = () => {
   const queryData = useLazyLoadQuery<SongHistoryViewQuery>(
     historyViewQuery,
     {},
-    { fetchPolicy: "store-and-network" }
+    { fetchPolicy: "store-and-network" },
   );
 
   const { data, hasNext, loadNext, isLoadingNext } = usePaginationFragment<

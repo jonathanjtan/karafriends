@@ -33,7 +33,9 @@ const joysoundSongSearchResultsPaginationQuery = graphql`
         node {
           id
           name
+          nameYomi
           artistName
+          artistNameYomi
         }
       }
     }

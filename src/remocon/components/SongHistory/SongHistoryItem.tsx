@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import { invariant } from "ts-invariant";
 
 import { ListItem } from "../List";
+import WeebText from "../WeebText";
 import * as styles from "./SongHistory.module.scss";
 import { SongHistory_songHistory$data } from "./__generated__/SongHistory_songHistory.graphql";
 
@@ -33,14 +34,16 @@ const SongHistoryItem = ({ song }: Props) => {
     <Link to={songLink}>
       <ListItem>
         <div>
-          <strong>{song.name}</strong>
+          <strong>
+            <WeebText text={song.name} yomi={song.nameYomi} />
+          </strong>
           <span className={styles.date}>
             Queued by: {song.userIdentity.nickname}
           </span>
         </div>
 
         <div>
-          {song.artistName}
+          <WeebText text={song.artistName} yomi={song.artistNameYomi} />
           <span className={styles.date}>{date.toLocaleString()}</span>
         </div>
       </ListItem>

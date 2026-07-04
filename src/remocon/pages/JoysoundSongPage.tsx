@@ -7,6 +7,7 @@ import JoysoundQueueButtons from "../components/JoysoundQueueButtons";
 import JoysoundYouTubeInfo from "../components/JoysoundYouTubeInfo";
 import { withLoader } from "../components/Loader";
 import SearchFormWrapper from "../components/SearchFormWrapper";
+import WeebText from "../components/WeebText";
 import { JoysoundSongPageQuery } from "./__generated__/JoysoundSongPageQuery.graphql";
 
 import { getVideoId as getYoutubeVideoId } from "./YouTubePage";
@@ -16,7 +17,9 @@ const joysoundSongPageQuery = graphql`
     joysoundSongDetail(id: $id) {
       id
       name
+      nameYomi
       artistName
+      artistNameYomi
       lyricsPreview
       tieUp
     }
@@ -73,8 +76,12 @@ const JoysoundSongPage = () => {
 
   return (
     <div>
-      <h2>{song.name}</h2>
-      <Link to={`/search/artist/${song.artistName}`}>{song.artistName}</Link>
+      <h2>
+        <WeebText bold text={song.name} yomi={song.nameYomi} />
+      </h2>
+      <Link to={`/search/artist/${song.artistName}`}>
+        <WeebText text={song.artistName} yomi={song.artistNameYomi} />
+      </Link>
       {!!song.tieUp && <span> • {song.tieUp}</span>}
       {!!song.lyricsPreview && (
         <blockquote>{song.lyricsPreview} ...</blockquote>

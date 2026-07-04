@@ -14,6 +14,7 @@ import { useQueueQueueQuery$data } from "../../../common/hooks/__generated__/use
 import useConfig from "../../hooks/useConfig";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import Marquee from "../Marquee";
+import WeebText from "../WeebText";
 import * as styles from "./SongQueue.module.scss";
 import { SongQueueItemRemoveSongMutation } from "./__generated__/SongQueueItemRemoveSongMutation.graphql";
 
@@ -112,7 +113,12 @@ const SongQueueItem = ({ item, eta, myNickname, isCurrent }: Props) => {
       <div className={styles.songMeta} onClick={onClick}>
         <Marquee>
           <div className={styles.songMetaContent}>
-            {icon} {item.artistName} - {item.name}
+            {icon}{" "}
+            <WeebText
+              text={item.artistName ?? ""}
+              yomi={item.artistNameYomi ?? ""}
+            />{" "}
+            - <WeebText text={item.name ?? ""} yomi={item.nameYomi ?? ""} />
           </div>
         </Marquee>
       </div>

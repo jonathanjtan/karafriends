@@ -131,6 +131,7 @@ type ArtistPageInfo {
 type JoysoundArtist {
   id: ID!
   name: String!
+  nameYomi: String!
 }
 
 type JoysoundArtistConnection {
@@ -167,7 +168,9 @@ type Song {
 type JoysoundSong {
   id: ID!
   name: String!
+  nameYomi: String!
   artistName: String!
+  artistNameYomi: String!
   lyricsPreview: String
   tieUp: String
 }
@@ -269,7 +272,9 @@ input PushAdhocLyricsInput {
 interface QueueItemInterface {
   songId: String!
   name: String!
+  nameYomi: String!
   artistName: String!
+  artistNameYomi: String!
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
@@ -278,7 +283,9 @@ interface QueueItemInterface {
 type DamQueueItem implements QueueItemInterface {
   songId: String!
   name: String!
+  nameYomi: String!
   artistName: String!
+  artistNameYomi: String!
   streamingUrls: [StreamingUrlInfo!]!
   scoringData: [Int!]!
   playtime: Int
@@ -290,7 +297,9 @@ type DamQueueItem implements QueueItemInterface {
 type JoysoundQueueItem implements QueueItemInterface {
   songId: String!
   name: String!
+  nameYomi: String!
   artistName: String!
+  artistNameYomi: String!
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
@@ -301,7 +310,9 @@ type JoysoundQueueItem implements QueueItemInterface {
 type YoutubeQueueItem implements QueueItemInterface {
   songId: String!
   name: String!
+  nameYomi: String!
   artistName: String!
+  artistNameYomi: String!
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
@@ -313,14 +324,16 @@ type YoutubeQueueItem implements QueueItemInterface {
 type NicoQueueItem implements QueueItemInterface {
   songId: String!
   name: String!
+  nameYomi: String!
   artistName: String!
+  artistNameYomi: String!
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
 }
 
 union QueueItem =
-    DamQueueItem
+  | DamQueueItem
   | JoysoundQueueItem
   | YoutubeQueueItem
   | NicoQueueItem
