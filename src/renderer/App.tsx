@@ -1,9 +1,10 @@
 import M from "materialize-css";
 import "materialize-css/dist/css/materialize.css"; // tslint:disable-line:no-submodule-imports
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { graphql, useSubscription } from "react-relay";
+import { fetchQuery, graphql, useSubscription } from "react-relay";
 
 import { HOSTNAME } from "../common/constants";
+import environment from "../common/graphqlEnvironment";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./App.css";
 import BackgroundMusic from "./BackgroundMusic";
@@ -17,6 +18,7 @@ import QRCode from "./QRCode";
 import Queue from "./Queue";
 import KarafriendsAudio from "./webAudio";
 import { AppQueueAddedSubscription } from "./__generated__/AppQueueAddedSubscription.graphql";
+import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 const BGM_STORAGE_KEY = "bgmTrack";
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
@@ -33,6 +35,15 @@ const songAddedSubscription = graphql`
         name
         artistName
       }
+    }
+  }
+`;
+
+const serviceHealthQuery = graphql`
+  query AppServiceHealthQuery {
+    serviceHealth {
+      damAvailable
+      joysoundAvailable
     }
   }
 `;
@@ -75,6 +86,29 @@ function App(props: {
     html.classList.toggle("oledFriendly", oledFriendly);
     return () => html.classList.remove("oledFriendly");
   }, [oledFriendly]);
+
+  useEffect(() => {
+    const subscription = fetchQuery<AppServiceHealthQuery>(
+      environment,
+      serviceHealthQuery,
+      {},
+    ).subscribe({
+      next: ({ serviceHealth }) => {
+        const unavailable = [
+          !serviceHealth.damAvailable && "DAM",
+          !serviceHealth.joysoundAvailable && "Joysound",
+        ].filter((name): name is string => !!name);
+
+        if (unavailable.length > 0) {
+          M.toast({
+            html: `<span>⚠️ ${unavailable.join(" & ")} unreachable — try cycling your VPN and relaunching</span>`,
+          });
+        }
+      },
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   const setMics = (newMics: InputDevice[]) => {
     const micsToSave = newMics.map((mic) => ({

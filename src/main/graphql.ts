@@ -13,7 +13,7 @@ import {
 } from "@apollo/server/plugin/disabled"; // tslint:disable-line:no-submodule-imports
 // tslint:disable-next-line:no-submodule-imports
 import { ApolloServerPluginDrainHttpServer } from "@apollo/server/plugin/drainHttpServer";
-import { type FetcherRequestInit } from "@apollo/utils.fetcher";
+import { type Fetcher, type FetcherRequestInit } from "@apollo/utils.fetcher";
 // tslint:disable-next-line:no-submodule-imports
 import { expressMiddleware } from "@as-integrations/express5";
 import { makeExecutableSchema } from "@graphql-tools/schema";
@@ -333,6 +333,7 @@ type NotARealDb = {
   songQueue: QueueItem[];
   downloadQueue: DownloadQueueItem[];
   songHistory: SongHistoryItem[];
+  lastKnownGoodDamSongId: string | null;
 };
 
 enum SubscriptionEvent {
@@ -355,7 +356,13 @@ let db: NotARealDb = {
   songQueue: [],
   downloadQueue: [],
   songHistory: [],
+  lastKnownGoodDamSongId: null,
 };
+
+let serviceHealthPromise: Promise<{
+  damAvailable: boolean;
+  joysoundAvailable: boolean;
+}> | null = null;
 
 const DB_PATH = path.resolve(TEMP_FOLDER, "queue.json");
 
@@ -388,6 +395,7 @@ function loadDb(): NotARealDb {
     songQueue: [],
     downloadQueue: [],
     songHistory: [],
+    lastKnownGoodDamSongId: null,
     ...(fs.existsSync(DB_PATH) &&
       JSON.parse(fs.readFileSync(DB_PATH, "utf-8"))),
   };
@@ -831,6 +839,9 @@ const resolvers = {
       if (!db.songQueue.length) return [];
       return db.songQueue;
     },
+    serviceHealth: () =>
+      serviceHealthPromise ??
+      Promise.resolve({ damAvailable: true, joysoundAvailable: true }),
     config: () => {
       return {
         ...karafriendsConfig,
@@ -1264,6 +1275,104 @@ const innertubeApiProvider = memoize(async () => {
   return Innertube.create();
 });
 
+// Known-good DAM song, per DAM-DEBUG-HANDOFF.md, used as a health check
+// canary when there's no last-known-good id persisted yet.
+const DAM_HEALTH_CHECK_CANARY_SONG_ID = "3246-51"; // Lemon / 米津玄師
+
+async function checkDamStreamingUrl(
+  minsei: MinseiAPI,
+  fetcher: Fetcher,
+  songId: string,
+): Promise<boolean> {
+  const streamingUrls = await minsei.getMusicStreamingUrls(songId);
+  const url = karafriendsConfig.useLowBitrateUrl
+    ? streamingUrls.list[0].lowBitrateUrl
+    : streamingUrls.list[0].highBitrateUrl;
+  const response = await fetcher(url, { method: "GET" });
+  return response.ok;
+}
+
+async function checkDamHealth(
+  minsei: MinseiAPI,
+  dkwebsys: DkwebsysAPI,
+  fetcher: Fetcher,
+): Promise<boolean> {
+  const candidateIds = [
+    db.lastKnownGoodDamSongId,
+    DAM_HEALTH_CHECK_CANARY_SONG_ID,
+  ].filter((id): id is string => id !== null);
+
+  for (const id of candidateIds) {
+    try {
+      if (await checkDamStreamingUrl(minsei, fetcher, id)) {
+        if (db.lastKnownGoodDamSongId !== id) {
+          db.lastKnownGoodDamSongId = id;
+          saveDb();
+        }
+        return true;
+      }
+    } catch (err) {
+      console.error(`[healthcheck] DAM check failed for song ${id}:`, err);
+    }
+  }
+
+  // Neither the last-known-good id nor the canary worked (possibly
+  // delisted) — fall back to a live search so this check never
+  // permanently breaks.
+  try {
+    const searchResult = await dkwebsys.getMusicByKeyword("a", 1, 0);
+    const fallbackId = searchResult.list[0]?.requestNo;
+    if (
+      fallbackId &&
+      (await checkDamStreamingUrl(minsei, fetcher, fallbackId))
+    ) {
+      db.lastKnownGoodDamSongId = fallbackId;
+      saveDb();
+      return true;
+    }
+  } catch (err) {
+    console.error("[healthcheck] DAM fallback search check failed:", err);
+  }
+
+  return false;
+}
+
+async function checkJoysoundHealth(joysound: JoysoundAPI): Promise<boolean> {
+  try {
+    await joysound.getSongListByKeyword("a", 0, 1);
+    return true;
+  } catch (err) {
+    console.error("[healthcheck] Joysound check failed:", err);
+    return false;
+  }
+}
+
+async function runHealthCheck(
+  server: ApolloServer<IDataSources>,
+  fetcher: Fetcher,
+): Promise<{ damAvailable: boolean; joysoundAvailable: boolean }> {
+  const minsei = new MinseiAPI(minseiCredentialsProvider, {
+    cache: server.cache,
+    fetch: fetcher,
+  });
+  const dkwebsys = new DkwebsysAPI({ cache: server.cache, fetch: fetcher });
+  const joysound = new JoysoundAPI(joysoundCredentialsProvider, {
+    cache: server.cache,
+    fetch: fetcher,
+  });
+
+  const [damAvailable, joysoundAvailable] = await Promise.all([
+    checkDamHealth(minsei, dkwebsys, fetcher),
+    checkJoysoundHealth(joysound),
+  ]);
+
+  console.log(
+    `[healthcheck] DAM available=${damAvailable}, Joysound available=${joysoundAvailable}`,
+  );
+
+  return { damAvailable, joysoundAvailable };
+}
+
 export function applyGraphQLMiddleware(app: Application) {
   const httpServer = createServer(app);
 
@@ -1313,6 +1422,8 @@ export function applyGraphQLMiddleware(app: Application) {
   const fetcher = async (url: string, init?: FetcherRequestInit) => {
     return nodeFetch(url, { ...init, agent: tunnelAgent });
   };
+
+  serviceHealthPromise = runHealthCheck(server, fetcher);
 
   server.start().then(() => {
     app.use(

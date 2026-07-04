@@ -1,6 +1,7 @@
 import invariant from "ts-invariant";
 
 import Hls from "hls.js";
+import M from "materialize-css";
 
 import React, { useEffect, useRef, useState } from "react";
 import { commitMutation, fetchQuery, graphql } from "react-relay";
@@ -65,6 +66,7 @@ const POLL_INTERVAL_MS = 5 * 1000;
 // XXX: Another idea is to add some gain to the DAM videos?
 const DAM_GAIN = 1.0;
 const NON_DAM_GAIN = 0.8;
+const MAX_HLS_FATAL_ERROR_RETRIES = 2;
 
 function Player(props: {
   mics: InputDevice[];
@@ -127,6 +129,8 @@ function Player(props: {
               // which seems kind of stupid, but whatever
               const fileUrl = `karafriends://${popSong.songId}-${popSong.streamingUrlIdx}.mp4`;
 
+              let hlsFatalErrorRetries = 0;
+
               const loadRemote = () => {
                 if (!videoRef.current) return;
 
@@ -135,6 +139,36 @@ function Player(props: {
                 hls.loadSource(
                   popSong.streamingUrls[popSong.streamingUrlIdx].url,
                 );
+
+                hls.on(Hls.Events.ERROR, (_event, data) => {
+                  if (!data.fatal) return;
+
+                  console.error(
+                    `Fatal hls.js error for DAM song ${popSong.songId} (${data.type}/${data.details}), retry ${hlsFatalErrorRetries}/${MAX_HLS_FATAL_ERROR_RETRIES}`,
+                  );
+
+                  if (hlsFatalErrorRetries < MAX_HLS_FATAL_ERROR_RETRIES) {
+                    hlsFatalErrorRetries++;
+
+                    switch (data.type) {
+                      case Hls.ErrorTypes.NETWORK_ERROR:
+                        hls?.startLoad();
+                        return;
+                      case Hls.ErrorTypes.MEDIA_ERROR:
+                        hls?.recoverMediaError();
+                        return;
+                    }
+                  }
+
+                  console.error(
+                    `Giving up on DAM song ${popSong.songId}, skipping`,
+                  );
+                  hls?.destroy();
+                  M.toast({
+                    html: `<span>Skipped "${popSong.name}" — playback failed</span>`,
+                  });
+                  pollQueue();
+                });
               };
 
               fetch(fileUrl, { method: "HEAD" })
@@ -256,6 +290,14 @@ function Player(props: {
       });
 
     videoRef.current.onended = pollQueue;
+    videoRef.current.onerror = () => {
+      console.error(
+        "Fatal <video> element error, skipping current song",
+        videoRef.current?.error,
+      );
+      M.toast({ html: "<span>Skipped current song — playback failed</span>" });
+      pollQueue();
+    };
 
     if (playbackState === "WAITING" && pollTimeoutRef.current === null) {
       pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
