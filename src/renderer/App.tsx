@@ -1,7 +1,7 @@
 import M from "materialize-css";
 import "materialize-css/dist/css/materialize.css"; // tslint:disable-line:no-submodule-imports
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { fetchQuery, graphql, useSubscription } from "react-relay";
+import { fetchQuery, graphql, useMutation, useSubscription } from "react-relay";
 
 import { HOSTNAME } from "../common/constants";
 import environment from "../common/graphqlEnvironment";
@@ -18,6 +18,7 @@ import QRCode from "./QRCode";
 import Queue from "./Queue";
 import KarafriendsAudio from "./webAudio";
 import { AppQueueAddedSubscription } from "./__generated__/AppQueueAddedSubscription.graphql";
+import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServiceHealthMutation.graphql";
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 const BGM_STORAGE_KEY = "bgmTrack";
@@ -44,9 +45,28 @@ const serviceHealthQuery = graphql`
     serviceHealth {
       damAvailable
       joysoundAvailable
+      checkedAt
     }
   }
 `;
+
+const recheckServiceHealthMutation = graphql`
+  mutation AppRecheckServiceHealthMutation {
+    recheckServiceHealth {
+      damAvailable
+      joysoundAvailable
+      checkedAt
+    }
+  }
+`;
+
+const SERVICE_HEALTH_POLL_INTERVAL_MS = 30 * 1000;
+
+interface ServiceHealthState {
+  damAvailable: boolean;
+  joysoundAvailable: boolean;
+  checkedAt: string;
+}
 
 function App(props: {
   kuroshiro: KuroshiroSingleton;
@@ -87,27 +107,54 @@ function App(props: {
     return () => html.classList.remove("oledFriendly");
   }, [oledFriendly]);
 
+  const [serviceHealth, setServiceHealth] = useState<ServiceHealthState | null>(
+    null,
+  );
+  const wasServiceUnhealthyRef = useRef(false);
+
+  const applyServiceHealth = (health: ServiceHealthState) => {
+    setServiceHealth(health);
+
+    const isUnhealthy = !health.damAvailable || !health.joysoundAvailable;
+
+    if (isUnhealthy === wasServiceUnhealthyRef.current) return;
+    wasServiceUnhealthyRef.current = isUnhealthy;
+
+    if (isUnhealthy) {
+      const unavailable = [
+        !health.damAvailable && "DAM",
+        !health.joysoundAvailable && "Joysound",
+      ].filter((name): name is string => !!name);
+      M.toast({
+        html: `<span>⚠️ ${unavailable.join(" & ")} unreachable — try cycling your VPN and relaunching</span>`,
+      });
+    } else {
+      M.toast({ html: "<span>✅ DAM & Joysound reachable again</span>" });
+    }
+  };
+
+  // Polling Query.serviceHealth is just a fast local read of whatever the
+  // main process last computed, not a real check in progress — only the
+  // manual recheck mutation actually awaits a live check, so that's the
+  // only case worth showing a spinner for.
+  const [commitRecheckServiceHealth, isRecheckingServiceHealth] =
+    useMutation<AppRecheckServiceHealthMutation>(recheckServiceHealthMutation);
+
   useEffect(() => {
-    const subscription = fetchQuery<AppServiceHealthQuery>(
-      environment,
-      serviceHealthQuery,
-      {},
-    ).subscribe({
-      next: ({ serviceHealth }) => {
-        const unavailable = [
-          !serviceHealth.damAvailable && "DAM",
-          !serviceHealth.joysoundAvailable && "Joysound",
-        ].filter((name): name is string => !!name);
+    const poll = () =>
+      fetchQuery<AppServiceHealthQuery>(
+        environment,
+        serviceHealthQuery,
+        {},
+      ).subscribe({
+        next: ({ serviceHealth: freshServiceHealth }) =>
+          applyServiceHealth(freshServiceHealth),
+      });
 
-        if (unavailable.length > 0) {
-          M.toast({
-            html: `<span>⚠️ ${unavailable.join(" & ")} unreachable — try cycling your VPN and relaunching</span>`,
-          });
-        }
-      },
-    });
+    poll();
+    const interval = setInterval(poll, SERVICE_HEALTH_POLL_INTERVAL_MS);
 
-    return () => subscription.unsubscribe();
+    return () => clearInterval(interval);
   }, []);
 
   const setMics = (newMics: InputDevice[]) => {
@@ -226,6 +273,57 @@ function App(props: {
                 <span className="lever"></span>
               </label>
             </div>
+            <table className="centered">
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>DAM</td>
+                  <td>
+                    <span className="serviceHealthIndicator">
+                      {isRecheckingServiceHealth ? (
+                        <span className="serviceHealthSpinner" />
+                      ) : serviceHealth?.damAvailable === false ? (
+                        "⚠️"
+                      ) : (
+                        "✅"
+                      )}
+                    </span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>Joysound</td>
+                  <td>
+                    <span className="serviceHealthIndicator">
+                      {isRecheckingServiceHealth ? (
+                        <span className="serviceHealthSpinner" />
+                      ) : serviceHealth?.joysoundAvailable === false ? (
+                        "⚠️"
+                      ) : (
+                        "✅"
+                      )}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <button
+              className="btn"
+              disabled={isRecheckingServiceHealth}
+              onClick={() =>
+                commitRecheckServiceHealth({
+                  variables: {},
+                  onCompleted: ({ recheckServiceHealth }) =>
+                    applyServiceHealth(recheckServiceHealth),
+                })
+              }
+            >
+              Check now
+            </button>
           </div>
           <nav className="center-align">Queue</nav>
           <Queue />

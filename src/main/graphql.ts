@@ -359,10 +359,17 @@ let db: NotARealDb = {
   lastKnownGoodDamSongId: null,
 };
 
-let serviceHealthPromise: Promise<{
+type ServiceHealthState = {
   damAvailable: boolean;
   joysoundAvailable: boolean;
-}> | null = null;
+  checkedAt: string;
+};
+
+let currentServiceHealth: ServiceHealthState | null = null;
+let healthCheckInFlight: Promise<ServiceHealthState> | null = null;
+let runHealthCheckOnce:
+  | (() => Promise<{ damAvailable: boolean; joysoundAvailable: boolean }>)
+  | null = null;
 
 const DB_PATH = path.resolve(TEMP_FOLDER, "queue.json");
 
@@ -839,9 +846,12 @@ const resolvers = {
       if (!db.songQueue.length) return [];
       return db.songQueue;
     },
-    serviceHealth: () =>
-      serviceHealthPromise ??
-      Promise.resolve({ damAvailable: true, joysoundAvailable: true }),
+    serviceHealth: (): ServiceHealthState =>
+      currentServiceHealth ?? {
+        damAvailable: true,
+        joysoundAvailable: true,
+        checkedAt: "0",
+      },
     config: () => {
       return {
         ...karafriendsConfig,
@@ -1175,7 +1185,14 @@ const resolvers = {
       }
 
       saveDb();
+      // Player.tsx polls popSong every few seconds whenever the queue is
+      // idle/empty — only trigger a health check on an actual song
+      // transition, not on every empty-queue poll.
+      if (newSong) triggerHealthCheck();
       return newSong;
+    },
+    recheckServiceHealth: async (): Promise<ServiceHealthState> => {
+      return triggerHealthCheck();
     },
     removeSong: (
       _: any,
@@ -1373,6 +1390,32 @@ async function runHealthCheck(
   return { damAvailable, joysoundAvailable };
 }
 
+// Dedupes overlapping triggers (periodic timer, per-song, and a manual
+// "check now" click could otherwise all fire a real network check at once).
+function triggerHealthCheck(): Promise<ServiceHealthState> {
+  if (healthCheckInFlight) return healthCheckInFlight;
+
+  if (!runHealthCheckOnce) {
+    return Promise.resolve(
+      currentServiceHealth ?? {
+        damAvailable: true,
+        joysoundAvailable: true,
+        checkedAt: "0",
+      },
+    );
+  }
+
+  healthCheckInFlight = runHealthCheckOnce().then((result) => {
+    currentServiceHealth = { ...result, checkedAt: Date.now().toString() };
+    healthCheckInFlight = null;
+    return currentServiceHealth;
+  });
+
+  return healthCheckInFlight;
+}
+
+const HEALTH_CHECK_INTERVAL_MS = 3 * 60 * 1000;
+
 export function applyGraphQLMiddleware(app: Application) {
   const httpServer = createServer(app);
 
@@ -1423,7 +1466,9 @@ export function applyGraphQLMiddleware(app: Application) {
     return nodeFetch(url, { ...init, agent: tunnelAgent });
   };
 
-  serviceHealthPromise = runHealthCheck(server, fetcher);
+  runHealthCheckOnce = () => runHealthCheck(server, fetcher);
+  triggerHealthCheck();
+  setInterval(triggerHealthCheck, HEALTH_CHECK_INTERVAL_MS);
 
   server.start().then(() => {
     app.use(

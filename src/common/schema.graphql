@@ -58,6 +58,7 @@ type Mutation {
     input: QueueNicoSongInput
     tryHeadOfQueue: Boolean!
   ): QueueSongResult!
+  recheckServiceHealth: ServiceHealth!
   removeSong(songId: String!, timestamp: String!): Boolean!
   setPitchShiftSemis(semis: Int!): Boolean!
   setPlaybackState(playbackState: PlaybackState!): Boolean!
@@ -184,6 +185,7 @@ type Emote {
 type ServiceHealth {
   damAvailable: Boolean!
   joysoundAvailable: Boolean!
+  checkedAt: String!
 }
 
 type UserIdentity {

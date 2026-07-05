@@ -71,3 +71,28 @@ html.oledFriendly .appSidebar .input-field > label,
 html.oledFriendly .appSidebar .input-field input[type="text"] {
   color: #222;
 }
+
+.serviceHealthIndicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  vertical-align: middle;
+}
+
+.serviceHealthSpinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  border-top-color: #333;
+  border-radius: 50%;
+  animation: serviceHealthSpin 0.8s linear infinite;
+}
+
+@keyframes serviceHealthSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
