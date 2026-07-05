@@ -1,5 +1,7 @@
 #!/usr/bin/env yarn node
 const { spawnSync } = require("child_process");
+const fs = require("fs");
+const path = require("path");
 
 const sevenBin = require("7zip-bin");
 const packager = require("electron-packager");
@@ -45,6 +47,16 @@ const { glob } = require("glob");
       icon: "appIcons/icon.ico",
     }),
   });
+  // Ship the factory-reset tool at the root of the package, next to the
+  // exe, so it's something a user stumbles into rather than something
+  // buried in resources/. Windows-only: it resets %APPDATA%/%LOCALAPPDATA%
+  // paths that only exist on that platform.
+  if (process.platform === "win32") {
+    for (const file of await glob("userTools/*")) {
+      fs.copyFileSync(file, path.join(String(output), path.basename(file)));
+    }
+  }
+
   console.log(`Built ${output}. Zipping...`);
   spawnSync(sevenBin.path7za, ["a", "-r", `${output}.zip`, output]);
   console.log(`Built ${output}.zip.`);
