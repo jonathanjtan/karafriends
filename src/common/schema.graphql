@@ -294,8 +294,8 @@ type DamQueueItem implements QueueItemInterface {
   nameYomi: String!
   artistName: String!
   artistNameYomi: String!
-  streamingUrls: [StreamingUrlInfo!]!
-  scoringData: [Int!]!
+  streamingUrls: [StreamingUrlInfo!]
+  scoringData: [Int!]
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!

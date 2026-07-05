@@ -614,6 +614,13 @@ const resolvers = {
     },
   },
   DamQueueItem: {
+    // These are fetched live from DAM on every popSong call rather than
+    // cached at queue time, since streaming URLs expire. If DAM is
+    // unreachable, resolve to null instead of rejecting — a rejection here
+    // would null out the entire (non-nullable-field-bearing) popSong
+    // response under GraphQL's error-propagation rules, silently dropping
+    // the song with no signal to the player. Player.tsx treats a null
+    // result as "unplayable, skip forward."
     streamingUrls(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
       return dataSources.minsei
         .getMusicStreamingUrls(parent.songId)
@@ -623,12 +630,26 @@ const resolvers = {
               ? info.lowBitrateUrl
               : info.highBitrateUrl,
           })),
-        );
+        )
+        .catch((e) => {
+          console.error(
+            `Failed fetching DAM streaming URLs for ${parent.songId}, skipping`,
+            e,
+          );
+          return null;
+        });
     },
     scoringData(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
       return dataSources.minsei
         .getScoringData(parent.songId)
-        .then((data) => Array.from(new Uint8Array(data)));
+        .then((data) => Array.from(new Uint8Array(data)))
+        .catch((e) => {
+          console.error(
+            `Failed fetching DAM scoring data for ${parent.songId}, skipping`,
+            e,
+          );
+          return null;
+        });
     },
     ...nameYomiResolvers,
   },

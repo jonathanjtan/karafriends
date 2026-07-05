@@ -120,6 +120,17 @@ function Player(props: {
 
           switch (popSong.__typename) {
             case "DamQueueItem":
+              if (!popSong.streamingUrls || !popSong.scoringData) {
+                console.error(
+                  `DAM data unavailable for song ${popSong.songId}, skipping`,
+                );
+                M.toast({
+                  html: `<span>Skipped "${popSong.name}" — DAM unreachable</span>`,
+                });
+                pollQueue();
+                return;
+              }
+
               setShouldShowPianoRoll(true);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
@@ -286,6 +297,16 @@ function Player(props: {
               break;
           }
           setPlaybackState("PLAYING");
+        },
+        onError: (error) => {
+          // Without this, any unexpected popSong failure (GraphQL error,
+          // dropped connection, etc.) would kill the poll loop for good —
+          // nothing else re-schedules it.
+          console.error("popSong mutation failed, retrying", error);
+          M.toast({
+            html: "<span>⚠️ Couldn't reach the queue — retrying</span>",
+          });
+          pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
         },
       });
 
