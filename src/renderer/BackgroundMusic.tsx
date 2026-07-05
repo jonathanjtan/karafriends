@@ -25,8 +25,20 @@ export default function BackgroundMusic({ trackFilename, volume }: Props) {
     } else {
       audio.pause();
     }
-  }, [shouldPlay]);
+  }, [trackFilename, shouldPlay]);
 
   if (!trackFilename) return null;
-  return <audio ref={audioRef} src={`${BGM_DIR}${trackFilename}`} loop />;
+  // key={trackFilename} forces React to fully remount the element (instead
+  // of just updating its src in place) when switching tracks — Chromium
+  // doesn't pick up a new src on an already-loaded <audio> element without
+  // an explicit load() call, so without this, switching tracks silently
+  // kept playing whatever was already loaded.
+  return (
+    <audio
+      key={trackFilename}
+      ref={audioRef}
+      src={`${BGM_DIR}${trackFilename}`}
+      loop
+    />
+  );
 }
