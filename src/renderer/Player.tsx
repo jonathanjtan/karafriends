@@ -131,6 +131,8 @@ function Player(props: {
                 return;
               }
 
+              const { streamingUrls } = popSong;
+
               setShouldShowPianoRoll(true);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
@@ -147,9 +149,7 @@ function Player(props: {
 
                 hls = new Hls({ maxBufferLength: 90 /* seconds */ });
                 hls.attachMedia(videoRef.current);
-                hls.loadSource(
-                  popSong.streamingUrls[popSong.streamingUrlIdx].url,
-                );
+                hls.loadSource(streamingUrls[popSong.streamingUrlIdx].url);
 
                 hls.on(Hls.Events.ERROR, (_event, data) => {
                   if (!data.fatal) return;
