@@ -48,6 +48,7 @@ import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
 
 import { memoize } from "lodash";
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
+import { isRomaji, toKana } from "wanakana";
 
 export interface IDataSources {
   dataSources: {
@@ -85,6 +86,33 @@ const kuroshiroReady = kuroshiro.init(
 async function toYomi(text: string): Promise<string> {
   await kuroshiroReady;
   return kuroshiro.convert(text, { to: "hiragana", mode: "normal" });
+}
+
+// DAM and Joysound's search backends only match Japanese-script keywords;
+// a pure-romaji query like "aidoru" returns zero results even though the
+// target title is stored as "アイドル". But not every romaji-looking query
+// is romanized Japanese — both catalogs also carry western songs/artists
+// under their literal English names (e.g. "Queen"), which must keep
+// matching. So we always search the literal keyword first (unchanged
+// behavior), and only retry with a kana transliteration if that literal
+// search comes back empty. Only attempted on the first page of a search;
+// later pages of a real (non-empty) result set are left alone.
+async function searchWithRomajiFallback<T>(
+  keyword: string,
+  isFirstPage: boolean,
+  isEmpty: (result: T) => boolean,
+  search: (keyword: string) => Promise<T>,
+): Promise<T> {
+  const result = await search(keyword);
+  if (!isFirstPage || !keyword || !isRomaji(keyword) || !isEmpty(result)) {
+    return result;
+  }
+  // IMEMode mirrors how a real Japanese IME converts as you type — most
+  // relevant here for a dangling trailing "n" (e.g. "shinjuku" mid-typing),
+  // which it resolves to "ん" immediately instead of waiting to see if a
+  // vowel follows.
+  const kana = toKana(keyword, { IMEMode: true });
+  return kana && kana !== keyword ? search(kana) : result;
 }
 
 const nameYomiResolvers = {
@@ -711,24 +739,32 @@ const resolvers = {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
 
-      return dataSources.joysound
-        .getSongListByKeyword(args.keyword, afterInt, firstInt)
-        .then((result) => ({
-          edges: result.map((song, i) => ({
-            node: {
-              id: song.selSongNo,
-              name: song.songName,
-              artistName: song.artistName,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false,
-            hasNextPage: result.length === firstInt,
-            startCursor: "1",
-            endCursor: (firstInt + afterInt).toString(),
+      return searchWithRomajiFallback(
+        args.keyword,
+        afterInt === 1,
+        (result) => result.length === 0,
+        (keyword) =>
+          dataSources.joysound.getSongListByKeyword(
+            keyword,
+            afterInt,
+            firstInt,
+          ),
+      ).then((result) => ({
+        edges: result.map((song, i) => ({
+          node: {
+            id: song.selSongNo,
+            name: song.songName,
+            artistName: song.artistName,
           },
-        }));
+          cursor: (firstInt + i).toString(),
+        })),
+        pageInfo: {
+          hasPreviousPage: false,
+          hasNextPage: result.length === firstInt,
+          startCursor: "1",
+          endCursor: (firstInt + afterInt).toString(),
+        },
+      }));
     },
     joysoundArtistsByKeyword: (
       _: any,
@@ -738,23 +774,31 @@ const resolvers = {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
 
-      return dataSources.joysound
-        .getArtistListByKeyword(args.keyword, afterInt, firstInt)
-        .then((result) => ({
-          edges: result.map((artist, i) => ({
-            node: {
-              id: artist.artistId_digi,
-              name: artist.artistName,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false,
-            hasNextPage: result.length === firstInt,
-            startCursor: "1",
-            endCursor: (firstInt + afterInt).toString(),
+      return searchWithRomajiFallback(
+        args.keyword,
+        afterInt === 1,
+        (result) => result.length === 0,
+        (keyword) =>
+          dataSources.joysound.getArtistListByKeyword(
+            keyword,
+            afterInt,
+            firstInt,
+          ),
+      ).then((result) => ({
+        edges: result.map((artist, i) => ({
+          node: {
+            id: artist.artistId_digi,
+            name: artist.artistName,
           },
-        }));
+          cursor: (firstInt + i).toString(),
+        })),
+        pageInfo: {
+          hasPreviousPage: false,
+          hasNextPage: result.length === firstInt,
+          startCursor: "1",
+          endCursor: (firstInt + afterInt).toString(),
+        },
+      }));
     },
     songsByName: (
       _: any,
@@ -764,26 +808,30 @@ const resolvers = {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
 
-      return dataSources.dkwebsys
-        .getMusicByKeyword(args.name, firstInt, afterInt)
-        .then((result) => ({
-          edges: result.list.map((song, i) => ({
-            node: {
-              id: song.requestNo,
-              name: song.title,
-              nameYomi: song.titleYomi,
-              artistName: song.artist,
-              artistNameYomi: song.artistYomi,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false, // We can always do this because we don't support backward pagination
-            hasNextPage: firstInt + afterInt < result.data.totalCount,
-            startCursor: "0",
-            endCursor: (firstInt + afterInt).toString(),
+      return searchWithRomajiFallback(
+        args.name,
+        afterInt === 0,
+        (result) => result.list.length === 0,
+        (keyword) =>
+          dataSources.dkwebsys.getMusicByKeyword(keyword, firstInt, afterInt),
+      ).then((result) => ({
+        edges: result.list.map((song, i) => ({
+          node: {
+            id: song.requestNo,
+            name: song.title,
+            nameYomi: song.titleYomi,
+            artistName: song.artist,
+            artistNameYomi: song.artistYomi,
           },
-        }));
+          cursor: (firstInt + i).toString(),
+        })),
+        pageInfo: {
+          hasPreviousPage: false, // We can always do this because we don't support backward pagination
+          hasNextPage: firstInt + afterInt < result.data.totalCount,
+          startCursor: "0",
+          endCursor: (firstInt + afterInt).toString(),
+        },
+      }));
     },
     songById: (
       _: any,
@@ -823,25 +871,29 @@ const resolvers = {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
 
-      return dataSources.dkwebsys
-        .getArtistByKeyword(args.name, firstInt, afterInt)
-        .then((result) => ({
-          edges: result.list.map((artist, i) => ({
-            node: {
-              id: artist.artistCode.toString(),
-              name: artist.artist,
-              nameYomi: artist.artistYomi,
-              songCount: artist.holdMusicCount,
-            },
-            cursor: (firstInt + i).toString(),
-          })),
-          pageInfo: {
-            hasPreviousPage: false, // We can always do this because we don't support backward pagination
-            hasNextPage: firstInt + afterInt < result.data.totalCount,
-            startCursor: "0",
-            endCursor: (firstInt + afterInt).toString(),
+      return searchWithRomajiFallback(
+        args.name,
+        afterInt === 0,
+        (result) => result.list.length === 0,
+        (keyword) =>
+          dataSources.dkwebsys.getArtistByKeyword(keyword, firstInt, afterInt),
+      ).then((result) => ({
+        edges: result.list.map((artist, i) => ({
+          node: {
+            id: artist.artistCode.toString(),
+            name: artist.artist,
+            nameYomi: artist.artistYomi,
+            songCount: artist.holdMusicCount,
           },
-        }));
+          cursor: (firstInt + i).toString(),
+        })),
+        pageInfo: {
+          hasPreviousPage: false, // We can always do this because we don't support backward pagination
+          hasNextPage: firstInt + afterInt < result.data.totalCount,
+          startCursor: "0",
+          endCursor: (firstInt + afterInt).toString(),
+        },
+      }));
     },
     artistById: (
       _: any,
