@@ -12,3 +12,22 @@
   line-height: 24px;
   animation: rotation 2s infinite linear;
 }
+
+.rightIcons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.iconButton {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}

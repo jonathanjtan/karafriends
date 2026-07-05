@@ -18,3 +18,16 @@ header,
 footer {
   box-shadow: 0 0 4px #aaa;
 }
+
+// Global dark mode: invert the whole app rather than re-theming every
+// component's hardcoded colors individually. Force a pure-white base first
+// so the inverted result is a true black, and counter-invert <img> tags
+// (thumbnails, the logo) so photos don't render with inverted colors.
+:global(html.dark) .app {
+  background-color: #fff;
+  filter: invert(1) hue-rotate(180deg);
+}
+
+:global(html.dark) .app img {
+  filter: invert(1) hue-rotate(180deg);
+}
