@@ -12,6 +12,6 @@ export const BGM_TRACKS: readonly BgmTrack[] = [
   },
   {
     filename: "joysound-streamer.webm",
-    label: "JOYSOUND Streamer",
+    label: "JOYSOUND STREAMER",
   },
 ];
