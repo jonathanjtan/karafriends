@@ -88,28 +88,38 @@ async function toYomi(text: string): Promise<string> {
   return kuroshiro.convert(text, { to: "hiragana", mode: "normal" });
 }
 
+function dedupeBy<Item, Key>(items: Item[], key: (item: Item) => Key): Item[] {
+  const seen = new Set<Key>();
+  return items.filter((item) => {
+    const k = key(item);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 // DAM and Joysound's search backends only match Japanese-script keywords;
 // a pure-romaji query like "aidoru" returns zero results even though the
 // target title is stored as "アイドル". But not every romaji-looking query
 // is romanized Japanese — both catalogs also carry western songs/artists
 // under their literal English names (e.g. "Queen"), which must keep
-// matching. So we always search the literal keyword first (unchanged
-// behavior), and only retry with a kana transliteration if that literal
-// search comes back empty. Only attempted on the first page of a search;
-// later pages of a real (non-empty) result set are left alone.
+// matching, so the literal keyword is always searched. On top of that, a
+// literal match doesn't rule out a *different*, Japanese-titled song also
+// being what the user meant (e.g. "umapyoi" matching an English-titled
+// cover on DAM as well as "ウマぴょい伝説") — so if the query looks like
+// romaji, we also try a few kana readings and merge their results in
+// rather than only falling back when the literal search is empty. Only
+// attempted on the first page of a search; later pages only continue the
+// literal search.
 async function searchWithRomajiFallback<T>(
   keyword: string,
   isFirstPage: boolean,
-  isEmpty: (result: T) => boolean,
+  isEmpty: (result: Awaited<T>) => boolean,
+  merge: (a: Awaited<T>, b: Awaited<T>) => Awaited<T>,
   search: (keyword: string) => Promise<T>,
-): Promise<T> {
+): Promise<Awaited<T>> {
   const literalResult = await search(keyword);
-  if (
-    !isFirstPage ||
-    !keyword ||
-    !isRomaji(keyword) ||
-    !isEmpty(literalResult)
-  ) {
+  if (!isFirstPage || !keyword || !isRomaji(keyword)) {
     return literalResult;
   }
 
@@ -117,7 +127,7 @@ async function searchWithRomajiFallback<T>(
   // script — titles and artist names routinely mix hiragana, katakana, and
   // kanji (e.g. Uma Musume's "ウマぴょい伝説"), so a single fixed-casing
   // conversion often misses even when the reading is otherwise right. Try
-  // a few reasonable readings in order and stop at the first real hit.
+  // a few reasonable readings and merge in whichever ones hit.
   // IMEMode mirrors how a real Japanese IME converts as you type — most
   // relevant here for a dangling trailing "n" (e.g. "shinjuku" mid-typing),
   // which it resolves to "ん" immediately instead of waiting to see if a
@@ -134,8 +144,9 @@ async function searchWithRomajiFallback<T>(
 
   let result = literalResult;
   for (const candidate of candidates) {
-    result = await search(candidate);
-    if (!isEmpty(result)) return result;
+    const candidateResult = await search(candidate);
+    if (isEmpty(candidateResult)) continue;
+    result = isEmpty(result) ? candidateResult : merge(result, candidateResult);
   }
   return result;
 }
@@ -768,6 +779,8 @@ const resolvers = {
         args.keyword,
         afterInt === 1,
         (result) => result.length === 0,
+        (a, b) =>
+          dedupeBy([...a, ...b], (song) => song.selSongNo).slice(0, firstInt),
         (keyword) =>
           dataSources.joysound.getSongListByKeyword(
             keyword,
@@ -803,6 +816,11 @@ const resolvers = {
         args.keyword,
         afterInt === 1,
         (result) => result.length === 0,
+        (a, b) =>
+          dedupeBy([...a, ...b], (artist) => artist.artistId_digi).slice(
+            0,
+            firstInt,
+          ),
         (keyword) =>
           dataSources.joysound.getArtistListByKeyword(
             keyword,
@@ -837,6 +855,15 @@ const resolvers = {
         args.name,
         afterInt === 0,
         (result) => result.list.length === 0,
+        (a, b) => ({
+          data: {
+            totalCount: Math.max(a.data.totalCount, b.data.totalCount),
+          },
+          list: dedupeBy(
+            [...a.list, ...b.list],
+            (song) => song.requestNo,
+          ).slice(0, firstInt),
+        }),
         (keyword) =>
           dataSources.dkwebsys.getMusicByKeyword(keyword, firstInt, afterInt),
       ).then((result) => ({
@@ -900,6 +927,15 @@ const resolvers = {
         args.name,
         afterInt === 0,
         (result) => result.list.length === 0,
+        (a, b) => ({
+          data: {
+            totalCount: Math.max(a.data.totalCount, b.data.totalCount),
+          },
+          list: dedupeBy(
+            [...a.list, ...b.list],
+            (artist) => artist.artistCode,
+          ).slice(0, firstInt),
+        }),
         (keyword) =>
           dataSources.dkwebsys.getArtistByKeyword(keyword, firstInt, afterInt),
       ).then((result) => ({
