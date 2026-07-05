@@ -10,4 +10,8 @@ export const BGM_TRACKS: readonly BgmTrack[] = [
     filename: "joysound-magazine-song-selection.webm",
     label: "JOYSOUND Switch",
   },
+  {
+    filename: "joysound-streamer.webm",
+    label: "JOYSOUND Streamer",
+  },
 ];
