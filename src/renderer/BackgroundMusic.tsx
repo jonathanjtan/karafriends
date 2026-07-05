@@ -3,20 +3,19 @@ import React, { useEffect, useRef } from "react";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { BGM_DIR } from "./bgmTracks";
 
-const BGM_VOLUME = 0.3;
-
 interface Props {
   trackFilename: string | null;
+  volume: number;
 }
 
-export default function BackgroundMusic({ trackFilename }: Props) {
+export default function BackgroundMusic({ trackFilename, volume }: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const { playbackState } = usePlaybackState();
   const shouldPlay = trackFilename !== null && playbackState === "WAITING";
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = BGM_VOLUME;
-  }, [trackFilename]);
+    if (audioRef.current) audioRef.current.volume = volume;
+  }, [trackFilename, volume]);
 
   useEffect(() => {
     const audio = audioRef.current;

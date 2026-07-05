@@ -22,6 +22,8 @@ import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServi
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 const BGM_STORAGE_KEY = "bgmTrack";
+const BGM_VOLUME_STORAGE_KEY = "bgmVolume";
+const DEFAULT_BGM_VOLUME = 0.3;
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
 
 interface SavedMic {
@@ -86,6 +88,16 @@ function App(props: {
       localStorage.setItem(BGM_STORAGE_KEY, filename);
     }
     _setBgmTrack(filename);
+  };
+
+  const [bgmVolume, _setBgmVolume] = useState<number>(() => {
+    const stored = localStorage.getItem(BGM_VOLUME_STORAGE_KEY);
+    return stored === null ? DEFAULT_BGM_VOLUME : Number(stored);
+  });
+
+  const setBgmVolume = (volume: number) => {
+    localStorage.setItem(BGM_VOLUME_STORAGE_KEY, volume.toString());
+    _setBgmVolume(volume);
   };
 
   const [oledFriendly, _setOledFriendly] = useState<boolean>(
@@ -236,7 +248,7 @@ function App(props: {
       >
         <Player mics={mics} kuroshiro={props.kuroshiro} audio={props.audio} />
         <Effects />
-        <BackgroundMusic trackFilename={bgmTrack} />
+        <BackgroundMusic trackFilename={bgmTrack} volume={bgmVolume} />
       </div>
       {sidebarVisible && (
         <div className="appSidebar col s1 grey lighten-3">
@@ -261,6 +273,8 @@ function App(props: {
             <BackgroundMusicSetting
               selected={bgmTrack}
               onChange={setBgmTrack}
+              volume={bgmVolume}
+              onVolumeChange={setBgmVolume}
             />
             <div className="switch">
               <label>
