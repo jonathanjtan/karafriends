@@ -4,5 +4,13 @@ declare module "wanakana" {
     input: string,
     options?: { IMEMode?: boolean },
   ): string;
+  export function toHiragana(
+    input: string,
+    options?: { IMEMode?: boolean },
+  ): string;
+  export function toKatakana(
+    input: string,
+    options?: { IMEMode?: boolean },
+  ): string;
   export function toRomaji(input: string): string;
 }

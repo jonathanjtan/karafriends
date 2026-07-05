@@ -48,7 +48,7 @@ import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
 
 import { memoize } from "lodash";
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
-import { isRomaji, toKana } from "wanakana";
+import { isRomaji, toHiragana, toKana, toKatakana } from "wanakana";
 
 export interface IDataSources {
   dataSources: {
@@ -103,16 +103,41 @@ async function searchWithRomajiFallback<T>(
   isEmpty: (result: T) => boolean,
   search: (keyword: string) => Promise<T>,
 ): Promise<T> {
-  const result = await search(keyword);
-  if (!isFirstPage || !keyword || !isRomaji(keyword) || !isEmpty(result)) {
-    return result;
+  const literalResult = await search(keyword);
+  if (
+    !isFirstPage ||
+    !keyword ||
+    !isRomaji(keyword) ||
+    !isEmpty(literalResult)
+  ) {
+    return literalResult;
   }
+
+  // A romaji query is ambiguous about which mora should land in which kana
+  // script — titles and artist names routinely mix hiragana, katakana, and
+  // kanji (e.g. Uma Musume's "ウマぴょい伝説"), so a single fixed-casing
+  // conversion often misses even when the reading is otherwise right. Try
+  // a few reasonable readings in order and stop at the first real hit.
   // IMEMode mirrors how a real Japanese IME converts as you type — most
   // relevant here for a dangling trailing "n" (e.g. "shinjuku" mid-typing),
   // which it resolves to "ん" immediately instead of waiting to see if a
   // vowel follows.
-  const kana = toKana(keyword, { IMEMode: true });
-  return kana && kana !== keyword ? search(kana) : result;
+  const candidates = [
+    ...new Set(
+      [
+        toKana(keyword, { IMEMode: true }),
+        toHiragana(keyword),
+        toKatakana(keyword),
+      ].filter((candidate) => candidate && candidate !== keyword),
+    ),
+  ];
+
+  let result = literalResult;
+  for (const candidate of candidates) {
+    result = await search(candidate);
+    if (!isEmpty(result)) return result;
+  }
+  return result;
 }
 
 const nameYomiResolvers = {
