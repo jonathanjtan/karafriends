@@ -1,7 +1,7 @@
 import M from "materialize-css";
 import React, { useEffect } from "react";
 
-import { BGM_TRACKS } from "./bgmTracks";
+import { BGM_TRACKS, SHUFFLE_VALUE } from "./bgmTracks";
 import "./global";
 
 interface Props {
@@ -31,6 +31,7 @@ export default function BackgroundMusicSetting({
           }
         >
           <option value="">None</option>
+          <option value={SHUFFLE_VALUE}>Shuffle</option>
           {BGM_TRACKS.map((t) => (
             <option key={t.filename} value={t.filename}>
               {t.label}
