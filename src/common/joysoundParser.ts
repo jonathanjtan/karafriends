@@ -921,6 +921,13 @@ async function parseJoysoundData(
   };
 }
 
+// Joysound's raw API (getFME) returns telop/ogg fields as base64 with the
+// first 30 bytes rotated to the end, presumably as a trivial anti-scraping
+// obfuscation. Un-rotate before decoding.
+export function decodeJoysoundBase64Field(base64: string): Buffer {
+  return Buffer.from(base64.slice(30) + base64.slice(0, 30), "base64");
+}
+
 export function getSongDuration(data: ArrayBuffer): number {
   const offsetView = new DataView(data, 6, 4);
   const metadataOffset = offsetView.getUint32(0, true);

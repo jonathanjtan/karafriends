@@ -13,7 +13,7 @@ import {
 } from "../main/graphql";
 import { JoysoundAPI, JoysoundSongRawData } from "../main/joysoundApi";
 
-import { getSongDuration } from "./joysoundParser";
+import { decodeJoysoundBase64Field, getSongDuration } from "./joysoundParser";
 
 export const TEMP_FOLDER: string = `${app.getPath("temp")}/karafriends_tmp`;
 const captionCodeRe: RegExp = new RegExp(/^[a-z]{2}$/);
@@ -145,7 +145,10 @@ function removeVideoDownloadFromQueue(
   downloadQueue: DownloadQueueItem[],
   downloadQueueItem: DownloadQueueItem,
 ): void {
-  downloadQueue.splice(downloadQueue.indexOf(downloadQueueItem), 1);
+  const index = downloadQueue.indexOf(downloadQueueItem);
+  if (index !== -1) {
+    downloadQueue.splice(index, 1);
+  }
 }
 
 function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
@@ -285,9 +288,22 @@ function makeJoysoundFFmpegCall(
 
   if (onExit) {
     ffmpeg.on("exit", onExit);
+    // If ffmpeg fails to even launch (e.g. missing binary), Node emits
+    // "error" instead of "exit" - without this, callers relying on onExit
+    // to reject/clean up would otherwise hang forever.
+    ffmpeg.on("error", (err) => {
+      console.error(
+        `Error spawning ffmpeg for songId ${songId}: ${err.message}`,
+      );
+      onExit(-1, 0);
+    });
   }
 
   if (stdinBuffer) {
+    // See decodeToPcm's identical guard: an unhandled stdin stream "error"
+    // (e.g. EPIPE if ffmpeg exits early) crashes the process, not just this
+    // call - the onExit/error handlers above already report/reject.
+    ffmpeg.stdin.on("error", () => undefined);
     ffmpeg.stdin.write(stdinBuffer);
     ffmpeg.stdin.end();
   }
@@ -413,6 +429,14 @@ function downloadJoysoundYoutubeVideoPromise(
       handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
     });
 
+    ytdlp.on("error", (err) => {
+      console.error(
+        `Error spawning yt-dlp for Youtube Video with ID ${youtubeVideoId}: ${err.message}`,
+      );
+      removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+      reject(err);
+    });
+
     ytdlp.on("exit", (code, signal) => {
       if (code === 0) {
         fs.unlinkSync(tempFilename);
@@ -425,10 +449,308 @@ function downloadJoysoundYoutubeVideoPromise(
         console.error(
           `Error downloading Youtube Video with ID ${youtubeVideoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
         );
+        removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
         reject(code);
       }
     });
   });
+}
+
+// --- YouTube intro-offset detection (experimental, best-effort) ---
+//
+// A downloaded YouTube MV often has a non-song intro (album art, a spoken
+// bit, a visual hook) before the actual track starts, which composeJoysound-
+// VideoPromise would otherwise play out of sync with the Joysound audio
+// track it always uses. We estimate how many seconds in the song actually
+// starts by cross-correlating a cheap amplitude envelope of the MV's own
+// audio against the karaoke track's audio, and trim that much off the
+// video before compositing. If the match isn't confident, we fall back to
+// no trim (0) rather than guessing.
+
+const INTRO_SYNC_SEARCH_WINDOW_SEC = 90;
+const INTRO_SYNC_REFERENCE_SEC = 20;
+const INTRO_SYNC_MAX_LAG_MS = 40000;
+const INTRO_SYNC_CONFIDENCE_THRESHOLD = 0.5;
+const INTRO_SYNC_ENVELOPE_WINDOW_MS = 100;
+const INTRO_SYNC_SAMPLE_RATE_HZ = 8000;
+// If the MV's total runtime is already within this fraction of the song's,
+// there's essentially no room for a meaningful intro - skip the whole
+// waveform match (which is the most failure-prone part of this feature)
+// rather than run it for no benefit.
+const INTRO_SYNC_SKIP_IF_DURATION_WITHIN_FRACTION = 0.01;
+
+function probeYoutubeVideoDurationSec(youtubeVideoId: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    delete process.env.http_proxy;
+
+    let stdout = "";
+
+    const ytdlp = spawn(
+      resourcePaths.ytdlp,
+      ["--skip-download", "--print", "duration", "--", youtubeVideoId],
+      { env, stdio: ["ignore", "pipe", "ignore"] },
+    );
+
+    invariant(ytdlp.stdout);
+    ytdlp.stdout.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+
+    ytdlp.on("error", reject);
+    ytdlp.on("exit", (code) => {
+      const duration = parseFloat(stdout.trim());
+      if (code === 0 && Number.isFinite(duration)) {
+        resolve(duration);
+      } else {
+        reject(new Error(`yt-dlp duration probe exited with code ${code}`));
+      }
+    });
+  });
+}
+
+function downloadYoutubeAudioSnippet(
+  youtubeVideoId: string,
+  maxDurationSec: number,
+): Promise<string> {
+  if (!fs.existsSync(TEMP_FOLDER)) {
+    fs.mkdirSync(TEMP_FOLDER);
+  }
+
+  const outputFilename = `${TEMP_FOLDER}/introsync-${youtubeVideoId}.m4a`;
+
+  if (fs.existsSync(outputFilename)) {
+    fs.unlinkSync(outputFilename);
+  }
+
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    // Don't need a proxy to download from YouTube
+    delete process.env.http_proxy;
+
+    const ytdlp = spawn(
+      resourcePaths.ytdlp,
+      [
+        "-f",
+        "ba",
+        "--download-sections",
+        `*0-${maxDurationSec}`,
+        "--ffmpeg-location",
+        resourcePaths.ffmpeg,
+        "-o",
+        outputFilename,
+        "--",
+        youtubeVideoId,
+      ],
+      { env, stdio: ["ignore", "ignore", "ignore"] },
+    );
+
+    ytdlp.on("error", reject);
+    ytdlp.on("exit", (code) => {
+      if (code === 0 && fs.existsSync(outputFilename)) {
+        resolve(outputFilename);
+      } else {
+        reject(
+          new Error(`yt-dlp audio snippet download exited with code ${code}`),
+        );
+      }
+    });
+  });
+}
+
+// Decodes an audio file or in-memory buffer to raw mono PCM at
+// INTRO_SYNC_SAMPLE_RATE_HZ, capped to maxDurationSec of output.
+function decodeToPcm(
+  input: string | Buffer,
+  maxDurationSec: number,
+): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn(
+      resourcePaths.ffmpeg,
+      [
+        "-i",
+        typeof input === "string" ? input : "-",
+        "-t",
+        maxDurationSec.toString(),
+        "-ac",
+        "1",
+        "-ar",
+        INTRO_SYNC_SAMPLE_RATE_HZ.toString(),
+        "-f",
+        "s16le",
+        "-",
+      ],
+      { stdio: ["pipe", "pipe", "ignore"] },
+    );
+
+    invariant(ffmpeg.stdin);
+    invariant(ffmpeg.stdout);
+
+    const chunks: Buffer[] = [];
+    ffmpeg.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
+
+    ffmpeg.on("error", reject);
+    ffmpeg.on("exit", (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(chunks));
+      } else {
+        reject(new Error(`ffmpeg PCM decode exited with code ${code}`));
+      }
+    });
+
+    // If ffmpeg exits (or never starts reading) while we're still writing a
+    // large buffer to its stdin, Node emits an "error" (e.g. EPIPE) on the
+    // stdin stream itself, not on the ChildProcess - left unhandled, that's
+    // an uncaught exception that crashes the whole process rather than just
+    // rejecting this promise. The process-level "error"/"exit" handlers
+    // above already report/reject appropriately.
+    ffmpeg.stdin.on("error", () => undefined);
+
+    if (typeof input !== "string") {
+      ffmpeg.stdin.write(input);
+    }
+    ffmpeg.stdin.end();
+  });
+}
+
+function computeRmsEnvelope(pcm: Buffer, windowMs: number): number[] {
+  const windowSamples = Math.round(
+    (windowMs / 1000) * INTRO_SYNC_SAMPLE_RATE_HZ,
+  );
+  const windowBytes = windowSamples * 2; // 16-bit samples
+  const envelope: number[] = [];
+
+  for (
+    let offset = 0;
+    offset + windowBytes <= pcm.length;
+    offset += windowBytes
+  ) {
+    let sumSquares = 0;
+    for (let i = offset; i < offset + windowBytes; i += 2) {
+      const sample = pcm.readInt16LE(i);
+      sumSquares += sample * sample;
+    }
+    envelope.push(Math.sqrt(sumSquares / windowSamples));
+  }
+
+  return envelope;
+}
+
+function pearsonCorrelation(a: number[], b: number[]): number {
+  const n = Math.min(a.length, b.length);
+  if (n === 0) return 0;
+
+  let sumA = 0;
+  let sumB = 0;
+  for (let i = 0; i < n; i++) {
+    sumA += a[i];
+    sumB += b[i];
+  }
+  const meanA = sumA / n;
+  const meanB = sumB / n;
+
+  let numerator = 0;
+  let denomA = 0;
+  let denomB = 0;
+  for (let i = 0; i < n; i++) {
+    const da = a[i] - meanA;
+    const db = b[i] - meanB;
+    numerator += da * db;
+    denomA += da * da;
+    denomB += db * db;
+  }
+
+  const denom = Math.sqrt(denomA * denomB);
+  return denom === 0 ? 0 : numerator / denom;
+}
+
+// Finds the lag (in ms) into searchEnvelope where referenceEnvelope best
+// matches, or 0 if no candidate lag clears the confidence threshold.
+function findBestIntroOffsetMs(
+  referenceEnvelope: number[],
+  searchEnvelope: number[],
+  windowMs: number,
+  maxLagMs: number,
+  confidenceThreshold: number,
+): number {
+  const maxLagWindows = Math.floor(maxLagMs / windowMs);
+  let bestLagWindows = 0;
+  let bestScore = -Infinity;
+
+  for (
+    let lag = 0;
+    lag <= maxLagWindows &&
+    lag + referenceEnvelope.length <= searchEnvelope.length;
+    lag++
+  ) {
+    const score = pearsonCorrelation(
+      referenceEnvelope,
+      searchEnvelope.slice(lag, lag + referenceEnvelope.length),
+    );
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestLagWindows = lag;
+    }
+  }
+
+  return bestScore >= confidenceThreshold ? bestLagWindows * windowMs : 0;
+}
+
+export async function computeYoutubeIntroOffsetMs(
+  oggBuffer: Buffer,
+  youtubeVideoId: string,
+): Promise<number> {
+  let snippetFilename: string | null = null;
+
+  try {
+    const expectedDurationSec = getJoysoundOggPlaytime(oggBuffer) / 1000;
+    const videoDurationSec = await probeYoutubeVideoDurationSec(youtubeVideoId);
+    const relativeDelta =
+      expectedDurationSec > 0
+        ? Math.abs(videoDurationSec - expectedDurationSec) / expectedDurationSec
+        : Infinity;
+
+    if (relativeDelta <= INTRO_SYNC_SKIP_IF_DURATION_WITHIN_FRACTION) {
+      console.info(
+        `computeYoutubeIntroOffsetMs: video=${youtubeVideoId} duration already within ${(INTRO_SYNC_SKIP_IF_DURATION_WITHIN_FRACTION * 100).toFixed(0)}% of expected (${videoDurationSec}s vs ${expectedDurationSec}s), skipping waveform match`,
+      );
+      return 0;
+    }
+
+    snippetFilename = await downloadYoutubeAudioSnippet(
+      youtubeVideoId,
+      INTRO_SYNC_SEARCH_WINDOW_SEC,
+    );
+
+    const [searchPcm, referencePcm] = await Promise.all([
+      decodeToPcm(snippetFilename, INTRO_SYNC_SEARCH_WINDOW_SEC),
+      decodeToPcm(oggBuffer, INTRO_SYNC_REFERENCE_SEC),
+    ]);
+
+    const offsetMs = findBestIntroOffsetMs(
+      computeRmsEnvelope(referencePcm, INTRO_SYNC_ENVELOPE_WINDOW_MS),
+      computeRmsEnvelope(searchPcm, INTRO_SYNC_ENVELOPE_WINDOW_MS),
+      INTRO_SYNC_ENVELOPE_WINDOW_MS,
+      INTRO_SYNC_MAX_LAG_MS,
+      INTRO_SYNC_CONFIDENCE_THRESHOLD,
+    );
+
+    console.info(
+      `computeYoutubeIntroOffsetMs: video=${youtubeVideoId} offsetMs=${offsetMs}`,
+    );
+
+    return offsetMs;
+  } catch (e) {
+    console.error(
+      `computeYoutubeIntroOffsetMs failed for video ${youtubeVideoId}, falling back to no trim: ${e}`,
+    );
+    return 0;
+  } finally {
+    if (snippetFilename && fs.existsSync(snippetFilename)) {
+      fs.unlinkSync(snippetFilename);
+    }
+  }
 }
 
 function composeJoysoundVideoPromise(
@@ -438,6 +760,12 @@ function composeJoysoundVideoPromise(
   tempFilename: string,
   videoFilename: string,
   ffmpegLogFilename: string,
+  // How far into tempFilename the song's music actually starts (only
+  // meaningful when tempFilename is a downloaded YouTube video, which often
+  // has a non-song intro) - trims it off before compositing so the visuals
+  // aren't out of sync with the karaoke audio track. 0 for the default
+  // Joysound-provided video, which has no such intro.
+  introOffsetMs: number = 0,
 ): Promise<JoysoundVideoData> {
   return new Promise((resolve, reject) => {
     let videoPlaytime = 0;
@@ -445,6 +773,7 @@ function composeJoysoundVideoPromise(
     const ffmpegArgs = [
       "-stream_loop",
       "-1",
+      ...(introOffsetMs > 0 ? ["-ss", (introOffsetMs / 1000).toFixed(2)] : []),
       "-i",
       tempFilename,
       "-i",
@@ -818,6 +1147,16 @@ export function downloadJoysoundData(
   downloadQueue.push(downloadQueueItem);
 
   const songDataPromise = joysoundApi.getSongRawData(songId);
+
+  const introOffsetPromise: Promise<number> = queueItem.youtubeVideoId
+    ? songDataPromise.then((raw) =>
+        computeYoutubeIntroOffsetMs(
+          decodeJoysoundBase64Field(raw.ogg),
+          queueItem.youtubeVideoId!,
+        ),
+      )
+    : Promise.resolve(0);
+
   let videoDataPromise;
 
   if (queueItem.youtubeVideoId) {
@@ -845,22 +1184,13 @@ export function downloadJoysoundData(
 
   console.info(`Downloading Joysound video to ${videoFilename}`);
 
-  Promise.all([videoDataPromise, songDataPromise])
+  Promise.all([videoDataPromise, songDataPromise, introOffsetPromise])
     .then((values) => {
       const joysoundSongRawData = values[1];
+      const introOffsetMs = values[2];
 
-      const telopBase64 = joysoundSongRawData.telop;
-      const oggBase64 = joysoundSongRawData.ogg;
-
-      const telopBuffer = Buffer.from(
-        telopBase64.slice(30) + telopBase64.slice(0, 30),
-        "base64",
-      );
-
-      const oggBuffer = Buffer.from(
-        oggBase64.slice(30) + oggBase64.slice(0, 30),
-        "base64",
-      );
+      const telopBuffer = decodeJoysoundBase64Field(joysoundSongRawData.telop);
+      const oggBuffer = decodeJoysoundBase64Field(joysoundSongRawData.ogg);
 
       if (!fs.existsSync(telopFilename)) {
         fs.writeFileSync(telopFilename, telopBuffer);
@@ -873,6 +1203,7 @@ export function downloadJoysoundData(
         tempFilename,
         videoFilename,
         ffmpegLogFilename,
+        introOffsetMs,
       );
     })
     .then((data) => {
@@ -895,6 +1226,36 @@ export function downloadJoysoundData(
         );
       } else {
         pushSongToQueue(queueItem, pushToHead);
+      }
+    })
+    .catch((error) => {
+      console.error(
+        `Failed to prepare video for song ${songId} (youtubeVideoId=${queueItem.youtubeVideoId}): ${error}`,
+      );
+
+      removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+
+      if (fs.existsSync(tempFilename)) {
+        fs.unlinkSync(tempFilename);
+      }
+
+      // A custom YouTube background video is a nice-to-have - if fetching
+      // or compositing it fails for any reason, don't leave the queue
+      // request hanging forever. Fall back to the song's default video
+      // instead of failing the whole queue attempt.
+      if (queueItem.youtubeVideoId) {
+        console.info(
+          `Falling back to the default Joysound video for song ${songId}`,
+        );
+
+        downloadJoysoundData(
+          downloadQueue,
+          userIdentity,
+          joysoundApi,
+          { ...queueItem, youtubeVideoId: null },
+          pushToHead,
+          pushSongToQueue,
+        );
       }
     });
 }

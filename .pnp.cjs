@@ -94,6 +94,7 @@ const RAW_RUNTIME_STATE =
           ["@yarnpkg/pnpify", "npm:4.1.6"],\
           ["babel-loader", "virtual:1cb46121cac5c3b5fcafbbc2f2be3dbc61042f1d39014468aceb7329098980d765a877a7dd0cc051cfbceff2442aaf5c8fca8d7fe23fd2660746643d17e013bc#npm:10.0.0"],\
           ["babel-plugin-relay", "npm:20.1.1"],\
+          ["buffer", "npm:6.0.3"],\
           ["bufferutil", "npm:4.1.0"],\
           ["cargo-cp-artifact", "npm:0.1.9"],\
           ["classnames", "npm:2.5.1"],\
@@ -16078,6 +16079,7 @@ const RAW_RUNTIME_STATE =
           ["@yarnpkg/pnpify", "npm:4.1.6"],\
           ["babel-loader", "virtual:1cb46121cac5c3b5fcafbbc2f2be3dbc61042f1d39014468aceb7329098980d765a877a7dd0cc051cfbceff2442aaf5c8fca8d7fe23fd2660746643d17e013bc#npm:10.0.0"],\
           ["babel-plugin-relay", "npm:20.1.1"],\
+          ["buffer", "npm:6.0.3"],\
           ["bufferutil", "npm:4.1.0"],\
           ["cargo-cp-artifact", "npm:0.1.9"],\
           ["classnames", "npm:2.5.1"],\

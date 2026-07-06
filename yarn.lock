@@ -7601,7 +7601,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"buffer@npm:^6.0.3":
+"buffer@npm:^5.5.0||^6.0.0, buffer@npm:^6.0.3":
   version: 6.0.3
   resolution: "buffer@npm:6.0.3"
   dependencies:
@@ -12854,6 +12854,7 @@ __metadata:
     "@yarnpkg/pnpify": "npm:4.1.6"
     babel-loader: "npm:10.0.0"
     babel-plugin-relay: "npm:20.1.1"
+    buffer: "npm:^5.5.0||^6.0.0"
     bufferutil: "npm:4.1.0"
     cargo-cp-artifact: "npm:0.1.9"
     classnames: "npm:2.5.1"
