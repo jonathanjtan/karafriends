@@ -34,7 +34,7 @@ type StateType = usePitchShiftSemisQuery["response"]["pitchShiftSemis"];
 export default function usePitchShiftSemis() {
   const [pitchShiftSemis, setLocalPitchShiftSemis] = useState<StateType>(0);
   const [commit] = useMutation<usePitchShiftSemisMutation>(
-    pitchShiftSemisMutation
+    pitchShiftSemisMutation,
   );
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function usePitchShiftSemis() {
       fetchQuery<usePitchShiftSemisQuery>(
         environment,
         pitchShiftSemisQuery,
-        {}
+        {},
       ).subscribe({
         next: (response: usePitchShiftSemisQuery["response"]) =>
           setLocalPitchShiftSemis(response.pitchShiftSemis),
@@ -58,7 +58,7 @@ export default function usePitchShiftSemis() {
     const initialQuery = fetchQuery<usePitchShiftSemisQuery>(
       environment,
       pitchShiftSemisQuery,
-      {}
+      {},
     ).subscribe({
       next: (response: usePitchShiftSemisQuery["response"]) =>
         setLocalPitchShiftSemis(response.pitchShiftSemis),
@@ -73,7 +73,7 @@ export default function usePitchShiftSemis() {
           if (response)
             setLocalPitchShiftSemis(response.pitchShiftSemisChanged);
         },
-      }
+      },
     );
 
     return () => {
@@ -86,7 +86,7 @@ export default function usePitchShiftSemis() {
 
   const setPitchShiftSemis = (semis: StateType) => {
     setLocalPitchShiftSemis(semis);
-    commit({ variables: { semis: semis } });
+    commit({ variables: { semis } });
   };
 
   return { pitchShiftSemis, setPitchShiftSemis };
