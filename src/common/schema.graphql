@@ -28,6 +28,7 @@ type Query {
   songById(id: String!): Song!
   songsByName(name: String, first: Int, after: String): SongConnection!
   songHistory(first: Int, after: String): SongHistoryConnection!
+  suggestedYoutubeVideos(songId: String!): SuggestedYoutubeVideosResult!
   videoDownloadProgress(
     videoDownloadType: Int!
     songId: String!
@@ -387,6 +388,26 @@ type YoutubeVideoInfoError {
 }
 
 union YoutubeVideoInfoResult = YoutubeVideoInfo | YoutubeVideoInfoError
+
+type SuggestedYoutubeVideo {
+  videoId: String!
+  title: String!
+  author: String!
+  lengthSeconds: Int!
+  isLikelyOfficial: Boolean!
+}
+
+type SuggestedYoutubeVideos {
+  videos: [SuggestedYoutubeVideo!]!
+}
+
+type SuggestedYoutubeVideoError {
+  reason: String!
+}
+
+union SuggestedYoutubeVideosResult =
+  | SuggestedYoutubeVideos
+  | SuggestedYoutubeVideoError
 
 type NicoVideoInfo implements VideoInfo {
   author: String!

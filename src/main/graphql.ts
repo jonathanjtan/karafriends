@@ -36,6 +36,10 @@ import {
 import rawSchema from "inline-string:../common/schema.graphql";
 import karafriendsConfig, { KarafriendsConfig } from "../common/config";
 import {
+  decodeJoysoundBase64Field,
+  getSongDuration,
+} from "../common/joysoundParser";
+import {
   downloadDamVideo,
   downloadJoysoundData,
   downloadNicoVideo,
@@ -98,6 +102,48 @@ function dedupeBy<Item, Key>(items: Item[], key: (item: Item) => Key): Item[] {
   });
 }
 
+// DAM/Joysound's own search backends return results in their own relevance
+// order (Joysound: raw popularity; unclear/unordered for DAM), which often
+// buries an exact title match under loosely-related ones (e.g. searching
+// "tonight tonight tonight" doesn't surface the song literally titled
+// "TONIGHT，TONIGHT，TONIGHT" first). Stable-sort by match quality so exact
+// and prefix matches float to the top while otherwise preserving the
+// backend's own ordering within each tier.
+//
+// Titles routinely use full-width commas/spaces as separators (a common
+// convention for repeated-word JP titles) where a typed query would use
+// plain ASCII ones, so normalize punctuation/whitespace before comparing -
+// otherwise an otherwise-exact match never registers as tier 0.
+function normalizeForTitleMatch(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[,，、]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function titleMatchTier(title: string, keyword: string): number {
+  const normalizedTitle = normalizeForTitleMatch(title);
+  const normalizedKeyword = normalizeForTitleMatch(keyword);
+
+  if (!normalizedKeyword) return 2;
+  if (normalizedTitle === normalizedKeyword) return 0;
+  if (normalizedTitle.startsWith(normalizedKeyword)) return 1;
+  return 2;
+}
+
+function sortByTitleMatchTier<Item>(
+  items: Item[],
+  keyword: string,
+  getTitle: (item: Item) => string,
+): Item[] {
+  return [...items].sort(
+    (a, b) =>
+      titleMatchTier(getTitle(a), keyword) -
+      titleMatchTier(getTitle(b), keyword),
+  );
+}
+
 // DAM and Joysound's search backends only match Japanese-script keywords;
 // a pure-romaji query like "aidoru" returns zero results even though the
 // target title is stored as "アイドル". But not every romaji-looking query
@@ -149,6 +195,196 @@ async function searchWithRomajiFallback<T>(
     result = isEmpty(result) ? candidateResult : merge(result, candidateResult);
   }
   return result;
+}
+
+// Auto-generated "- Topic" uploads are audio-only (album art, no MV) and
+// show up in search alongside real uploads for the same track - never a
+// good pick for a background video.
+const TOPIC_CHANNEL_SUFFIX = " - Topic";
+
+// Titles containing any of these are essentially never the official/full
+// music video we want as a background video, even when duration happens to
+// line up.
+const EXCLUDED_TITLE_KEYWORDS = [
+  "cover",
+  "reaction",
+  "instrumental",
+  "off vocal",
+  "karaoke",
+  "nightcore",
+  "8d audio",
+  "midi",
+  "dance practice",
+  "lyrics",
+  "lyric",
+  "vietsub",
+  "engsub",
+  // Japanese-language equivalents - a huge fraction of covers/karaoke/lyric
+  // videos for JP songs are titled in Japanese, not English.
+  "カラオケ", // karaoke
+  "カバー", // cover
+  "歌ってみた", // "tried singing it" - amateur cover
+  "弾いてみた", // "tried playing it" - amateur instrumental cover
+  "弾き語り", // solo acoustic cover
+  "歌詞付き", // "with lyrics" - lyrics video
+  "歌詞動画", // lyrics video
+  "歌詞あり", // "has lyrics" - lyrics video
+  // JP songs are also heavily reposted with Korean fan subtitles/translations.
+  "가사", // lyrics
+  "번역", // translation
+  "자막", // subtitles
+  "커버", // cover
+  "ซับไทย", // Thai subtitles
+  "ライブ", // live performance
+];
+
+// "live" needs a word-boundary check rather than a plain substring match -
+// unlike the other keywords above, it collides with ordinary words that can
+// legitimately appear in a title ("alive", "delivery", "olive").
+const EXCLUDED_TITLE_WORD_PATTERNS = [/\blive\b/i];
+
+// MVs commonly run longer than the official track length (album-style
+// intros/outros); a much *shorter* result is almost always a TV-size edit
+// or truncated cover, which we want to exclude outright rather than just
+// deprioritize.
+const MAX_SHORTER_THAN_EXPECTED_SEC = 15;
+const MAX_LONGER_THAN_EXPECTED_SEC = 45;
+
+interface YoutubeSearchVideoItem {
+  readonly type?: string;
+  readonly id?: string;
+  readonly is_live?: boolean;
+  readonly title?: { text?: string };
+  readonly author?: { name?: string };
+  readonly duration?: { seconds?: number };
+}
+
+// Official uploads routinely run 20-45s longer than Joysound's own catalog
+// duration (extra intro/outro), which used to let a merely duration-closer
+// repost/lyrics-translation video outrank the genuine artist-channel
+// upload even after a same-size bonus/penalty - a fixed point bonus can
+// always be outweighed by a big enough duration gap. Rank by tier first
+// (how trustworthy the *source* is) and only use duration-closeness to
+// break ties within a tier, so a real match from the artist's own channel
+// always wins regardless of how long its intro is.
+//
+// A bare "official" substring in the title is not trustworthy on its own -
+// anyone can (and does) put "Official Video" in a cover/reupload's title
+// from an entirely unrelated channel (e.g. searching a Hige Dandism song
+// surfaced a "Novelbright" upload titled as if it were the official video).
+// The bracketed "[Official Video]" tag convention is a much stronger,
+// independent signal though - it's a deliberate, widely-recognized
+// first-party labeling convention that fan/cover channels don't typically
+// imitate, so it's trusted even without a channel-name match. This also
+// covers artists whose real channel uses a differently-scripted name than
+// Joysound's stored artist name (e.g. "Official髭男dism" vs. the channel's
+// own "OFFICIAL HIGE DANDISM"), where a text-based channel match can never
+// succeed.
+const OFFICIAL_VIDEO_TAG_PATTERN = /[([【（［]\s*official\b/i;
+
+function musicVideoCandidateTier(
+  candidate: { readonly author: string; readonly title: string },
+  artistName: string,
+): number {
+  const lowerAuthor = candidate.author.toLowerCase().trim();
+  const lowerArtistName = artistName.toLowerCase().trim();
+  const lowerTitle = candidate.title.toLowerCase();
+
+  const isExactArtistChannel =
+    !!lowerArtistName && lowerAuthor === lowerArtistName;
+  const isRelatedArtistChannel =
+    !!lowerArtistName && lowerAuthor.includes(lowerArtistName);
+  // Strip the artist's own name before checking for a bare "official"
+  // mention - some artists (e.g. "Official髭男dism") have brand names that
+  // themselves contain the word, which would otherwise look like a tag on
+  // every single one of their videos regardless of who uploaded it.
+  const titleWithoutArtistName = lowerArtistName
+    ? lowerTitle.split(lowerArtistName).join("")
+    : lowerTitle;
+  const isOfficialTitle = titleWithoutArtistName.includes("official");
+  const hasOfficialVideoTag = OFFICIAL_VIDEO_TAG_PATTERN.test(candidate.title);
+
+  if (
+    isExactArtistChannel ||
+    hasOfficialVideoTag ||
+    (isRelatedArtistChannel && isOfficialTitle)
+  ) {
+    return 0;
+  }
+
+  if (isRelatedArtistChannel) {
+    return 1;
+  }
+
+  return 2;
+}
+
+function pickMusicVideoCandidates(
+  videos: YoutubeSearchVideoItem[],
+  artistName: string,
+  songName: string,
+  expectedDurationSec: number,
+  maxCandidates: number,
+): SuggestedYoutubeVideo[] {
+  const candidates = videos
+    .filter((v) => v.type === "Video" && !v.is_live && v.id)
+    .map((v) => ({
+      videoId: v.id!,
+      title: v.title?.text ?? "",
+      author: v.author?.name ?? "",
+      lengthSeconds: v.duration?.seconds ?? 0,
+    }))
+    .filter((v) => v.lengthSeconds > 0)
+    .filter((v) => !v.author.endsWith(TOPIC_CHANNEL_SUFFIX))
+    // A channel whose name itself says "karaoke" is never the source of an
+    // official MV, regardless of what any individual title says.
+    .filter((v) => !/karaoke|カラオケ/i.test(v.author))
+    .filter((v) => {
+      const lowerTitle = v.title.toLowerCase();
+      return (
+        !EXCLUDED_TITLE_KEYWORDS.some((keyword) =>
+          lowerTitle.includes(keyword),
+        ) &&
+        !EXCLUDED_TITLE_WORD_PATTERNS.some((pattern) => pattern.test(v.title))
+      );
+    })
+    // A video whose title doesn't even mention the song is almost certainly
+    // a different song entirely (e.g. another upload from the same artist's
+    // channel) - this must be an outright exclusion, not just a lower tier,
+    // otherwise it can still win a tie-break against a correctly-titled but
+    // unverified-channel candidate purely on duration closeness.
+    .filter((v) => {
+      const normalizedSongName = normalizeForTitleMatch(songName);
+      return (
+        !normalizedSongName ||
+        normalizeForTitleMatch(v.title).includes(normalizedSongName)
+      );
+    })
+    .filter((v) => {
+      const delta = v.lengthSeconds - expectedDurationSec;
+      return (
+        delta >= -MAX_SHORTER_THAN_EXPECTED_SEC &&
+        delta <= MAX_LONGER_THAN_EXPECTED_SEC
+      );
+    });
+
+  candidates.sort((a, b) => {
+    const tierDiff =
+      musicVideoCandidateTier(a, artistName) -
+      musicVideoCandidateTier(b, artistName);
+
+    if (tierDiff !== 0) return tierDiff;
+
+    return (
+      Math.abs(a.lengthSeconds - expectedDurationSec) -
+      Math.abs(b.lengthSeconds - expectedDurationSec)
+    );
+  });
+
+  return candidates.slice(0, maxCandidates).map((candidate) => ({
+    ...candidate,
+    isLikelyOfficial: musicVideoCandidateTier(candidate, artistName) === 0,
+  }));
 }
 
 const nameYomiResolvers = {
@@ -239,6 +475,28 @@ interface YoutubeVideoInfoError {
 }
 
 type YoutubeVideoInfoResult = YoutubeVideoInfo | YoutubeVideoInfoError;
+
+interface SuggestedYoutubeVideo {
+  readonly videoId: string;
+  readonly title: string;
+  readonly author: string;
+  readonly lengthSeconds: number;
+  readonly isLikelyOfficial: boolean;
+}
+
+interface SuggestedYoutubeVideos {
+  readonly __typename: "SuggestedYoutubeVideos";
+  readonly videos: SuggestedYoutubeVideo[];
+}
+
+interface SuggestedYoutubeVideoError {
+  readonly __typename: "SuggestedYoutubeVideoError";
+  readonly reason: string;
+}
+
+type SuggestedYoutubeVideosResult =
+  | SuggestedYoutubeVideos
+  | SuggestedYoutubeVideoError;
 
 interface NicoVideoInfo extends VideoInfo {
   readonly __typename: "NicoVideoInfo";
@@ -787,22 +1045,30 @@ const resolvers = {
             afterInt,
             firstInt,
           ),
-      ).then((result) => ({
-        edges: result.map((song, i) => ({
-          node: {
-            id: song.selSongNo,
-            name: song.songName,
-            artistName: song.artistName,
+      ).then((result) => {
+        const sorted = sortByTitleMatchTier(
+          result as any[],
+          args.keyword,
+          (song) => song.songName,
+        );
+
+        return {
+          edges: sorted.map((song, i) => ({
+            node: {
+              id: song.selSongNo,
+              name: song.songName,
+              artistName: song.artistName,
+            },
+            cursor: (firstInt + i).toString(),
+          })),
+          pageInfo: {
+            hasPreviousPage: false,
+            hasNextPage: result.length === firstInt,
+            startCursor: "1",
+            endCursor: (firstInt + afterInt).toString(),
           },
-          cursor: (firstInt + i).toString(),
-        })),
-        pageInfo: {
-          hasPreviousPage: false,
-          hasNextPage: result.length === firstInt,
-          startCursor: "1",
-          endCursor: (firstInt + afterInt).toString(),
-        },
-      }));
+        };
+      });
     },
     joysoundArtistsByKeyword: (
       _: any,
@@ -866,24 +1132,32 @@ const resolvers = {
         }),
         (keyword) =>
           dataSources.dkwebsys.getMusicByKeyword(keyword, firstInt, afterInt),
-      ).then((result) => ({
-        edges: result.list.map((song, i) => ({
-          node: {
-            id: song.requestNo,
-            name: song.title,
-            nameYomi: song.titleYomi,
-            artistName: song.artist,
-            artistNameYomi: song.artistYomi,
+      ).then((result) => {
+        const sorted = sortByTitleMatchTier(
+          result.list,
+          args.name,
+          (song) => song.title,
+        );
+
+        return {
+          edges: sorted.map((song, i) => ({
+            node: {
+              id: song.requestNo,
+              name: song.title,
+              nameYomi: song.titleYomi,
+              artistName: song.artist,
+              artistNameYomi: song.artistYomi,
+            },
+            cursor: (firstInt + i).toString(),
+          })),
+          pageInfo: {
+            hasPreviousPage: false, // We can always do this because we don't support backward pagination
+            hasNextPage: firstInt + afterInt < result.data.totalCount,
+            startCursor: "0",
+            endCursor: (firstInt + afterInt).toString(),
           },
-          cursor: (firstInt + i).toString(),
-        })),
-        pageInfo: {
-          hasPreviousPage: false, // We can always do this because we don't support backward pagination
-          hasNextPage: firstInt + afterInt < result.data.totalCount,
-          startCursor: "0",
-          endCursor: (firstInt + afterInt).toString(),
-        },
-      }));
+        };
+      });
     },
     songById: (
       _: any,
@@ -1081,6 +1355,52 @@ const resolvers = {
           reason: "Failed getting video info. Maybe an invalid VideoID?",
         };
       }
+    },
+    suggestedYoutubeVideos: async (
+      _: any,
+      args: { songId: string },
+      { dataSources }: IDataSources,
+    ): Promise<SuggestedYoutubeVideosResult> => {
+      // getSongRawData is only needed later for expectedDurationSec, not for
+      // the search query itself - kick both the raw-data fetch and the
+      // YouTube search off as soon as songDetail resolves, rather than
+      // waiting for the (heavier) raw-data fetch before even starting the
+      // search.
+      const rawDataPromise = dataSources.joysound.getSongRawData(args.songId);
+      const songDetail = await dataSources.joysound.getSongDetail(args.songId);
+
+      const query = `${songDetail.artistName} ${songDetail.name}`;
+      const searchResultsPromise = dataSources.youtube.search(query, {
+        type: "video",
+      });
+
+      const [rawData, searchResults] = await Promise.all([
+        rawDataPromise,
+        searchResultsPromise,
+      ]);
+
+      const telopBuffer = decodeJoysoundBase64Field(rawData.telop);
+      const expectedDurationSec = getSongDuration(telopBuffer.buffer);
+
+      const videos = (searchResults.videos ??
+        []) as unknown as YoutubeSearchVideoItem[];
+
+      const candidates = pickMusicVideoCandidates(
+        videos,
+        songDetail.artistName,
+        songDetail.name,
+        expectedDurationSec,
+        5,
+      );
+
+      if (candidates.length === 0) {
+        return {
+          __typename: "SuggestedYoutubeVideoError",
+          reason: `No suitable music video found for "${query}"`,
+        };
+      }
+
+      return { __typename: "SuggestedYoutubeVideos", videos: candidates };
     },
     pitchShiftSemis: () => db.pitchShiftSemis,
     playbackState: () => db.playbackState,

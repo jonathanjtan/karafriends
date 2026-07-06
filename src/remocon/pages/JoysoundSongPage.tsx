@@ -1,14 +1,18 @@
+import formatDuration from "format-duration";
 import React, { useRef, useState } from "react";
-import { graphql, useLazyLoadQuery } from "react-relay";
+import { fetchQuery, graphql, useLazyLoadQuery } from "react-relay";
 import { Link, useParams } from "react-router";
 
+import environment from "../../common/graphqlEnvironment";
 import Button from "../components/Button";
 import JoysoundQueueButtons from "../components/JoysoundQueueButtons";
 import JoysoundYouTubeInfo from "../components/JoysoundYouTubeInfo";
+import { List, ListItem } from "../components/List";
 import { withLoader } from "../components/Loader";
 import SearchFormWrapper from "../components/SearchFormWrapper";
 import WeebText from "../components/WeebText";
 import { JoysoundSongPageQuery } from "./__generated__/JoysoundSongPageQuery.graphql";
+import { JoysoundSongPageSuggestedYoutubeVideosQuery } from "./__generated__/JoysoundSongPageSuggestedYoutubeVideosQuery.graphql";
 
 import { getVideoId as getYoutubeVideoId } from "./YouTubePage";
 
@@ -25,6 +29,35 @@ const joysoundSongPageQuery = graphql`
     }
   }
 `;
+
+const joysoundSongPageSuggestedYoutubeVideosQuery = graphql`
+  query JoysoundSongPageSuggestedYoutubeVideosQuery($songId: String!) {
+    suggestedYoutubeVideos(songId: $songId) {
+      ... on SuggestedYoutubeVideos {
+        __typename
+        videos {
+          videoId
+          title
+          author
+          lengthSeconds
+          isLikelyOfficial
+        }
+      }
+      ... on SuggestedYoutubeVideoError {
+        __typename
+        reason
+      }
+    }
+  }
+`;
+
+interface LuckyCandidate {
+  videoId: string;
+  title: string;
+  author: string;
+  lengthSeconds: number;
+  isLikelyOfficial: boolean;
+}
 
 type RouteParams = {
   id: string;
@@ -47,6 +80,60 @@ const JoysoundSongPage = () => {
   const [validatedYoutubeId, setValidatedYoutubeVideoId] = useState<string>("");
   const [waitForVideoIdInput, setWaitForVideoIdInput] =
     useState<boolean>(false);
+  const [luckyLoading, setLuckyLoading] = useState<boolean>(false);
+  const [luckyCandidates, setLuckyCandidates] = useState<
+    readonly LuckyCandidate[] | null
+  >(null);
+  const [luckyError, setLuckyError] = useState<string | null>(null);
+  const [showAllLuckyCandidates, setShowAllLuckyCandidates] =
+    useState<boolean>(false);
+
+  const clearLuckyState = () => {
+    setLuckyLoading(false);
+    setLuckyCandidates(null);
+    setLuckyError(null);
+    setShowAllLuckyCandidates(false);
+  };
+
+  const onClickImFeelingLucky = () => {
+    setLuckyLoading(true);
+    setLuckyCandidates(null);
+    setLuckyError(null);
+    setShowAllLuckyCandidates(false);
+
+    fetchQuery<JoysoundSongPageSuggestedYoutubeVideosQuery>(
+      environment,
+      joysoundSongPageSuggestedYoutubeVideosQuery,
+      { songId: song.id },
+    ).subscribe({
+      next: (queryData) => {
+        setLuckyLoading(false);
+
+        const result = queryData.suggestedYoutubeVideos;
+
+        if (result.__typename === "SuggestedYoutubeVideos") {
+          setLuckyCandidates(result.videos);
+        } else if (result.__typename === "SuggestedYoutubeVideoError") {
+          setLuckyError(result.reason);
+        }
+      },
+      error: (e: Error) => {
+        setLuckyLoading(false);
+        setLuckyError(e.message);
+      },
+    });
+  };
+
+  const onPickLuckyCandidate = (candidateVideoId: string) => {
+    setYoutubeVideoId(candidateVideoId);
+    clearLuckyState();
+
+    history.replaceState(
+      {},
+      "",
+      `#/joysoundSong/${song.id}/${candidateVideoId}`,
+    );
+  };
 
   const onSubmitYoutubeForm = (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,9 +157,22 @@ const JoysoundSongPage = () => {
   const detachVideo = () => {
     setYoutubeVideoId("");
     setValidatedYoutubeVideoId("");
+    clearLuckyState();
 
     history.replaceState({}, "", `#/joysoundSong/${song.id}`);
   };
+
+  const isConfidentLuckyPick =
+    !!luckyCandidates &&
+    luckyCandidates.length > 1 &&
+    luckyCandidates[0].isLikelyOfficial;
+  const visibleLuckyCandidates =
+    isConfidentLuckyPick && !showAllLuckyCandidates
+      ? luckyCandidates!.slice(0, 1)
+      : luckyCandidates;
+  const hiddenLuckyCandidateCount = luckyCandidates
+    ? luckyCandidates.length - (visibleLuckyCandidates?.length ?? 0)
+    : 0;
 
   return (
     <div>
@@ -91,11 +191,61 @@ const JoysoundSongPage = () => {
           Detach YouTube video
         </Button>
       ) : (
-        <Button
-          full
-          onClick={() => setWaitForVideoIdInput(!waitForVideoIdInput)}
-        >
-          {waitForVideoIdInput ? "Cancel" : "Set background video from YouTube"}
+        <>
+          <Button
+            full
+            onClick={() => setWaitForVideoIdInput(!waitForVideoIdInput)}
+          >
+            {waitForVideoIdInput
+              ? "Cancel"
+              : "Set background video from YouTube"}
+          </Button>
+          <Button
+            full
+            style={{ marginTop: 8 }}
+            disabled={luckyLoading}
+            onClick={onClickImFeelingLucky}
+          >
+            {luckyLoading
+              ? "Searching YouTube..."
+              : "Search background video from Youtube"}
+          </Button>
+        </>
+      )}
+      {luckyError && <p>{luckyError}</p>}
+      {visibleLuckyCandidates && (
+        <List>
+          {visibleLuckyCandidates.map((candidate) => (
+            <div
+              key={candidate.videoId}
+              onClick={() => onPickLuckyCandidate(candidate.videoId)}
+            >
+              <ListItem>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <img
+                    src={`https://i.ytimg.com/vi/${candidate.videoId}/mqdefault.jpg`}
+                    alt=""
+                    width={80}
+                    height={45}
+                    style={{ flexShrink: 0, objectFit: "cover" }}
+                  />
+                  <div>
+                    <div>{candidate.title}</div>
+                    <div>
+                      {candidate.author} •{" "}
+                      {formatDuration(candidate.lengthSeconds * 1000)}
+                    </div>
+                  </div>
+                </div>
+              </ListItem>
+            </div>
+          ))}
+        </List>
+      )}
+      {hiddenLuckyCandidateCount > 0 && (
+        <Button full onClick={() => setShowAllLuckyCandidates(true)}>
+          Show {hiddenLuckyCandidateCount} more option
+          {hiddenLuckyCandidateCount === 1 ? "" : "s"}
         </Button>
       )}
       {waitForVideoIdInput ? (
