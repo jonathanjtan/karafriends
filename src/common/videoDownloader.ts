@@ -456,63 +456,46 @@ function downloadJoysoundYoutubeVideoPromise(
   });
 }
 
-// --- YouTube intro-offset detection (experimental, best-effort) ---
+// --- YouTube video-offset detection (experimental, best-effort) ---
 //
-// A downloaded YouTube MV often has a non-song intro (album art, a spoken
-// bit, a visual hook) before the actual track starts, which composeJoysound-
-// VideoPromise would otherwise play out of sync with the Joysound audio
-// track it always uses. We estimate how many seconds in the song actually
-// starts by cross-correlating a cheap amplitude envelope of the MV's own
-// audio against the karaoke track's audio, and trim that much off the
-// video before compositing. If the match isn't confident, we fall back to
-// no trim (0) rather than guessing.
+// A downloaded YouTube MV rarely lines up 1:1 with the Joysound karaoke
+// track it gets composited under: the MV may open with a non-song intro
+// (album art, a spoken bit, a visual hook), and the karaoke arrangement may
+// itself have extra material at the head (a count-off, a longer intro) that
+// the original recording doesn't. We estimate the signed offset between the
+// two by cross-correlating cheap amplitude envelopes of several windows of
+// the karaoke audio against the MV's own audio and taking the consensus.
+// Windows are sampled from *inside* the song rather than just its head,
+// because the head is exactly where karaoke arrangements diverge most from
+// the original (count-offs, re-arranged intros).
+//
+// A positive offset means the MV has extra head material: trim it off with
+// -ss when compositing. A negative offset means the karaoke track has extra
+// head material: delay the video by front-padding it with its frozen first
+// frame (padJoysoundVideoPromise). If no confident consensus emerges we
+// return null and leave the legacy duration-difference pad heuristic to do
+// its best.
+//
+// Known limitation: a single offset can't correct tempo drift (karaoke
+// re-recordings sometimes run fractions of a percent slower/faster than the
+// original master), so we anchor the head of the song - where a visual
+// mismatch throws the singer off the most - and accept the tail drifting by
+// up to a second or two.
 
-const INTRO_SYNC_SEARCH_WINDOW_SEC = 90;
 const INTRO_SYNC_REFERENCE_SEC = 20;
-const INTRO_SYNC_MAX_LAG_MS = 40000;
+const INTRO_SYNC_MAX_DECODE_SEC = 600;
+const INTRO_SYNC_MAX_OFFSET_MS = 40000;
 const INTRO_SYNC_CONFIDENCE_THRESHOLD = 0.5;
+const INTRO_SYNC_STRONG_CONFIDENCE_THRESHOLD = 0.75;
+const INTRO_SYNC_CLUSTER_TOLERANCE_MS = 1500;
+const INTRO_SYNC_CLUSTER_MIN_TOTAL_SCORE = 1.0;
+const INTRO_SYNC_FIRST_ANCHOR_SEC = 10;
+const INTRO_SYNC_ANCHOR_STEP_SEC = 15;
+const INTRO_SYNC_LAST_ANCHOR_SEC = 120;
 const INTRO_SYNC_ENVELOPE_WINDOW_MS = 100;
 const INTRO_SYNC_SAMPLE_RATE_HZ = 8000;
-// If the MV's total runtime is already within this fraction of the song's,
-// there's essentially no room for a meaningful intro - skip the whole
-// waveform match (which is the most failure-prone part of this feature)
-// rather than run it for no benefit.
-const INTRO_SYNC_SKIP_IF_DURATION_WITHIN_FRACTION = 0.01;
 
-function probeYoutubeVideoDurationSec(youtubeVideoId: string): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const env = { ...process.env };
-    delete process.env.http_proxy;
-
-    let stdout = "";
-
-    const ytdlp = spawn(
-      resourcePaths.ytdlp,
-      ["--skip-download", "--print", "duration", "--", youtubeVideoId],
-      { env, stdio: ["ignore", "pipe", "ignore"] },
-    );
-
-    invariant(ytdlp.stdout);
-    ytdlp.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    ytdlp.on("error", reject);
-    ytdlp.on("exit", (code) => {
-      const duration = parseFloat(stdout.trim());
-      if (code === 0 && Number.isFinite(duration)) {
-        resolve(duration);
-      } else {
-        reject(new Error(`yt-dlp duration probe exited with code ${code}`));
-      }
-    });
-  });
-}
-
-function downloadYoutubeAudioSnippet(
-  youtubeVideoId: string,
-  maxDurationSec: number,
-): Promise<string> {
+function downloadYoutubeAudio(youtubeVideoId: string): Promise<string> {
   if (!fs.existsSync(TEMP_FOLDER)) {
     fs.mkdirSync(TEMP_FOLDER);
   }
@@ -533,8 +516,6 @@ function downloadYoutubeAudioSnippet(
       [
         "-f",
         "ba",
-        "--download-sections",
-        `*0-${maxDurationSec}`,
         "--ffmpeg-location",
         resourcePaths.ffmpeg,
         "-o",
@@ -550,9 +531,7 @@ function downloadYoutubeAudioSnippet(
       if (code === 0 && fs.existsSync(outputFilename)) {
         resolve(outputFilename);
       } else {
-        reject(
-          new Error(`yt-dlp audio snippet download exited with code ${code}`),
-        );
+        reject(new Error(`yt-dlp audio download exited with code ${code}`));
       }
     });
   });
@@ -636,15 +615,20 @@ function computeRmsEnvelope(pcm: Buffer, windowMs: number): number[] {
   return envelope;
 }
 
-function pearsonCorrelation(a: number[], b: number[]): number {
-  const n = Math.min(a.length, b.length);
+function pearsonCorrelationAt(
+  a: number[],
+  aStart: number,
+  b: number[],
+  bStart: number,
+  n: number,
+): number {
   if (n === 0) return 0;
 
   let sumA = 0;
   let sumB = 0;
   for (let i = 0; i < n; i++) {
-    sumA += a[i];
-    sumB += b[i];
+    sumA += a[aStart + i];
+    sumB += b[bStart + i];
   }
   const meanA = sumA / n;
   const meanB = sumB / n;
@@ -653,8 +637,8 @@ function pearsonCorrelation(a: number[], b: number[]): number {
   let denomA = 0;
   let denomB = 0;
   for (let i = 0; i < n; i++) {
-    const da = a[i] - meanA;
-    const db = b[i] - meanB;
+    const da = a[aStart + i] - meanA;
+    const db = b[bStart + i] - meanB;
     numerator += da * db;
     denomA += da * da;
     denomB += db * db;
@@ -664,91 +648,143 @@ function pearsonCorrelation(a: number[], b: number[]): number {
   return denom === 0 ? 0 : numerator / denom;
 }
 
-// Finds the lag (in ms) into searchEnvelope where referenceEnvelope best
-// matches, or 0 if no candidate lag clears the confidence threshold.
-function findBestIntroOffsetMs(
-  referenceEnvelope: number[],
-  searchEnvelope: number[],
-  windowMs: number,
-  maxLagMs: number,
-  confidenceThreshold: number,
-): number {
-  const maxLagWindows = Math.floor(maxLagMs / windowMs);
-  let bestLagWindows = 0;
-  let bestScore = -Infinity;
+interface AnchorMatch {
+  anchorWindows: number;
+  offsetMs: number;
+  score: number;
+}
 
+// Cross-correlates INTRO_SYNC_REFERENCE_SEC-long windows of the karaoke
+// envelope (taken at several anchor points) against the whole video
+// envelope, then looks for a cluster of anchors that agree on the same
+// video-minus-karaoke offset. Returns the consensus offset in ms (positive:
+// video has extra head material; negative: karaoke does), or null if no
+// confident consensus exists.
+function estimateVideoOffsetMs(
+  karaokeEnvelope: number[],
+  videoEnvelope: number[],
+): number | null {
+  const windowMs = INTRO_SYNC_ENVELOPE_WINDOW_MS;
+  const referenceWindows = (INTRO_SYNC_REFERENCE_SEC * 1000) / windowMs;
+
+  const anchors: number[] = [];
   for (
-    let lag = 0;
-    lag <= maxLagWindows &&
-    lag + referenceEnvelope.length <= searchEnvelope.length;
-    lag++
+    let anchorSec = INTRO_SYNC_FIRST_ANCHOR_SEC;
+    anchorSec <= INTRO_SYNC_LAST_ANCHOR_SEC &&
+    (anchorSec * 1000) / windowMs + referenceWindows <= karaokeEnvelope.length;
+    anchorSec += INTRO_SYNC_ANCHOR_STEP_SEC
   ) {
-    const score = pearsonCorrelation(
-      referenceEnvelope,
-      searchEnvelope.slice(lag, lag + referenceEnvelope.length),
-    );
+    anchors.push((anchorSec * 1000) / windowMs);
+  }
+  // Very short track: fall back to matching what we have from the head.
+  if (anchors.length === 0 && referenceWindows <= karaokeEnvelope.length) {
+    anchors.push(0);
+  }
 
-    if (score > bestScore) {
-      bestScore = score;
-      bestLagWindows = lag;
+  const matches: AnchorMatch[] = [];
+
+  for (const anchorWindows of anchors) {
+    let bestLagWindows = 0;
+    let bestScore = -Infinity;
+
+    for (let lag = 0; lag + referenceWindows <= videoEnvelope.length; lag++) {
+      const score = pearsonCorrelationAt(
+        karaokeEnvelope,
+        anchorWindows,
+        videoEnvelope,
+        lag,
+        referenceWindows,
+      );
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestLagWindows = lag;
+      }
+    }
+
+    const offsetMs = (bestLagWindows - anchorWindows) * windowMs;
+
+    if (
+      bestScore >= INTRO_SYNC_CONFIDENCE_THRESHOLD &&
+      Math.abs(offsetMs) <= INTRO_SYNC_MAX_OFFSET_MS
+    ) {
+      matches.push({ anchorWindows, offsetMs, score: bestScore });
     }
   }
 
-  return bestScore >= confidenceThreshold ? bestLagWindows * windowMs : 0;
+  // Pick the cluster of mutually-agreeing offsets with the highest total
+  // score. Tolerance is loose enough to absorb slight tempo drift between
+  // the two recordings across anchor points.
+  let bestCluster: AnchorMatch[] = [];
+  let bestClusterScore = 0;
+
+  for (const seed of matches) {
+    const cluster = matches.filter(
+      (m) =>
+        Math.abs(m.offsetMs - seed.offsetMs) <= INTRO_SYNC_CLUSTER_TOLERANCE_MS,
+    );
+    const clusterScore = cluster.reduce((acc, m) => acc + m.score, 0);
+
+    if (clusterScore > bestClusterScore) {
+      bestCluster = cluster;
+      bestClusterScore = clusterScore;
+    }
+  }
+
+  const isConfident =
+    bestClusterScore >= INTRO_SYNC_CLUSTER_MIN_TOTAL_SCORE ||
+    (bestCluster.length === 1 &&
+      bestCluster[0].score >= INTRO_SYNC_STRONG_CONFIDENCE_THRESHOLD);
+
+  if (!isConfident) {
+    return null;
+  }
+
+  // Tempo drift makes the offset slide slowly over the song, so the anchor
+  // closest to the head gives the best estimate for where sync matters most.
+  const headMostMatch = bestCluster.reduce((best, m) =>
+    m.anchorWindows < best.anchorWindows ? m : best,
+  );
+
+  return headMostMatch.offsetMs;
 }
 
+// Estimates the signed offset (ms) between a YouTube video's audio and the
+// Joysound karaoke track. Positive: the video has extra head material that
+// should be trimmed. Negative: the karaoke track has extra head material,
+// so the video should be delayed. Null: no confident estimate.
 export async function computeYoutubeIntroOffsetMs(
   oggBuffer: Buffer,
   youtubeVideoId: string,
-): Promise<number> {
-  let snippetFilename: string | null = null;
+): Promise<number | null> {
+  let audioFilename: string | null = null;
 
   try {
-    const expectedDurationSec = getJoysoundOggPlaytime(oggBuffer) / 1000;
-    const videoDurationSec = await probeYoutubeVideoDurationSec(youtubeVideoId);
-    const relativeDelta =
-      expectedDurationSec > 0
-        ? Math.abs(videoDurationSec - expectedDurationSec) / expectedDurationSec
-        : Infinity;
+    audioFilename = await downloadYoutubeAudio(youtubeVideoId);
 
-    if (relativeDelta <= INTRO_SYNC_SKIP_IF_DURATION_WITHIN_FRACTION) {
-      console.info(
-        `computeYoutubeIntroOffsetMs: video=${youtubeVideoId} duration already within ${(INTRO_SYNC_SKIP_IF_DURATION_WITHIN_FRACTION * 100).toFixed(0)}% of expected (${videoDurationSec}s vs ${expectedDurationSec}s), skipping waveform match`,
-      );
-      return 0;
-    }
-
-    snippetFilename = await downloadYoutubeAudioSnippet(
-      youtubeVideoId,
-      INTRO_SYNC_SEARCH_WINDOW_SEC,
-    );
-
-    const [searchPcm, referencePcm] = await Promise.all([
-      decodeToPcm(snippetFilename, INTRO_SYNC_SEARCH_WINDOW_SEC),
-      decodeToPcm(oggBuffer, INTRO_SYNC_REFERENCE_SEC),
+    const [videoPcm, karaokePcm] = await Promise.all([
+      decodeToPcm(audioFilename, INTRO_SYNC_MAX_DECODE_SEC),
+      decodeToPcm(oggBuffer, INTRO_SYNC_MAX_DECODE_SEC),
     ]);
 
-    const offsetMs = findBestIntroOffsetMs(
-      computeRmsEnvelope(referencePcm, INTRO_SYNC_ENVELOPE_WINDOW_MS),
-      computeRmsEnvelope(searchPcm, INTRO_SYNC_ENVELOPE_WINDOW_MS),
-      INTRO_SYNC_ENVELOPE_WINDOW_MS,
-      INTRO_SYNC_MAX_LAG_MS,
-      INTRO_SYNC_CONFIDENCE_THRESHOLD,
+    const offsetMs = estimateVideoOffsetMs(
+      computeRmsEnvelope(karaokePcm, INTRO_SYNC_ENVELOPE_WINDOW_MS),
+      computeRmsEnvelope(videoPcm, INTRO_SYNC_ENVELOPE_WINDOW_MS),
     );
 
     console.info(
-      `computeYoutubeIntroOffsetMs: video=${youtubeVideoId} offsetMs=${offsetMs}`,
+      `computeYoutubeIntroOffsetMs: video=${youtubeVideoId} offsetMs=${offsetMs === null ? "no confident estimate" : offsetMs}`,
     );
 
     return offsetMs;
   } catch (e) {
     console.error(
-      `computeYoutubeIntroOffsetMs failed for video ${youtubeVideoId}, falling back to no trim: ${e}`,
+      `computeYoutubeIntroOffsetMs failed for video ${youtubeVideoId}: ${e}`,
     );
-    return 0;
+    return null;
   } finally {
-    if (snippetFilename && fs.existsSync(snippetFilename)) {
-      fs.unlinkSync(snippetFilename);
+    if (audioFilename && fs.existsSync(audioFilename)) {
+      fs.unlinkSync(audioFilename);
     }
   }
 }
@@ -760,33 +796,55 @@ function composeJoysoundVideoPromise(
   tempFilename: string,
   videoFilename: string,
   ffmpegLogFilename: string,
-  // How far into tempFilename the song's music actually starts (only
-  // meaningful when tempFilename is a downloaded YouTube video, which often
-  // has a non-song intro) - trims it off before compositing so the visuals
-  // aren't out of sync with the karaoke audio track. 0 for the default
-  // Joysound-provided video, which has no such intro.
-  introOffsetMs: number = 0,
+  // Signed video-vs-karaoke offset (only meaningful when tempFilename is a
+  // downloaded YouTube video). Positive: the video has that much extra head
+  // material - trim it off here so the visuals aren't out of sync with the
+  // karaoke audio track. Negative: the karaoke track has extra head
+  // material instead; the caller delays the video afterwards via
+  // padJoysoundVideoPromise, so here we just avoid looping the video (the
+  // pad would shift the loop point into view) and let it end early - the
+  // player holds the last frame. Null/0: no adjustment.
+  introOffsetMs: number | null = null,
 ): Promise<JoysoundVideoData> {
   return new Promise((resolve, reject) => {
     let videoPlaytime = 0;
 
-    const ffmpegArgs = [
-      "-stream_loop",
-      "-1",
-      ...(introOffsetMs > 0 ? ["-ss", (introOffsetMs / 1000).toFixed(2)] : []),
-      "-i",
-      tempFilename,
-      "-i",
-      "-",
-      "-c",
-      "copy",
-      "-shortest",
-      "-movflags",
-      "faststart",
-      "-f",
-      "mp4",
-      videoFilename,
-    ];
+    const ffmpegArgs =
+      introOffsetMs !== null && introOffsetMs < 0
+        ? [
+            "-i",
+            tempFilename,
+            "-i",
+            "-",
+            "-c",
+            "copy",
+            "-t",
+            `${getJoysoundOggPlaytime(oggBuffer)}ms`,
+            "-movflags",
+            "faststart",
+            "-f",
+            "mp4",
+            videoFilename,
+          ]
+        : [
+            "-stream_loop",
+            "-1",
+            ...(introOffsetMs !== null && introOffsetMs > 0
+              ? ["-ss", (introOffsetMs / 1000).toFixed(2)]
+              : []),
+            "-i",
+            tempFilename,
+            "-i",
+            "-",
+            "-c",
+            "copy",
+            "-shortest",
+            "-movflags",
+            "faststart",
+            "-f",
+            "mp4",
+            videoFilename,
+          ];
 
     const onStderrData = (ffmpegData: Buffer) => {
       const ffmpegLog = ffmpegData.toString();
@@ -848,6 +906,11 @@ function padJoysoundVideoPromise(
     queueItem: JoysoundQueueItem,
     pushToHead: boolean,
   ) => QueueSongResult,
+  // When set, front-pad the video by exactly this many ms (a measured
+  // karaoke-has-extra-head-material delay from computeYoutubeIntroOffsetMs)
+  // instead of the legacy heuristic of assuming the video and song should
+  // end together.
+  overridePadMs: number | null = null,
 ): Promise<number> {
   const videoBaseFilename = videoFilename.substr(0, videoFilename.length - 4);
 
@@ -929,7 +992,10 @@ function padJoysoundVideoPromise(
     })
     .then(() => {
       return new Promise<number>((resolve, reject) => {
-        const offset = Math.max(data.songPlaytime - data.videoPlaytime, 0);
+        const offset =
+          overridePadMs !== null
+            ? overridePadMs
+            : Math.max(data.songPlaytime - data.videoPlaytime, 0);
 
         const ffmpegArgs = [
           "-stream_loop",
@@ -1024,7 +1090,13 @@ function padJoysoundVideoPromise(
           "1:v",
           "-c",
           "copy",
-          "-shortest",
+          // With a measured pad the video usually doesn't span the whole
+          // song - cap at the song length instead of truncating the audio
+          // to the video (-shortest); the player holds the last frame for
+          // whatever the video doesn't cover.
+          ...(overridePadMs !== null
+            ? ["-t", `${data.songPlaytime}ms`]
+            : ["-shortest"]),
           "-y",
           videoOutFilename,
         ];
@@ -1148,14 +1220,18 @@ export function downloadJoysoundData(
 
   const songDataPromise = joysoundApi.getSongRawData(songId);
 
-  const introOffsetPromise: Promise<number> = queueItem.youtubeVideoId
+  // Signed video-vs-karaoke offset; null when no confident estimate (see
+  // computeYoutubeIntroOffsetMs). Captured for the post-compose pad decision.
+  let measuredIntroOffsetMs: number | null = null;
+
+  const introOffsetPromise: Promise<number | null> = queueItem.youtubeVideoId
     ? songDataPromise.then((raw) =>
         computeYoutubeIntroOffsetMs(
           decodeJoysoundBase64Field(raw.ogg),
           queueItem.youtubeVideoId!,
         ),
       )
-    : Promise.resolve(0);
+    : Promise.resolve(null);
 
   let videoDataPromise;
 
@@ -1187,7 +1263,7 @@ export function downloadJoysoundData(
   Promise.all([videoDataPromise, songDataPromise, introOffsetPromise])
     .then((values) => {
       const joysoundSongRawData = values[1];
-      const introOffsetMs = values[2];
+      measuredIntroOffsetMs = values[2];
 
       const telopBuffer = decodeJoysoundBase64Field(joysoundSongRawData.telop);
       const oggBuffer = decodeJoysoundBase64Field(joysoundSongRawData.ogg);
@@ -1203,7 +1279,7 @@ export function downloadJoysoundData(
         tempFilename,
         videoFilename,
         ffmpegLogFilename,
-        introOffsetMs,
+        measuredIntroOffsetMs,
       );
     })
     .then((data) => {
@@ -1214,8 +1290,27 @@ export function downloadJoysoundData(
 
       if (
         queueItem.youtubeVideoId &&
+        measuredIntroOffsetMs !== null &&
+        measuredIntroOffsetMs < 0
+      ) {
+        // The karaoke track has extra head material (e.g. a count-off):
+        // delay the video by the measured amount.
+        return padJoysoundVideoPromise(
+          data,
+          videoFilename,
+          ffmpegLogFilename,
+          queueItem,
+          pushToHead,
+          pushSongToQueue,
+          -measuredIntroOffsetMs,
+        );
+      } else if (
+        queueItem.youtubeVideoId &&
+        measuredIntroOffsetMs === null &&
         Math.abs(data.songDuration - data.videoPlaytime) < 10000
       ) {
+        // No confident waveform measurement - fall back to the legacy
+        // heuristic of assuming the video and song should end together.
         return padJoysoundVideoPromise(
           data,
           videoFilename,
