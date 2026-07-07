@@ -25,6 +25,10 @@ const BGM_STORAGE_KEY = "bgmTrack";
 const BGM_VOLUME_STORAGE_KEY = "bgmVolume";
 const DEFAULT_BGM_VOLUME = 0.3;
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
+const GUIDE_MELODY_VOLUME_STORAGE_KEY = "guideMelodyVolume";
+// 1.0 = the level Joysound's center-channel guide melody has always played
+// at (the standard 3.0-to-stereo downmix).
+const DEFAULT_GUIDE_MELODY_VOLUME = 1.0;
 
 interface SavedMic {
   name: string;
@@ -99,6 +103,20 @@ function App(props: {
     localStorage.setItem(BGM_VOLUME_STORAGE_KEY, volume.toString());
     _setBgmVolume(volume);
   };
+
+  const [guideMelodyVolume, _setGuideMelodyVolume] = useState<number>(() => {
+    const stored = localStorage.getItem(GUIDE_MELODY_VOLUME_STORAGE_KEY);
+    return stored === null ? DEFAULT_GUIDE_MELODY_VOLUME : Number(stored);
+  });
+
+  const setGuideMelodyVolume = (volume: number) => {
+    localStorage.setItem(GUIDE_MELODY_VOLUME_STORAGE_KEY, volume.toString());
+    _setGuideMelodyVolume(volume);
+  };
+
+  useEffect(() => {
+    props.audio.guideMelodyGain(guideMelodyVolume);
+  }, [props.audio, guideMelodyVolume]);
 
   const [oledFriendly, _setOledFriendly] = useState<boolean>(
     () => localStorage.getItem(OLED_FRIENDLY_STORAGE_KEY) === "true",
@@ -276,6 +294,20 @@ function App(props: {
               volume={bgmVolume}
               onVolumeChange={setBgmVolume}
             />
+            <p>
+              Guide Melody (Joysound): {Math.round(guideMelodyVolume * 100)}%
+            </p>
+            <p className="range-field">
+              <input
+                type="range"
+                min="0"
+                max="150"
+                value={Math.round(guideMelodyVolume * 100)}
+                onChange={(e) =>
+                  setGuideMelodyVolume(Number(e.target.value) / 100)
+                }
+              />
+            </p>
             <div className="switch">
               <label>
                 OLED Mode

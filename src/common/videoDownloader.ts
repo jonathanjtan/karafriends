@@ -12,6 +12,7 @@ import {
   UserIdentity,
 } from "../main/graphql";
 import { JoysoundAPI, JoysoundSongRawData } from "../main/joysoundApi";
+import { ensureJoysoundGuideMelody } from "../main/joysoundMelody";
 
 import { decodeJoysoundBase64Field, getSongDuration } from "./joysoundParser";
 
@@ -53,7 +54,7 @@ const winResourcePaths: ResourcePaths = {
   ytdlp: `${extraResourcesPath}ytdlp/yt-dlp.exe`,
 };
 
-const resourcePaths: ResourcePaths =
+export const resourcePaths: ResourcePaths =
   process.platform === "win32"
     ? winResourcePaths
     : process.platform === "darwin"
@@ -1177,6 +1178,11 @@ export function downloadJoysoundData(
         playtime: getSongDuration(telopBuffer.buffer),
       };
 
+      // The composited video's audio stream is the ogg (copied), so it can
+      // seed guide-melody extraction when the melody cache is missing (e.g.
+      // songs downloaded before this feature existed).
+      ensureJoysoundGuideMelody(songId, { mediaFilename: videoFilename });
+
       pushSongToQueue(queueItem, pushToHead);
       return;
     } else {
@@ -1271,6 +1277,8 @@ export function downloadJoysoundData(
       if (!fs.existsSync(telopFilename)) {
         fs.writeFileSync(telopFilename, telopBuffer);
       }
+
+      ensureJoysoundGuideMelody(songId, { oggBuffer });
 
       return composeJoysoundVideoPromise(
         songId,

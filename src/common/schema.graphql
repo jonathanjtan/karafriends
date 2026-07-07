@@ -314,6 +314,7 @@ type JoysoundQueueItem implements QueueItemInterface {
   userIdentity: UserIdentity!
   isRomaji: Boolean!
   youtubeVideoId: String
+  scoringData: [Int!]
 }
 
 type YoutubeQueueItem implements QueueItemInterface {

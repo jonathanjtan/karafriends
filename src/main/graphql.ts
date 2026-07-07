@@ -49,6 +49,7 @@ import {
 } from "./../common/videoDownloader";
 import { DkwebsysAPI, MinseiAPI, MinseiCredentialsProvider } from "./damApi";
 import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
+import { getJoysoundScoringData } from "./joysoundMelody";
 
 import { memoize } from "lodash";
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
@@ -976,6 +977,9 @@ const resolvers = {
     ...nameYomiResolvers,
   },
   JoysoundQueueItem: {
+    scoringData(parent: JoysoundQueueItem) {
+      return getJoysoundScoringData(parent.songId);
+    },
     ...nameYomiResolvers,
   },
   YoutubeQueueItem: {

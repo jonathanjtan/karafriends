@@ -42,6 +42,7 @@ const popSongMutation = graphql`
         artistName
         isRomaji
         youtubeVideoId
+        scoringData
       }
       ... on YoutubeQueueItem {
         __typename
@@ -231,9 +232,17 @@ function Player(props: {
                 });
               break;
             case "JoysoundQueueItem":
-              setShouldShowPianoRoll(false);
+              // Guide-melody-derived note data; absent while extraction is
+              // still running or when the song has no usable melody channel.
+              const hasJoysoundScoringData =
+                !!popSong.scoringData && popSong.scoringData.length > 0;
+
+              setShouldShowPianoRoll(hasJoysoundScoringData);
+              setScoringData(popSong.scoringData ?? []);
               setShouldShowJoysound(true);
               setShouldShowAdhocLyrics(false);
+
+              props.audio.gain(NON_DAM_GAIN);
 
               const filenameSuffix = popSong.youtubeVideoId
                 ? popSong.youtubeVideoId
@@ -371,7 +380,7 @@ function Player(props: {
       videoAudioSrc.current = audioCtx.current.createMediaElementSource(
         videoRef.current,
       );
-      videoAudioSrc.current.connect(props.audio.sink());
+      videoAudioSrc.current.connect(props.audio.videoSink());
     }
   }, [props.audio, videoRef.current]);
 
