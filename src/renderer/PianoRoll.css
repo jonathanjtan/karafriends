@@ -1,9 +1,8 @@
 .pianoRollRoll {
+  /* top and height are set inline from the shared piano roll settings */
   position: absolute;
   left: 0;
-  top: 5%;
   width: 100%;
-  height: 30%;
   background: repeating-linear-gradient(
     rgba(50%, 75%, 100%, 0.7),
     rgba(50%, 75%, 100%, 0.7) 2px,
@@ -14,5 +13,7 @@
 }
 
 .pianoRollPog {
-  box-shadow: inset 0px 0px 50px white, 0px 0px 75px white;
+  box-shadow:
+    inset 0px 0px 50px white,
+    0px 0px 75px white;
 }

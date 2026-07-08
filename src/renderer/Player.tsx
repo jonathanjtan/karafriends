@@ -413,6 +413,7 @@ function Player(props: {
           isRomaji={joysoundIsRomaji}
           kuroshiro={props.kuroshiro}
           videoRef={videoRef}
+          pianoRollVisible={shouldShowPianoRoll}
         />
       ) : null}
       {shouldShowPianoRoll ? (

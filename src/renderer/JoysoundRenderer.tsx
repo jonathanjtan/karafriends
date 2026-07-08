@@ -10,7 +10,12 @@ import parseJoysoundData, {
   KuroshiroSingleton,
 } from "../common/joysoundParser";
 
-import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "../common/constants";
+import {
+  PIANO_ROLL_TOP_FRACTION,
+  RUBY_FONT_SIZE,
+  RUBY_FONT_STROKE,
+} from "../common/constants";
+import usePianoRollSize from "../common/hooks/usePianoRollSize";
 
 // XXX: These should be in their own file
 
@@ -730,6 +735,42 @@ function drawLyricsTexture(
   gl.drawArrays(gl.TRIANGLES, 0, positions.length / 2);
 }
 
+// A lyrics block's quad extends above its yPos by the furigana row and below
+// it by the main text row; see drawLyricsBlock and getLyricsBlockHeight.
+const LYRICS_BLOCK_ASCENT =
+  RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2 + 8 + TEXT_PADDING;
+const LYRICS_BLOCK_DESCENT =
+  MAIN_FONT_SIZE +
+  MAIN_FONT_STROKE * 2 +
+  RUBY_FONT_SIZE +
+  RUBY_FONT_STROKE * 2 +
+  TEXT_PADDING * 2 -
+  LYRICS_BLOCK_ASCENT;
+
+// Keeps lyrics rows from hiding behind the piano roll: if the telop places
+// any row above pianoRollClearance, shift every row down together, and only
+// compress their spacing when the remaining screen can't fit the original
+// span. With no piano roll on screen (clearance 0) this is an exact no-op.
+function remapLyricsYPos(
+  yPos: number,
+  minYPos: number,
+  maxYPos: number,
+  pianoRollClearance: number,
+): number {
+  const minAllowedYPos = pianoRollClearance + LYRICS_BLOCK_ASCENT;
+  if (pianoRollClearance <= 0 || minYPos >= minAllowedYPos) {
+    return yPos;
+  }
+
+  const maxAllowedYPos = SCREEN_HEIGHT - LYRICS_BLOCK_DESCENT;
+  const scale =
+    maxYPos > minYPos
+      ? Math.min(1, (maxAllowedYPos - minAllowedYPos) / (maxYPos - minYPos))
+      : 1;
+
+  return minAllowedYPos + (yPos - minYPos) * Math.max(scale, 0);
+}
+
 function drawLyricsBlock(
   gl: WebGL2RenderingContext,
   glBuffers: JoysoundDisplayBuffers,
@@ -737,6 +778,7 @@ function drawLyricsBlock(
   lyricsBlockTextures: LyricsBlockTextures[],
   index: number,
   refreshTime: number,
+  yPos: number,
 ) {
   const scrollXPos = Math.floor(getScrollXPos(lyricsBlock, refreshTime));
 
@@ -745,7 +787,7 @@ function drawLyricsBlock(
   );
 
   const currX = lyricsBlock.xPos;
-  const currY = lyricsBlock.yPos - (RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2) - 8;
+  const currY = yPos - (RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2) - 8;
 
   const rectWidth = getLyricsBlockWidth(lyricsBlock);
   const rectHeight = getLyricsBlockHeight(lyricsBlock);
@@ -785,9 +827,19 @@ export default function JoysoundRenderer(props: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   kuroshiro: KuroshiroSingleton;
   isRomaji: boolean;
+  pianoRollVisible: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
+
+  // In telop coordinates, the y below which lyrics rows must stay so they
+  // don't hide behind the piano roll. Held in a ref so the draw loop (which
+  // lives inside a one-shot effect) always sees the live synced size.
+  const { pianoRollSize } = usePianoRollSize();
+  const pianoRollClearanceRef = useRef(0);
+  pianoRollClearanceRef.current = props.pianoRollVisible
+    ? (PIANO_ROLL_TOP_FRACTION + pianoRollSize) * SCREEN_HEIGHT + 8
+    : 0;
 
   const updateSize = () => {
     const canvasElement = canvasRef.current;
@@ -828,6 +880,10 @@ export default function JoysoundRenderer(props: {
       const metadata = joysoundData.metadata;
       const lyricsData = joysoundData.lyrics;
       const timeline = joysoundData.timeline;
+
+      const lyricYPositions = lyricsData.map((block) => block.yPos);
+      const minLyricYPos = Math.min(...lyricYPositions);
+      const maxLyricYPos = Math.max(...lyricYPositions);
 
       invariant(canvasRef.current);
       const gl = canvasRef.current.getContext("webgl2", {
@@ -945,6 +1001,12 @@ export default function JoysoundRenderer(props: {
               lyricsBlockTextures,
               i,
               refreshTime,
+              remapLyricsYPos(
+                lyricsBlock.yPos,
+                minLyricYPos,
+                maxLyricYPos,
+                pianoRollClearanceRef.current,
+              ),
             );
           }
         }

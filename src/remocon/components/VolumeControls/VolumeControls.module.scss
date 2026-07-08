@@ -23,6 +23,27 @@
   accent-color: #1cb3ff;
 }
 
+.sizeButtons {
+  display: flex;
+  gap: 6px;
+}
+
+.sizeButton {
+  min-width: 32px;
+  padding: 2px 0;
+  border: 1px solid #1cb3ff;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #1cb3ff;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.sizeButtonActive {
+  background-color: #1cb3ff;
+  color: #fff;
+}
+
 .disabled {
   pointer-events: none;
   opacity: 0.5;

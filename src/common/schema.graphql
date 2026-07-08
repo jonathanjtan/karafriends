@@ -23,6 +23,8 @@ type Query {
   bgmVolume: Float!
   guideMelodyVolume: Float!
   nicoVideoInfo(videoId: String): NicoVideoInfoResult!
+  pianoRollOpacity: Float!
+  pianoRollSize: Float!
   pitchShiftSemis: Int!
   playbackState: PlaybackState!
   queue: [QueueItem!]!
@@ -65,6 +67,8 @@ type Mutation {
   removeSong(songId: String!, timestamp: String!): Boolean!
   setBgmVolume(volume: Float!): Boolean!
   setGuideMelodyVolume(volume: Float!): Boolean!
+  setPianoRollOpacity(opacity: Float!): Boolean!
+  setPianoRollSize(size: Float!): Boolean!
   setPitchShiftSemis(semis: Int!): Boolean!
   setPlaybackState(playbackState: PlaybackState!): Boolean!
 }
@@ -75,6 +79,8 @@ type Subscription {
   currentSongChanged: QueueItem
   emote: Emote!
   guideMelodyVolumeChanged: Float!
+  pianoRollOpacityChanged: Float!
+  pianoRollSizeChanged: Float!
   pitchShiftSemisChanged: Int!
   playbackStateChanged: PlaybackState!
   queueAdded: QueueItem!

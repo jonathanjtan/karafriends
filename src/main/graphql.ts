@@ -653,6 +653,8 @@ type NotARealDb = {
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   guideMelodyVolume: number;
   idToAdhocLyrics: Record<string, string[]>;
+  pianoRollOpacity: number;
+  pianoRollSize: number;
   pitchShiftSemis: number;
   playbackState: PlaybackState;
   songQueue: QueueItem[];
@@ -667,6 +669,8 @@ enum SubscriptionEvent {
   CurrentSongChanged = "CurrentSongChanged",
   Emote = "Emote",
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
+  PianoRollOpacityChanged = "PianoRollOpacityChanged",
+  PianoRollSizeChanged = "PianoRollSizeChanged",
   PitchShiftSemisChanged = "PitchShiftSemisChanged",
   PlaybackStateChanged = "PlaybackStateChanged",
   QueueAdded = "QueueAdded",
@@ -685,6 +689,14 @@ function clampVolume(volume: number, max: number): number {
   return Math.min(Math.max(volume, 0), max);
 }
 
+const DEFAULT_PIANO_ROLL_OPACITY = 1.0;
+const MAX_PIANO_ROLL_OPACITY = 1.0;
+// Height as a fraction of the player screen; the remocon offers
+// small/medium/large presets (0.2 / 0.3 / 0.4) within this range.
+const DEFAULT_PIANO_ROLL_SIZE = 0.3;
+const MIN_PIANO_ROLL_SIZE = 0.1;
+const MAX_PIANO_ROLL_SIZE = 0.5;
+
 // TODO: make this gql context instead of global
 let db: NotARealDb = {
   bgmVolume: DEFAULT_BGM_VOLUME,
@@ -692,6 +704,8 @@ let db: NotARealDb = {
   currentSongAdhocLyrics: [],
   guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
   idToAdhocLyrics: {},
+  pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
+  pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
   pitchShiftSemis: 0,
   playbackState: PlaybackState.WAITING,
   songQueue: [],
@@ -740,6 +754,8 @@ function loadDb(): NotARealDb {
     currentSongAdhocLyrics: [],
     guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
     idToAdhocLyrics: {},
+    pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
+    pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
     pitchShiftSemis: 0,
     playbackState: PlaybackState.WAITING,
     songQueue: [],
@@ -1428,6 +1444,8 @@ const resolvers = {
     },
     bgmVolume: () => db.bgmVolume,
     guideMelodyVolume: () => db.guideMelodyVolume,
+    pianoRollOpacity: () => db.pianoRollOpacity,
+    pianoRollSize: () => db.pianoRollSize,
     pitchShiftSemis: () => db.pitchShiftSemis,
     playbackState: () => db.playbackState,
     videoDownloadProgress: (
@@ -1708,6 +1726,25 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setPianoRollOpacity: (_: any, args: { opacity: number }): boolean => {
+      db.pianoRollOpacity = clampVolume(args.opacity, MAX_PIANO_ROLL_OPACITY);
+      pubsub.publish(SubscriptionEvent.PianoRollOpacityChanged, {
+        pianoRollOpacityChanged: db.pianoRollOpacity,
+      });
+      saveDb();
+      return true;
+    },
+    setPianoRollSize: (_: any, args: { size: number }): boolean => {
+      db.pianoRollSize = Math.min(
+        Math.max(args.size, MIN_PIANO_ROLL_SIZE),
+        MAX_PIANO_ROLL_SIZE,
+      );
+      pubsub.publish(SubscriptionEvent.PianoRollSizeChanged, {
+        pianoRollSizeChanged: db.pianoRollSize,
+      });
+      saveDb();
+      return true;
+    },
     setPitchShiftSemis: (_: any, args: { semis: number }): boolean => {
       db.pitchShiftSemis = args.semis;
       pubsub.publish(SubscriptionEvent.PitchShiftSemisChanged, {
@@ -1750,6 +1787,16 @@ const resolvers = {
     },
     emote: {
       subscribe: () => pubsub.asyncIterableIterator([SubscriptionEvent.Emote]),
+    },
+    pianoRollOpacityChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.PianoRollOpacityChanged,
+        ]),
+    },
+    pianoRollSizeChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.PianoRollSizeChanged]),
     },
     pitchShiftSemisChanged: {
       subscribe: () =>

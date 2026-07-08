@@ -6,6 +6,9 @@ import vec from "gl-vec2";
 import getNormals from "polyline-normals";
 import React, { useEffect, useRef, useState } from "react";
 
+import { PIANO_ROLL_TOP_FRACTION } from "../common/constants";
+import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
+import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl";
@@ -13,7 +16,12 @@ import noteFragShaderRaw from "./shaders/PianoRollNote.frag.glsl";
 import seekVertShaderRaw from "./shaders/PianoRollSeek.vert.glsl";
 import singleColorFragShaderRaw from "./shaders/PianoRollSingleColor.frag.glsl";
 
-const TIME_WIDTH_SECS = 5.0;
+// The visible window is TIME_WIDTH_SECS wide, with "now" pinned at
+// CURSOR_FRACTION from the left edge; notes scroll right-to-left past it.
+// 0.3 * 7s leaves ~4.9s of upcoming notes visible (matching the old
+// page-at-a-time view) plus ~2.1s of trailing pitch-detection history.
+const TIME_WIDTH_SECS = 7.0;
+const CURSOR_FRACTION = 0.3;
 const PITCH_RESOLUTION = 8;
 const STROKE_WIDTH = 0.03;
 
@@ -130,7 +138,7 @@ class NoteProgram extends ShaderProgram<[number, number]> {
         loadShader(gl, gl.FRAGMENT_SHADER, noteFragShaderRaw)!,
       ],
       ["position"],
-      ["time", "timeWidth", "canvasWidth"],
+      ["time", "timeWidth", "canvasWidth", "cursorFraction"],
       ["positions"],
     );
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
@@ -152,6 +160,7 @@ class NoteProgram extends ShaderProgram<[number, number]> {
       );
       this.gl.enableVertexAttribArray(this.attributeLocations.position);
       this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
+      this.gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
     }
 
     this.gl.uniform1f(this.uniformLocations.time, time);
@@ -161,7 +170,7 @@ class NoteProgram extends ShaderProgram<[number, number]> {
   }
 }
 
-class SeekProgram extends ShaderProgram<[number]> {
+class SeekProgram extends ShaderProgram<[]> {
   readonly triangleCount: number;
 
   constructor(gl: WebGLRenderingContext) {
@@ -172,7 +181,7 @@ class SeekProgram extends ShaderProgram<[number]> {
         loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
       ],
       ["position"],
-      ["time", "timeWidth", "color"],
+      ["cursorFraction", "color"],
       ["positions"],
     );
     const positions = quadToTriangles(-1.005, 1.0, -0.995, -1.0);
@@ -181,7 +190,7 @@ class SeekProgram extends ShaderProgram<[number]> {
     this.triangleCount = positions.length / 2;
   }
 
-  draw(time: number) {
+  draw() {
     if (this.gl.CURRENT_PROGRAM !== this.program) {
       this.gl.useProgram(this.program);
       this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
@@ -194,11 +203,9 @@ class SeekProgram extends ShaderProgram<[number]> {
         0,
       );
       this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
+      this.gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
       this.gl.uniform4fv(this.uniformLocations.color, [0.9, 0.9, 0.9, 1.0]);
     }
-
-    this.gl.uniform1f(this.uniformLocations.time, time);
 
     this.gl.drawArrays(this.gl.TRIANGLES, 0, this.triangleCount);
   }
@@ -215,7 +222,7 @@ class PitchProgram extends ShaderProgram<[number, number, number[]]> {
         loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
       ],
       ["position"],
-      ["time", "timeWidth", "color"],
+      ["time", "timeWidth", "color", "cursorFraction"],
       ["positions"],
     );
     this.color = color;
@@ -235,6 +242,7 @@ class PitchProgram extends ShaderProgram<[number, number, number[]]> {
       );
       this.gl.enableVertexAttribArray(this.attributeLocations.position);
       this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
+      this.gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
       this.gl.uniform4f(this.uniformLocations.color, ...this.color, 1.0);
     }
 
@@ -261,7 +269,7 @@ class FreeTimeProgram extends ShaderProgram<[number, number]> {
         loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
       ],
       ["position"],
-      ["time", "timeWidth", "canvasWidth", "color"],
+      ["time", "timeWidth", "canvasWidth", "color", "cursorFraction"],
       ["positions"],
     );
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
@@ -283,6 +291,7 @@ class FreeTimeProgram extends ShaderProgram<[number, number]> {
       );
       this.gl.enableVertexAttribArray(this.attributeLocations.position);
       this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
+      this.gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
       this.gl.uniform4fv(this.uniformLocations.color, [0, 0, 0, 0.5]);
     }
 
@@ -438,6 +447,11 @@ export default function PianoRoll(props: {
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
+
+  // Applied as plain CSS below; changes re-render the canvas element but
+  // don't re-run the GL effect (its deps only cover props identity).
+  const { pianoRollOpacity } = usePianoRollOpacity();
+  const { pianoRollSize } = usePianoRollSize();
 
   useEffect(() => {
     if (!canvasRef.current || !props.videoRef.current) return;
@@ -604,7 +618,7 @@ export default function PianoRoll(props: {
         }
       });
 
-      seekProgram.draw(time);
+      seekProgram.draw();
 
       canvasRef.current.classList.toggle(
         "pianoRollPog",
@@ -626,7 +640,10 @@ export default function PianoRoll(props: {
     }
 
     updateSize();
-    window.addEventListener("resize", updateSize);
+    // Watches the element, not just the window: the synced pianoRollSize
+    // setting changes the canvas height without a window resize.
+    const resizeObserver = new ResizeObserver(updateSize);
+    resizeObserver.observe(canvasRef.current);
 
     function clearPitchDetectionBuffers() {
       currentNoteIndex = 0;
@@ -641,7 +658,7 @@ export default function PianoRoll(props: {
     return () => {
       pitchPollers.forEach(([_1, _2, interval]) => clearInterval(interval));
       cancelAnimationFrame(animationFrameRequestRef.current);
-      window.removeEventListener("resize", updateSize);
+      resizeObserver.disconnect();
       if (props.videoRef.current) {
         props.videoRef.current.removeEventListener(
           "seeked",
@@ -651,5 +668,15 @@ export default function PianoRoll(props: {
     };
   }, [props]);
 
-  return <canvas className="pianoRollRoll" ref={canvasRef}></canvas>;
+  return (
+    <canvas
+      className="pianoRollRoll"
+      style={{
+        top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
+        height: `${pianoRollSize * 100}%`,
+        opacity: pianoRollOpacity,
+      }}
+      ref={canvasRef}
+    ></canvas>
+  );
 }
