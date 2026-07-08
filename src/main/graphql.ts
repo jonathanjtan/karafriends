@@ -648,8 +648,10 @@ interface VideoDownloadProgress {
 }
 
 type NotARealDb = {
+  bgmVolume: number;
   currentSong: QueueItem | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
+  guideMelodyVolume: number;
   idToAdhocLyrics: Record<string, string[]>;
   pitchShiftSemis: number;
   playbackState: PlaybackState;
@@ -660,19 +662,35 @@ type NotARealDb = {
 };
 
 enum SubscriptionEvent {
+  BgmVolumeChanged = "BgmVolumeChanged",
   CurrentSongAdhocLyricsChanged = "CurrentSongAdhocLyricsChanged",
   CurrentSongChanged = "CurrentSongChanged",
   Emote = "Emote",
+  GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
   PitchShiftSemisChanged = "PitchShiftSemisChanged",
   PlaybackStateChanged = "PlaybackStateChanged",
   QueueAdded = "QueueAdded",
   QueueChanged = "QueueChanged",
 }
 
+// 1.0 = the standard 3.0-to-stereo downmix level Joysound's guide melody has
+// always played at; see webAudio.ts.
+const DEFAULT_GUIDE_MELODY_VOLUME = 1.0;
+const MAX_GUIDE_MELODY_VOLUME = 1.5;
+const DEFAULT_BGM_VOLUME = 0.3;
+// BGM plays through a plain <audio> element, whose volume caps at 1.0.
+const MAX_BGM_VOLUME = 1.0;
+
+function clampVolume(volume: number, max: number): number {
+  return Math.min(Math.max(volume, 0), max);
+}
+
 // TODO: make this gql context instead of global
 let db: NotARealDb = {
+  bgmVolume: DEFAULT_BGM_VOLUME,
   currentSong: null,
   currentSongAdhocLyrics: [],
+  guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
   idToAdhocLyrics: {},
   pitchShiftSemis: 0,
   playbackState: PlaybackState.WAITING,
@@ -717,8 +735,10 @@ function saveDb() {
 
 function loadDb(): NotARealDb {
   return {
+    bgmVolume: DEFAULT_BGM_VOLUME,
     currentSong: null,
     currentSongAdhocLyrics: [],
+    guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
     idToAdhocLyrics: {},
     pitchShiftSemis: 0,
     playbackState: PlaybackState.WAITING,
@@ -1406,6 +1426,8 @@ const resolvers = {
 
       return { __typename: "SuggestedYoutubeVideos", videos: candidates };
     },
+    bgmVolume: () => db.bgmVolume,
+    guideMelodyVolume: () => db.guideMelodyVolume,
     pitchShiftSemis: () => db.pitchShiftSemis,
     playbackState: () => db.playbackState,
     videoDownloadProgress: (
@@ -1670,6 +1692,22 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setBgmVolume: (_: any, args: { volume: number }): boolean => {
+      db.bgmVolume = clampVolume(args.volume, MAX_BGM_VOLUME);
+      pubsub.publish(SubscriptionEvent.BgmVolumeChanged, {
+        bgmVolumeChanged: db.bgmVolume,
+      });
+      saveDb();
+      return true;
+    },
+    setGuideMelodyVolume: (_: any, args: { volume: number }): boolean => {
+      db.guideMelodyVolume = clampVolume(args.volume, MAX_GUIDE_MELODY_VOLUME);
+      pubsub.publish(SubscriptionEvent.GuideMelodyVolumeChanged, {
+        guideMelodyVolumeChanged: db.guideMelodyVolume,
+      });
+      saveDb();
+      return true;
+    },
     setPitchShiftSemis: (_: any, args: { semis: number }): boolean => {
       db.pitchShiftSemis = args.semis;
       pubsub.publish(SubscriptionEvent.PitchShiftSemisChanged, {
@@ -1690,6 +1728,16 @@ const resolvers = {
     },
   },
   Subscription: {
+    bgmVolumeChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.BgmVolumeChanged]),
+    },
+    guideMelodyVolumeChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.GuideMelodyVolumeChanged,
+        ]),
+    },
     currentSongAdhocLyricsChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([

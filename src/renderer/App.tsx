@@ -5,6 +5,8 @@ import { fetchQuery, graphql, useMutation, useSubscription } from "react-relay";
 
 import { HOSTNAME } from "../common/constants";
 import environment from "../common/graphqlEnvironment";
+import useBgmVolume from "../common/hooks/useBgmVolume";
+import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./App.css";
 import BackgroundMusic from "./BackgroundMusic";
@@ -22,13 +24,12 @@ import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServi
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 const BGM_STORAGE_KEY = "bgmTrack";
-const BGM_VOLUME_STORAGE_KEY = "bgmVolume";
-const DEFAULT_BGM_VOLUME = 0.3;
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
-const GUIDE_MELODY_VOLUME_STORAGE_KEY = "guideMelodyVolume";
-// 1.0 = the level Joysound's center-channel guide melody has always played
-// at (the standard 3.0-to-stereo downmix).
-const DEFAULT_GUIDE_MELODY_VOLUME = 1.0;
+// Volumes used to be renderer-local; they now live in the main process
+// (synced via useBgmVolume/useGuideMelodyVolume) so the remocon can control
+// them too. These keys only remain for the one-time migration below.
+const LEGACY_BGM_VOLUME_STORAGE_KEY = "bgmVolume";
+const LEGACY_GUIDE_MELODY_VOLUME_STORAGE_KEY = "guideMelodyVolume";
 
 interface SavedMic {
   name: string;
@@ -94,25 +95,28 @@ function App(props: {
     _setBgmTrack(filename);
   };
 
-  const [bgmVolume, _setBgmVolume] = useState<number>(() => {
-    const stored = localStorage.getItem(BGM_VOLUME_STORAGE_KEY);
-    return stored === null ? DEFAULT_BGM_VOLUME : Number(stored);
-  });
+  const { bgmVolume, setBgmVolume } = useBgmVolume();
+  const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
 
-  const setBgmVolume = (volume: number) => {
-    localStorage.setItem(BGM_VOLUME_STORAGE_KEY, volume.toString());
-    _setBgmVolume(volume);
-  };
+  useEffect(() => {
+    const storedBgmVolume = localStorage.getItem(LEGACY_BGM_VOLUME_STORAGE_KEY);
+    if (storedBgmVolume !== null) {
+      if (Number.isFinite(Number(storedBgmVolume))) {
+        setBgmVolume(Number(storedBgmVolume));
+      }
+      localStorage.removeItem(LEGACY_BGM_VOLUME_STORAGE_KEY);
+    }
 
-  const [guideMelodyVolume, _setGuideMelodyVolume] = useState<number>(() => {
-    const stored = localStorage.getItem(GUIDE_MELODY_VOLUME_STORAGE_KEY);
-    return stored === null ? DEFAULT_GUIDE_MELODY_VOLUME : Number(stored);
-  });
-
-  const setGuideMelodyVolume = (volume: number) => {
-    localStorage.setItem(GUIDE_MELODY_VOLUME_STORAGE_KEY, volume.toString());
-    _setGuideMelodyVolume(volume);
-  };
+    const storedGuideMelodyVolume = localStorage.getItem(
+      LEGACY_GUIDE_MELODY_VOLUME_STORAGE_KEY,
+    );
+    if (storedGuideMelodyVolume !== null) {
+      if (Number.isFinite(Number(storedGuideMelodyVolume))) {
+        setGuideMelodyVolume(Number(storedGuideMelodyVolume));
+      }
+      localStorage.removeItem(LEGACY_GUIDE_MELODY_VOLUME_STORAGE_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     props.audio.guideMelodyGain(guideMelodyVolume);
