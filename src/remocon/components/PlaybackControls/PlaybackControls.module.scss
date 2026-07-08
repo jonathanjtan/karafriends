@@ -8,6 +8,27 @@
   color: #fff;
 }
 
+.guideMelody {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+  color: #fff;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.guideMelodySlider {
+  flex: 1;
+  margin: 0;
+  accent-color: #fff;
+}
+
+.guideMelodyValue {
+  min-width: 40px;
+  text-align: right;
+}
+
 .disabled {
   pointer-events: none;
   color: #ccc;

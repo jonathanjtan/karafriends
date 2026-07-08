@@ -12,6 +12,7 @@ export default class KarafriendsAudio {
   private vocoderNode: AudioWorkletNode | null;
   private videoInputNode: GainNode;
   private guideMelodyGainNode: GainNode;
+  private guideMelodySynthGainNode: GainNode;
 
   audioContext: AudioContext;
 
@@ -19,6 +20,9 @@ export default class KarafriendsAudio {
     this.audioContext = new AudioContext();
     this.gainNode = this.audioContext.createGain();
     this.gainNode.connect(this.audioContext.destination);
+
+    this.guideMelodySynthGainNode = this.audioContext.createGain();
+    this.guideMelodySynthGainNode.connect(this.gainNode);
 
     this.videoInputNode = this.audioContext.createGain();
     const splitterNode = this.audioContext.createChannelSplitter(3);
@@ -72,9 +76,13 @@ export default class KarafriendsAudio {
     this.gainNode.gain.value = gain;
   }
 
-  // 1.0 reproduces the default downmix level; 0 mutes the guide melody.
+  // One knob for both guide melody sources: for Joysound's real FC channel,
+  // 1.0 reproduces the default downmix level; for the synthesized DAM guide
+  // (see damGuideMelody.ts), 1.0 is its calibrated natural level. 0 mutes
+  // both.
   guideMelodyGain(gain: number) {
     this.guideMelodyGainNode.gain.value = gain * CENTER_DOWNMIX_GAIN;
+    this.guideMelodySynthGainNode.gain.value = gain;
   }
 
   sink(): AudioNode {
@@ -88,5 +96,12 @@ export default class KarafriendsAudio {
   // loading.
   videoSink(): AudioNode {
     return this.videoInputNode;
+  }
+
+  // Entry point for the synthesized DAM guide melody. Like the video audio,
+  // it feeds the shared gain -> pitch shift chain, so tone shifts move the
+  // guide along with the song.
+  guideMelodySynthSink(): AudioNode {
+    return this.guideMelodySynthGainNode;
   }
 }

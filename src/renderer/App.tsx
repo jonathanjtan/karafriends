@@ -298,9 +298,7 @@ function App(props: {
               volume={bgmVolume}
               onVolumeChange={setBgmVolume}
             />
-            <p>
-              Guide Melody (Joysound): {Math.round(guideMelodyVolume * 100)}%
-            </p>
+            <p>Guide Melody: {Math.round(guideMelodyVolume * 100)}%</p>
             <p className="range-field">
               <input
                 type="range"

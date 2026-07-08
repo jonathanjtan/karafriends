@@ -256,6 +256,29 @@ export async function extractGuideMelodyNotes(
   return notes;
 }
 
+// Parses scoring data (DAM's reference data, or the equivalent built by
+// buildScoringData below) back into note records. Layout mirrors
+// PianoRoll.tsx: little-endian uint32 words, note count in word 1, note
+// records (startMs, endMs, midi, flags) from word 6.
+export function parseScoringData(data: ArrayLike<number>): GuideMelodyNote[] {
+  const words = new Uint32Array(Uint8Array.from(data).buffer);
+  if (words.length < 6) return [];
+
+  const noteCount = words[1];
+  const notesOffset = 6;
+  if (words.length < notesOffset + noteCount * 4) return [];
+
+  const notes: GuideMelodyNote[] = [];
+  for (let i = notesOffset; i < notesOffset + noteCount * 4; i += 4) {
+    notes.push({
+      startMs: words[i],
+      endMs: words[i + 1],
+      midi: words[i + 2],
+    });
+  }
+  return notes;
+}
+
 // Serializes notes into the same binary layout as DAM's scoring reference
 // data (see PianoRoll.tsx): little-endian uint32 words with counts in the
 // header, note records (startMs, endMs, midi, flags) from word 6, then

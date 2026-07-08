@@ -3,6 +3,7 @@ import React from "react";
 // tslint:disable-next-line:no-submodule-imports
 import { MdPause, MdPlayArrow, MdReplay, MdSkipNext } from "react-icons/md";
 
+import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import usePlaybackState from "../../../common/hooks/usePlaybackState";
 import useConfig from "../../hooks/useConfig";
 import useNowPlaying from "../../hooks/useNowPlaying";
@@ -12,6 +13,7 @@ import * as styles from "./PlaybackControls.module.scss";
 
 const PlaybackControls = () => {
   const { playbackState, setPlaybackState } = usePlaybackState();
+  const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
   const isPlaybackControllable = ["PLAYING", "PAUSED"].includes(playbackState);
 
   const config = useConfig();
@@ -32,11 +34,31 @@ const PlaybackControls = () => {
 
   const disabled = !isPlaybackControllable || !isUserEntitled;
   console.log(
-    `isPlaybackControllable=${isPlaybackControllable}, isUserEntitled=${isUserEntitled}, disabled=${disabled}`
+    `isPlaybackControllable=${isPlaybackControllable}, isUserEntitled=${isUserEntitled}, disabled=${disabled}`,
   );
 
   return (
     <>
+      {/* Unlike play/skip, the guide volume is persistent state that's fine
+          to adjust while nothing is playing; only supervised mode gates it. */}
+      <div
+        className={classnames(styles.guideMelody, {
+          [styles.disabled]: !isUserEntitled,
+        })}
+      >
+        <span>Guide Melody</span>
+        <input
+          className={styles.guideMelodySlider}
+          type="range"
+          min="0"
+          max="150"
+          value={Math.round(guideMelodyVolume * 100)}
+          onChange={(e) => setGuideMelodyVolume(Number(e.target.value) / 100)}
+        />
+        <span className={styles.guideMelodyValue}>
+          {Math.round(guideMelodyVolume * 100)}%
+        </span>
+      </div>
       <div
         className={classnames(styles.controls, { [styles.disabled]: disabled })}
       >

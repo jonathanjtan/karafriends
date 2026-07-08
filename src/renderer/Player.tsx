@@ -13,6 +13,7 @@ import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import AdhocLyrics from "./AdhocLyrics";
+import DamGuideMelodySynth from "./damGuideMelody";
 import JoysoundRenderer from "./JoysoundRenderer";
 import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
@@ -91,6 +92,7 @@ function Player(props: {
 
   const audioCtx = useRef<AudioContext | null>(null);
   const videoAudioSrc = useRef<MediaElementAudioSourceNode | null>(null);
+  const damGuideSynthRef = useRef<DamGuideMelodySynth | null>(null);
 
   let hls: Hls | null = null;
 
@@ -119,6 +121,11 @@ function Player(props: {
 
           if (hls) hls.destroy();
 
+          if (damGuideSynthRef.current) {
+            damGuideSynthRef.current.dispose();
+            damGuideSynthRef.current = null;
+          }
+
           switch (popSong.__typename) {
             case "DamQueueItem":
               if (!popSong.streamingUrls || !popSong.scoringData) {
@@ -138,6 +145,15 @@ function Player(props: {
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
               setScoringData(popSong.scoringData);
+
+              // DAM streams carry no audible guide melody; synthesize one
+              // from the scoring notes, at the shared guide melody volume.
+              damGuideSynthRef.current = new DamGuideMelodySynth(
+                props.audio.audioContext,
+                props.audio.guideMelodySynthSink(),
+                videoRef.current,
+                popSong.scoringData,
+              );
 
               // If caching is on this means we'll be serving almost everything through /static
               // which seems kind of stupid, but whatever
@@ -338,6 +354,11 @@ function Player(props: {
         clearTimeout(pollTimeoutRef.current);
 
         pollTimeoutRef.current = null;
+      }
+
+      if (damGuideSynthRef.current) {
+        damGuideSynthRef.current.dispose();
+        damGuideSynthRef.current = null;
       }
     };
   }, []);
