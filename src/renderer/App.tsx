@@ -1,6 +1,8 @@
 import M from "materialize-css";
 import "materialize-css/dist/css/materialize.css"; // tslint:disable-line:no-submodule-imports
 import React, { useEffect, useMemo, useRef, useState } from "react";
+// tslint:disable-next-line:no-submodule-imports
+import { FaChevronDown, FaChevronUp } from "react-icons/fa";
 import { fetchQuery, graphql, useMutation, useSubscription } from "react-relay";
 
 import { HOSTNAME } from "../common/constants";
@@ -25,6 +27,7 @@ import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServi
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
+const SETTINGS_COLLAPSED_STORAGE_KEY = "settingsCollapsed";
 // Volumes and the BGM track used to be renderer-local; they now live in the
 // main process (synced via useBgmVolume/useGuideMelodyVolume/useBgmTrack) so
 // the remocon can control them too. These keys only remain for the one-time
@@ -121,6 +124,21 @@ function App(props: {
   const [oledFriendly, _setOledFriendly] = useState<boolean>(
     () => localStorage.getItem(OLED_FRIENDLY_STORAGE_KEY) === "true",
   );
+
+  // Collapse the Settings section so the big screen shows only the Queue
+  // during regular operation. Persisted so it survives relaunches.
+  const [settingsCollapsed, _setSettingsCollapsed] = useState<boolean>(
+    () => localStorage.getItem(SETTINGS_COLLAPSED_STORAGE_KEY) === "true",
+  );
+
+  const setSettingsCollapsed = (value: boolean) => {
+    if (value) {
+      localStorage.setItem(SETTINGS_COLLAPSED_STORAGE_KEY, "true");
+    } else {
+      localStorage.removeItem(SETTINGS_COLLAPSED_STORAGE_KEY);
+    }
+    _setSettingsCollapsed(value);
+  };
 
   const setOledFriendly = (value: boolean) => {
     if (value) {
@@ -271,104 +289,112 @@ function App(props: {
       {sidebarVisible && (
         <div className="appSidebar col s1 grey lighten-3">
           <QRCode hostname={hostname} />
-          <nav className="center-align">Settings</nav>
-          <div className="section center-align">
-            <HostnameSetting hostname={hostname} onChange={setHostname} />
-            {mics.map((mic, i) => (
-              <MicrophoneSetting
-                key={mic.deviceId}
-                onChange={onChangeMic.bind(null, i)}
-                mic={mic}
-              />
-            ))}
-            <MicrophoneSetting
-              onChange={onChangeMic.bind(null, mics.length)}
-              mic={null}
-            />
-            <button className="btn" onClick={clearMics}>
-              Clear mics
-            </button>
-            <BackgroundMusicSetting
-              selected={bgmTrack}
-              onChange={setBgmTrack}
-              volume={bgmVolume}
-              onVolumeChange={setBgmVolume}
-            />
-            <p>Guide Melody: {Math.round(guideMelodyVolume * 100)}%</p>
-            <p className="range-field">
-              <input
-                type="range"
-                min="0"
-                max="150"
-                value={Math.round(guideMelodyVolume * 100)}
-                onChange={(e) =>
-                  setGuideMelodyVolume(Number(e.target.value) / 100)
-                }
-              />
-            </p>
-            <div className="switch">
-              <label>
-                OLED Mode
-                <input
-                  type="checkbox"
-                  checked={oledFriendly}
-                  onChange={(e) => setOledFriendly(e.target.checked)}
+          <nav
+            className="center-align settingsHeader"
+            onClick={() => setSettingsCollapsed(!settingsCollapsed)}
+          >
+            <span>Settings</span>
+            {settingsCollapsed ? <FaChevronDown /> : <FaChevronUp />}
+          </nav>
+          {!settingsCollapsed && (
+            <div className="section center-align">
+              <HostnameSetting hostname={hostname} onChange={setHostname} />
+              {mics.map((mic, i) => (
+                <MicrophoneSetting
+                  key={mic.deviceId}
+                  onChange={onChangeMic.bind(null, i)}
+                  mic={mic}
                 />
-                <span className="lever"></span>
-              </label>
+              ))}
+              <MicrophoneSetting
+                onChange={onChangeMic.bind(null, mics.length)}
+                mic={null}
+              />
+              <button className="btn" onClick={clearMics}>
+                Clear mics
+              </button>
+              <BackgroundMusicSetting
+                selected={bgmTrack}
+                onChange={setBgmTrack}
+                volume={bgmVolume}
+                onVolumeChange={setBgmVolume}
+              />
+              <p>Guide Melody: {Math.round(guideMelodyVolume * 100)}%</p>
+              <p className="range-field">
+                <input
+                  type="range"
+                  min="0"
+                  max="150"
+                  value={Math.round(guideMelodyVolume * 100)}
+                  onChange={(e) =>
+                    setGuideMelodyVolume(Number(e.target.value) / 100)
+                  }
+                />
+              </p>
+              <div className="switch">
+                <label>
+                  OLED Mode
+                  <input
+                    type="checkbox"
+                    checked={oledFriendly}
+                    onChange={(e) => setOledFriendly(e.target.checked)}
+                  />
+                  <span className="lever"></span>
+                </label>
+              </div>
+              <table className="centered">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>DAM</td>
+                    <td>
+                      <span className="serviceHealthIndicator">
+                        {isRecheckingServiceHealth ? (
+                          <span className="serviceHealthSpinner" />
+                        ) : serviceHealth?.damAvailable === false ? (
+                          "⚠️"
+                        ) : (
+                          "✅"
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Joysound</td>
+                    <td>
+                      <span className="serviceHealthIndicator">
+                        {isRecheckingServiceHealth ? (
+                          <span className="serviceHealthSpinner" />
+                        ) : serviceHealth?.joysoundAvailable === false ? (
+                          "⚠️"
+                        ) : (
+                          "✅"
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <button
+                className="btn"
+                disabled={isRecheckingServiceHealth}
+                onClick={() =>
+                  commitRecheckServiceHealth({
+                    variables: {},
+                    onCompleted: ({ recheckServiceHealth }) =>
+                      applyServiceHealth(recheckServiceHealth),
+                  })
+                }
+              >
+                Check now
+              </button>
             </div>
-            <table className="centered">
-              <thead>
-                <tr>
-                  <th>Service</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>DAM</td>
-                  <td>
-                    <span className="serviceHealthIndicator">
-                      {isRecheckingServiceHealth ? (
-                        <span className="serviceHealthSpinner" />
-                      ) : serviceHealth?.damAvailable === false ? (
-                        "⚠️"
-                      ) : (
-                        "✅"
-                      )}
-                    </span>
-                  </td>
-                </tr>
-                <tr>
-                  <td>Joysound</td>
-                  <td>
-                    <span className="serviceHealthIndicator">
-                      {isRecheckingServiceHealth ? (
-                        <span className="serviceHealthSpinner" />
-                      ) : serviceHealth?.joysoundAvailable === false ? (
-                        "⚠️"
-                      ) : (
-                        "✅"
-                      )}
-                    </span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <button
-              className="btn"
-              disabled={isRecheckingServiceHealth}
-              onClick={() =>
-                commitRecheckServiceHealth({
-                  variables: {},
-                  onCompleted: ({ recheckServiceHealth }) =>
-                    applyServiceHealth(recheckServiceHealth),
-                })
-              }
-            >
-              Check now
-            </button>
-          </div>
+          )}
           <nav className="center-align">Queue</nav>
           <Queue />
         </div>

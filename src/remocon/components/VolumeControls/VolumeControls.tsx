@@ -1,7 +1,7 @@
 import classnames from "classnames";
 import React from "react";
 // tslint:disable-next-line:no-submodule-imports
-import { FaChevronDown } from "react-icons/fa";
+import { FaChevronUp } from "react-icons/fa";
 
 import { BGM_TRACKS, SHUFFLE_VALUE } from "../../../common/bgmTracks";
 import useBgmTrack from "../../../common/hooks/useBgmTrack";
@@ -51,14 +51,9 @@ const VolumeControls = ({ onCollapse }: Props) => {
 
   return (
     <div className={styles.panel}>
-      <button
-        className={styles.header}
-        onClick={onCollapse}
-        aria-label="Collapse settings"
-      >
+      <div className={styles.header}>
         <span>Settings</span>
-        <FaChevronDown />
-      </button>
+      </div>
       <div className={classnames(styles.body, { [styles.disabled]: disabled })}>
         <div>
           <div className={styles.labelRow}>
@@ -144,13 +139,6 @@ const VolumeControls = ({ onCollapse }: Props) => {
         <div className={styles.serviceHealth}>
           <div className={styles.labelRow}>
             <span>Service Status</span>
-            <button
-              className={styles.recheckButton}
-              disabled={isRechecking}
-              onClick={recheck}
-            >
-              Check now
-            </button>
           </div>
           <div className={styles.healthRow}>
             <span>DAM</span>
@@ -160,7 +148,20 @@ const VolumeControls = ({ onCollapse }: Props) => {
             <span>Joysound</span>
             <span>{healthIcon(serviceHealth?.joysoundAvailable)}</span>
           </div>
+          <button
+            className={styles.recheckButton}
+            disabled={isRechecking}
+            onClick={recheck}
+          >
+            Check now
+          </button>
         </div>
+        {onCollapse && (
+          <button className={styles.collapseButton} onClick={onCollapse}>
+            <FaChevronUp />
+            <span>Collapse</span>
+          </button>
+        )}
       </div>
     </div>
   );

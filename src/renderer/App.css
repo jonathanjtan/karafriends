@@ -72,6 +72,20 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   color: #222;
 }
 
+.settingsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+/* Materialize .btn sits flush against the surrounding controls/labels;
+   give the sidebar buttons breathing room above and below. */
+.appSidebar .section .btn {
+  margin: 12px 0;
+}
+
 .serviceHealthIndicator {
   display: inline-flex;
   align-items: center;
