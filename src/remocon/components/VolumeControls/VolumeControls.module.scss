@@ -1,12 +1,75 @@
 .panel {
-  padding: 8px 12px 12px;
   background-color: #fff;
   color: #1cb3ff;
   animation: slideDown 0.15s ease-out;
 }
 
-.panel > div + div {
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid rgba(28, 179, 255, 0.2);
+  background: none;
+  color: inherit;
+  font-size: 15px;
+  font-weight: bold;
+  line-height: 20px;
+  cursor: pointer;
+}
+
+.body {
+  padding: 8px 12px 12px;
+}
+
+.body > div + div {
   margin-top: 8px;
+}
+
+.serviceHealth {
+  padding-top: 8px;
+  border-top: 1px solid rgba(28, 179, 255, 0.2);
+}
+
+.healthRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  line-height: 20px;
+  margin-top: 4px;
+}
+
+.recheckButton {
+  padding: 2px 8px;
+  border: 1px solid #1cb3ff;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #1cb3ff;
+  font-size: 12px;
+  line-height: 16px;
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.healthSpinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(28, 179, 255, 0.3);
+  border-top-color: #1cb3ff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .labelRow {

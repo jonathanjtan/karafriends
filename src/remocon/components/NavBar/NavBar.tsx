@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 // tslint:disable-next-line:no-submodule-imports
-import { FaHistory, FaHome, FaMoon, FaSlidersH, FaSun } from "react-icons/fa";
+import { FaCog, FaHistory, FaHome, FaMoon, FaSun } from "react-icons/fa";
 import { Link } from "react-router";
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import icon from "url:../../images/icon.png";
@@ -9,12 +9,26 @@ import VolumeControls from "../VolumeControls";
 import * as styles from "./NavBar.module.scss";
 
 const DARK_MODE_STORAGE_KEY = "darkMode";
+const SHOW_SETTINGS_STORAGE_KEY = "showSettings";
 
 const NavBar = () => {
   const [darkMode, setDarkMode] = useState<boolean>(
     () => localStorage.getItem(DARK_MODE_STORAGE_KEY) === "true",
   );
-  const [showVolumeControls, setShowVolumeControls] = useState(false);
+  // Persisted so the settings panel stays collapsed across reloads — during
+  // regular operation the phone should just show the queue, not the panel.
+  const [showSettings, _setShowSettings] = useState<boolean>(
+    () => localStorage.getItem(SHOW_SETTINGS_STORAGE_KEY) === "true",
+  );
+
+  const setShowSettings = (value: boolean) => {
+    if (value) {
+      localStorage.setItem(SHOW_SETTINGS_STORAGE_KEY, "true");
+    } else {
+      localStorage.removeItem(SHOW_SETTINGS_STORAGE_KEY);
+    }
+    _setShowSettings(value);
+  };
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -40,10 +54,10 @@ const NavBar = () => {
         <div className={styles.rightIcons}>
           <button
             className={styles.iconButton}
-            onClick={() => setShowVolumeControls(!showVolumeControls)}
-            aria-label="Toggle volume controls"
+            onClick={() => setShowSettings(!showSettings)}
+            aria-label="Toggle settings"
           >
-            <FaSlidersH />
+            <FaCog />
           </button>
           <button
             className={styles.iconButton}
@@ -57,7 +71,9 @@ const NavBar = () => {
           </Link>
         </div>
       </div>
-      {showVolumeControls && <VolumeControls />}
+      {showSettings && (
+        <VolumeControls onCollapse={() => setShowSettings(false)} />
+      )}
     </>
   );
 };
