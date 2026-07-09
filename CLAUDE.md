@@ -15,14 +15,8 @@ on-screen piano roll.
 
 ## Repository & workflow
 
-- **The fork is the primary repo.** `origin`/upstream `emmaworley/karafriends`
-  is treated as **abandonware** (PRs sit unreviewed). Active development
-  targets **`jonathanjtan/karafriends`** — git remote **`fork`** (SSH) — and
-  pushes to **`fork master`** directly. A few feature branches
-  (`add-bgm`, `fix-windows-build`, `oled-mode`) are kept around in case
-  upstream ever revives.
 - **Commits**: Conventional Commits, small and focused. End commit messages
-  with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
+  with Co-Author attributions.
   - On Windows PowerShell, pass multi-line messages via `git commit -F
 <file>` — inline here-strings mangle apostrophes/quotes and split the
     message into bogus pathspecs. Write the message to a scratch file and
