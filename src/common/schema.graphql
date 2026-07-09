@@ -233,6 +233,9 @@ input QueueJoysoundSongInput {
   userIdentity: UserIdentityInput!
   isRomaji: Boolean!
   youtubeVideoId: String
+  # Whether to time-align the attached YouTube video with the karaoke track
+  # (waveform sync / end-together pad). Null means enabled.
+  youtubeVideoSyncEnabled: Boolean
 }
 
 input QueueYoutubeSongInput {

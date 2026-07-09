@@ -496,7 +496,7 @@ const INTRO_SYNC_LAST_ANCHOR_SEC = 120;
 const INTRO_SYNC_ENVELOPE_WINDOW_MS = 100;
 const INTRO_SYNC_SAMPLE_RATE_HZ = 8000;
 
-function downloadYoutubeAudio(youtubeVideoId: string): Promise<string> {
+function downloadYoutubeAudioAttempt(youtubeVideoId: string): Promise<string> {
   if (!fs.existsSync(TEMP_FOLDER)) {
     fs.mkdirSync(TEMP_FOLDER);
   }
@@ -508,9 +508,14 @@ function downloadYoutubeAudio(youtubeVideoId: string): Promise<string> {
   }
 
   return new Promise((resolve, reject) => {
+    // A failure here silently costs the song its video sync, so unlike most
+    // spawns in this file the yt-dlp output is kept in a log file.
+    const logFilename = `${TEMP_FOLDER}/yt-${youtubeVideoId}-introsync.log`;
+    const logStream = fs.createWriteStream(logFilename);
+
     const env = { ...process.env };
     // Don't need a proxy to download from YouTube
-    delete process.env.http_proxy;
+    delete env.http_proxy;
 
     const ytdlp = spawn(
       resourcePaths.ytdlp,
@@ -524,17 +529,38 @@ function downloadYoutubeAudio(youtubeVideoId: string): Promise<string> {
         "--",
         youtubeVideoId,
       ],
-      { env, stdio: ["ignore", "ignore", "ignore"] },
+      { env, stdio: ["ignore", "pipe", "pipe"] },
     );
+
+    invariant(ytdlp.stdout);
+    invariant(ytdlp.stderr);
+
+    ytdlp.stdout.pipe(logStream);
+    ytdlp.stderr.pipe(logStream);
 
     ytdlp.on("error", reject);
     ytdlp.on("exit", (code) => {
       if (code === 0 && fs.existsSync(outputFilename)) {
         resolve(outputFilename);
       } else {
-        reject(new Error(`yt-dlp audio download exited with code ${code}`));
+        reject(
+          new Error(
+            `yt-dlp audio download exited with code ${code}, log=${logFilename}`,
+          ),
+        );
       }
     });
+  });
+}
+
+function downloadYoutubeAudio(youtubeVideoId: string): Promise<string> {
+  // YouTube intermittently rejects a format or throttles a request; one
+  // retry rescues most of those without meaningfully delaying the download.
+  return downloadYoutubeAudioAttempt(youtubeVideoId).catch((e) => {
+    console.error(
+      `Intro-sync audio download failed for ${youtubeVideoId}, retrying once: ${e}`,
+    );
+    return downloadYoutubeAudioAttempt(youtubeVideoId);
   });
 }
 
@@ -1154,8 +1180,15 @@ export function downloadJoysoundData(
 
   const songId = queueItem.songId;
 
+  // Older queue items (and older remocon clients) don't carry the flag;
+  // treat anything but an explicit false as enabled.
+  const syncEnabled = queueItem.youtubeVideoSyncEnabled !== false;
+
+  // The sync flag changes what ends up in the composited file, so an
+  // unsynced composite must not be served from (or poison) the synced cache
+  // entry, and vice versa.
   const videoFilenameSuffix = queueItem.youtubeVideoId
-    ? queueItem.youtubeVideoId
+    ? `${queueItem.youtubeVideoId}${syncEnabled ? "" : "-nosync"}`
     : "default";
 
   const filenamePrefix = `joysound-${songId}`;
@@ -1226,19 +1259,6 @@ export function downloadJoysoundData(
 
   const songDataPromise = joysoundApi.getSongRawData(songId);
 
-  // Signed video-vs-karaoke offset; null when no confident estimate (see
-  // computeYoutubeIntroOffsetMs). Captured for the post-compose pad decision.
-  let measuredIntroOffsetMs: number | null = null;
-
-  const introOffsetPromise: Promise<number | null> = queueItem.youtubeVideoId
-    ? songDataPromise.then((raw) =>
-        computeYoutubeIntroOffsetMs(
-          decodeJoysoundBase64Field(raw.ogg),
-          queueItem.youtubeVideoId!,
-        ),
-      )
-    : Promise.resolve(null);
-
   let videoDataPromise;
 
   if (queueItem.youtubeVideoId) {
@@ -1263,6 +1283,23 @@ export function downloadJoysoundData(
       );
     });
   }
+
+  // Signed video-vs-karaoke offset; null when no confident estimate (see
+  // computeYoutubeIntroOffsetMs). Captured for the post-compose pad decision.
+  // Chained after the video download so we don't hit YouTube with two
+  // concurrent requests for the same video - that invites throttling, and a
+  // failed audio fetch silently costs the song its sync.
+  let measuredIntroOffsetMs: number | null = null;
+
+  const introOffsetPromise: Promise<number | null> =
+    queueItem.youtubeVideoId && syncEnabled
+      ? Promise.all([videoDataPromise, songDataPromise]).then(([, raw]) =>
+          computeYoutubeIntroOffsetMs(
+            decodeJoysoundBase64Field(raw.ogg),
+            queueItem.youtubeVideoId!,
+          ),
+        )
+      : Promise.resolve(null);
 
   console.info(`Downloading Joysound video to ${videoFilename}`);
 
@@ -1314,6 +1351,7 @@ export function downloadJoysoundData(
         );
       } else if (
         queueItem.youtubeVideoId &&
+        syncEnabled &&
         measuredIntroOffsetMs === null &&
         Math.abs(data.songDuration - data.videoPlaytime) < 10000
       ) {

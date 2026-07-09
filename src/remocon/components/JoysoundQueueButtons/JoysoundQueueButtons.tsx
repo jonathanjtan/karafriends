@@ -9,12 +9,14 @@ interface Props {
   song: JoysoundSongPageQuery$data["joysoundSongDetail"];
   youtubeVideoId: string | null;
   validatedYoutubeId: string | null;
+  youtubeVideoSyncEnabled: boolean;
 }
 
 const JoysoundQueueButtons = ({
   song,
   youtubeVideoId,
   validatedYoutubeId,
+  youtubeVideoSyncEnabled,
 }: Props) => {
   const userIdentity = useUserIdentity();
   const [isDisabled, setIsDisabled] = useState(false);
@@ -25,6 +27,7 @@ const JoysoundQueueButtons = ({
         <JoysoundQueueButton
           song={song}
           youtubeVideoId={youtubeVideoId}
+          youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
           userIdentity={userIdentity}
           isRomaji={false}
           isDisabled={true}
@@ -34,6 +37,7 @@ const JoysoundQueueButtons = ({
         <JoysoundQueueButton
           song={song}
           youtubeVideoId={youtubeVideoId}
+          youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
           userIdentity={userIdentity}
           isRomaji={true}
           isDisabled={true}
@@ -47,6 +51,7 @@ const JoysoundQueueButtons = ({
         <JoysoundQueueButton
           song={song}
           youtubeVideoId={validatedYoutubeId}
+          youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
           userIdentity={userIdentity}
           isRomaji={false}
           isDisabled={isDisabled}
@@ -56,6 +61,7 @@ const JoysoundQueueButtons = ({
         <JoysoundQueueButton
           song={song}
           youtubeVideoId={validatedYoutubeId}
+          youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
           userIdentity={userIdentity}
           isRomaji={true}
           isDisabled={isDisabled}

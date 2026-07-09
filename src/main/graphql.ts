@@ -529,6 +529,8 @@ export interface JoysoundQueueItem extends QueueItemInterface {
   readonly __typename: "JoysoundQueueItem";
   readonly isRomaji: boolean;
   readonly youtubeVideoId: string | null;
+  // null/undefined (older clients and persisted queue items) means enabled.
+  readonly youtubeVideoSyncEnabled?: boolean | null;
 }
 
 interface DamQueueItem extends QueueItemInterface {
@@ -587,6 +589,7 @@ type QueueJoysoundSongInput = {
   readonly userIdentity: UserIdentity;
   readonly isRomaji: boolean;
   readonly youtubeVideoId: string | null;
+  readonly youtubeVideoSyncEnabled?: boolean | null;
 };
 
 type QueueYoutubeSongInput = {

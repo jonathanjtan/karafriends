@@ -78,6 +78,8 @@ const JoysoundSongPage = () => {
     params.youtubeVideoId || "",
   );
   const [validatedYoutubeId, setValidatedYoutubeVideoId] = useState<string>("");
+  const [youtubeVideoSyncEnabled, setYoutubeVideoSyncEnabled] =
+    useState<boolean>(true);
   const [waitForVideoIdInput, setWaitForVideoIdInput] =
     useState<boolean>(false);
   const [luckyLoading, setLuckyLoading] = useState<boolean>(false);
@@ -187,9 +189,26 @@ const JoysoundSongPage = () => {
         <blockquote>{song.lyricsPreview} ...</blockquote>
       )}
       {youtubeVideoId ? (
-        <Button full onClick={() => detachVideo()}>
-          Detach YouTube video
-        </Button>
+        <>
+          <Button full onClick={() => detachVideo()}>
+            Detach YouTube video
+          </Button>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              margin: "8px 0",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={youtubeVideoSyncEnabled}
+              onChange={(e) => setYoutubeVideoSyncEnabled(e.target.checked)}
+            />
+            Sync video timing to karaoke track
+          </label>
+        </>
       ) : (
         <>
           <Button
@@ -267,6 +286,7 @@ const JoysoundSongPage = () => {
             song={song}
             youtubeVideoId={youtubeVideoId}
             validatedYoutubeId={validatedYoutubeId}
+            youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
           />
           {youtubeVideoId !== "" && (
             <JoysoundYouTubeInfo
