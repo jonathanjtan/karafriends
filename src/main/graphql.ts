@@ -26,11 +26,7 @@ import KuromojiAnalyzer from "kuroshiro-analyzer-kuromoji";
 import { Nicovideo } from "niconico";
 import nodeFetch from "node-fetch";
 import tunnel from "tunnel";
-import {
-  CaptionTrackData,
-  Innertube,
-  VideoInfo as YTVideoInfo,
-} from "youtubei.js";
+import { Innertube } from "youtubei.js";
 
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import rawSchema from "inline-string:../common/schema.graphql";
@@ -454,6 +450,37 @@ interface PageInfo<CursorType> {
 interface CaptionLanguage {
   code: string;
   name: string;
+}
+
+// Shapes we read off youtubei.js's getBasicInfo() result. youtubei.js doesn't
+// re-export these as named types from its entry point, so we declare the
+// (minimal) subset the resolver consumes here. The resolver already assumes
+// these fields are present at runtime; capturing that as a type keeps the
+// access sites checked without changing behavior.
+interface YTCaptionTrackData {
+  readonly vss_id: string;
+  readonly language_code: string;
+  readonly name: { readonly text: string };
+}
+
+interface YTVideoInfo {
+  readonly playability_status: {
+    readonly status: string;
+    readonly reason: string;
+  };
+  readonly captions?: { readonly caption_tracks?: YTCaptionTrackData[] };
+  readonly player_config?: {
+    readonly audio_config?: { readonly loudness_db?: number };
+  };
+  readonly basic_info: {
+    readonly author: string;
+    readonly channel_id: string;
+    readonly duration: number;
+    readonly short_description: string;
+    readonly title: string;
+    readonly view_count: number;
+    readonly keywords: string[];
+  };
 }
 
 interface VideoInfo {
@@ -1082,7 +1109,9 @@ const resolvers = {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
 
-      return searchWithRomajiFallback(
+      return searchWithRomajiFallback<
+        Awaited<ReturnType<JoysoundAPI["getSongListByKeyword"]>>
+      >(
         args.keyword,
         afterInt === 1,
         (result) => result.length === 0,
@@ -1127,7 +1156,9 @@ const resolvers = {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
 
-      return searchWithRomajiFallback(
+      return searchWithRomajiFallback<
+        Awaited<ReturnType<JoysoundAPI["getArtistListByKeyword"]>>
+      >(
         args.keyword,
         afterInt === 1,
         (result) => result.length === 0,
@@ -1166,7 +1197,9 @@ const resolvers = {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
 
-      return searchWithRomajiFallback(
+      return searchWithRomajiFallback<
+        Awaited<ReturnType<DkwebsysAPI["getMusicByKeyword"]>>
+      >(
         args.name,
         afterInt === 0,
         (result) => result.list.length === 0,
@@ -1246,7 +1279,9 @@ const resolvers = {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
 
-      return searchWithRomajiFallback(
+      return searchWithRomajiFallback<
+        Awaited<ReturnType<DkwebsysAPI["getArtistByKeyword"]>>
+      >(
         args.name,
         afterInt === 0,
         (result) => result.list.length === 0,
@@ -1342,44 +1377,45 @@ const resolvers = {
       args: { videoId: string },
       { dataSources }: IDataSources,
     ): Promise<YoutubeVideoInfoResult> => {
-      return dataSources.youtube
-        .getBasicInfo(args.videoId)
-        .then((data: YTVideoInfo) => {
-          if (data.playability_status.status !== "OK") {
-            return {
-              __typename: "YoutubeVideoInfoError",
-              reason: data.playability_status.reason,
-            };
-          }
-
-          const captionTracks: CaptionTrackData[] =
-            data.captions?.caption_tracks || [];
-          const captionLanguages: CaptionLanguage[] = captionTracks
-            .filter(
-              (captionTrack: CaptionTrackData) =>
-                !captionTrack.vss_id.startsWith("a"),
-            )
-            .map((captionTrack: CaptionTrackData) => ({
-              code: captionTrack.language_code,
-              name: captionTrack.name.text,
-            }));
-
-          const loudnessDb =
-            data.player_config?.audio_config?.loudness_db || 0.0;
-
+      return dataSources.youtube.getBasicInfo(args.videoId).then((rawData) => {
+        // youtubei.js types most basic_info fields as optionally undefined,
+        // but getBasicInfo() reliably populates the ones we read; assert the
+        // narrower shape we depend on (see YTVideoInfo above).
+        const data = rawData as unknown as YTVideoInfo;
+        if (data.playability_status.status !== "OK") {
           return {
-            __typename: "YoutubeVideoInfo",
-            author: data.basic_info.author,
-            captionLanguages,
-            channelId: data.basic_info.channel_id,
-            keywords: data.basic_info.keywords,
-            lengthSeconds: data.basic_info.duration,
-            description: data.basic_info.short_description,
-            title: data.basic_info.title,
-            viewCount: data.basic_info.view_count,
-            gainValue: 10 ** ((-1 * loudnessDb) / 20),
+            __typename: "YoutubeVideoInfoError",
+            reason: data.playability_status.reason,
           };
-        });
+        }
+
+        const captionTracks: YTCaptionTrackData[] =
+          data.captions?.caption_tracks || [];
+        const captionLanguages: CaptionLanguage[] = captionTracks
+          .filter(
+            (captionTrack: YTCaptionTrackData) =>
+              !captionTrack.vss_id.startsWith("a"),
+          )
+          .map((captionTrack: YTCaptionTrackData) => ({
+            code: captionTrack.language_code,
+            name: captionTrack.name.text,
+          }));
+
+        const loudnessDb = data.player_config?.audio_config?.loudness_db || 0.0;
+
+        return {
+          __typename: "YoutubeVideoInfo",
+          author: data.basic_info.author,
+          captionLanguages,
+          channelId: data.basic_info.channel_id,
+          keywords: data.basic_info.keywords,
+          lengthSeconds: data.basic_info.duration,
+          description: data.basic_info.short_description,
+          title: data.basic_info.title,
+          viewCount: data.basic_info.view_count,
+          gainValue: 10 ** ((-1 * loudnessDb) / 20),
+        };
+      });
     },
     nicoVideoInfo: async (
       _: any,
@@ -1429,7 +1465,9 @@ const resolvers = {
       ]);
 
       const telopBuffer = decodeJoysoundBase64Field(rawData.telop);
-      const expectedDurationSec = getSongDuration(telopBuffer.buffer);
+      const expectedDurationSec = getSongDuration(
+        telopBuffer.buffer as ArrayBuffer,
+      );
 
       const videos = (searchResults.videos ??
         []) as unknown as YoutubeSearchVideoItem[];

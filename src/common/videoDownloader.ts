@@ -895,7 +895,8 @@ function composeJoysoundVideoPromise(
 
       if (code === 0) {
         const metadata: JoysoundVideoData = {
-          songDuration: getSongDuration(telopBuffer.buffer) * 1000,
+          songDuration:
+            getSongDuration(telopBuffer.buffer as ArrayBuffer) * 1000,
           songPlaytime: getJoysoundOggPlaytime(oggBuffer),
           songId,
           oggBuffer,

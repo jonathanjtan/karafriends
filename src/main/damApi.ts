@@ -6,6 +6,7 @@ import {
   DataSourceConfig,
   RESTDataSource,
 } from "@apollo/datasource-rest";
+import type { FetcherResponse } from "@apollo/utils.fetcher";
 import type { KeyValueCache } from "@apollo/utils.keyvaluecache";
 import DataLoader from "dataloader";
 import promiseRetry from "promise-retry";
@@ -82,9 +83,12 @@ export class MinseiAPI extends RESTDataSource {
     });
   }
 
-  parseBody(response: Response): Promise<object | string | ArrayBuffer> {
+  parseBody(response: FetcherResponse): Promise<object | string> {
     if (response.headers.get("Content-Type") === "application/octet-stream") {
-      return response.arrayBuffer();
+      // Binary payloads (e.g. scoring reference data) are returned as an
+      // ArrayBuffer; the generic get<T>/post<T> callers cast it to the type
+      // they expect, so the base's object|string return type is fine here.
+      return response.arrayBuffer() as Promise<object>;
     } else {
       return super.parseBody(response);
     }

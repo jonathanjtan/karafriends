@@ -42,7 +42,7 @@ export const config = {
   },
   runner: "local",
   specs: ["tests/wdio/remocon/**"],
-  beforeSession: (_config, caps, _specs) => {
+  beforeSession: (_config: any, caps: any, _specs: any) => {
     if (caps["safari:useSimulator"] === true) {
       const udid = execFileSync(
         "xcrun",
@@ -68,7 +68,7 @@ export const config = {
       caps["safari:deviceUDID"] = udid;
     }
   },
-  afterSession: (_config, caps, _specs) => {
+  afterSession: (_config: any, caps: any, _specs: any) => {
     if (caps["safari:useSimulator"] === true) {
       execFileSync("xcrun", ["simctl", "delete", caps["safari:deviceUDID"]], {
         stdio: "inherit",
