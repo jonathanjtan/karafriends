@@ -10,6 +10,8 @@ import environment from "../common/graphqlEnvironment";
 import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
+import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
+import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import useSettingsCollapsed from "../common/hooks/useSettingsCollapsed";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./App.css";
@@ -28,6 +30,13 @@ import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServi
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
+// Mirror the remocon's Piano Roll Size presets so both surfaces match.
+const PIANO_ROLL_SIZE_PRESETS: { label: string; size: number }[] = [
+  { label: "Off", size: 0 },
+  { label: "S", size: 0.2 },
+  { label: "M", size: 0.3 },
+  { label: "L", size: 0.4 },
+];
 // Volumes and the BGM track used to be renderer-local; they now live in the
 // main process (synced via useBgmVolume/useGuideMelodyVolume/useBgmTrack) so
 // the remocon can control them too. These keys only remain for the one-time
@@ -90,6 +99,8 @@ function App(props: {
   const { bgmTrack, setBgmTrack } = useBgmTrack();
   const { bgmVolume, setBgmVolume } = useBgmVolume();
   const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
+  const { pianoRollOpacity, setPianoRollOpacity } = usePianoRollOpacity();
+  const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
 
   useEffect(() => {
     const storedBgmVolume = localStorage.getItem(LEGACY_BGM_VOLUME_STORAGE_KEY);
@@ -321,6 +332,32 @@ function App(props: {
                   }
                 />
               </p>
+              <p>Piano Roll Opacity: {Math.round(pianoRollOpacity * 100)}%</p>
+              <p className="range-field">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(pianoRollOpacity * 100)}
+                  onChange={(e) =>
+                    setPianoRollOpacity(Number(e.target.value) / 100)
+                  }
+                />
+              </p>
+              <p>Piano Roll Size</p>
+              <div className="pianoRollSizeButtons">
+                {PIANO_ROLL_SIZE_PRESETS.map(({ label, size }) => (
+                  <button
+                    key={label}
+                    className={`btn-small ${
+                      Math.abs(pianoRollSize - size) < 0.001 ? "" : "grey"
+                    }`}
+                    onClick={() => setPianoRollSize(size)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <div className="switch">
                 <label>
                   OLED Mode

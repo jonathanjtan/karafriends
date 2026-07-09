@@ -133,9 +133,6 @@ const VolumeControls = () => {
           </div>
         </div>
         <div className={styles.serviceHealth}>
-          <div className={styles.labelRow}>
-            <span>Service Status</span>
-          </div>
           <div className={styles.healthRow}>
             <span>DAM</span>
             <span>{healthIcon(serviceHealth?.damAvailable)}</span>
@@ -149,18 +146,17 @@ const VolumeControls = () => {
             disabled={isRechecking}
             onClick={recheck}
           >
-            Check now
+            Check Service Status Now
           </button>
         </div>
         <div>
-          <div className={styles.labelRow}>
-            <span>TV Settings Panel</span>
-          </div>
           <button
             className={styles.recheckButton}
             onClick={() => setSettingsCollapsed(!settingsCollapsed)}
           >
-            {settingsCollapsed ? "Show on TV" : "Hide on TV"}
+            {settingsCollapsed
+              ? "Show TV Settings Panel"
+              : "Hide TV Settings Panel"}
           </button>
         </div>
       </div>

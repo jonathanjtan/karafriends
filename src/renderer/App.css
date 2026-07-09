@@ -86,6 +86,13 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   margin: 12px 0;
 }
 
+.pianoRollSizeButtons {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
 .serviceHealthIndicator {
   display: inline-flex;
   align-items: center;
