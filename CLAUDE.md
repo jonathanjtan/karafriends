@@ -59,12 +59,10 @@ Package manager is **Yarn (Berry) with PnP** — there is **no `node_modules`**.
 
 ### Typecheck baseline
 
-`corepack yarn tsc --noEmit -p tsconfig.json` is **not clean** — this repo has
-a stable **69 pre-existing errors** (wdio configs, niconico/tough-cookie
-types, damApi.ts, HostnameSetting.tsx, youtubei.js/graphql-ws type gaps,
-etc.) that Parcel's own build never surfaces. When typechecking a change,
-confirm the count is still 69 and that none of the errors are in files you
-touched — don't expect zero.
+`corepack yarn tsc --noEmit -p tsconfig.json` is **clean** — the baseline was
+cleared to **0 errors** (commit `d5f97f89`). When typechecking a change,
+confirm the count is still 0 and that you haven't introduced any errors in
+files you touched.
 
 ### Kill / restart
 
