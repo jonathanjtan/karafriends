@@ -3,20 +3,31 @@
   height: 48px;
   padding: 0 12px;
   background-color: #1cb3ff;
-  display: flex;
-  justify-content: space-between;
+  // Equal-width side columns keep the app icon truly centered even though
+  // the right icon group is wider than the single home link.
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
 
   color: #fff;
   font-size: 24px;
   line-height: 24px;
   animation: rotation 2s infinite linear;
+
+  > a:first-child {
+    justify-self: start;
+  }
+
+  > img {
+    justify-self: center;
+  }
 }
 
 .rightIcons {
   display: flex;
   align-items: center;
   gap: 12px;
+  justify-self: end;
 }
 
 .iconButton {

@@ -669,12 +669,16 @@ export default function PianoRoll(props: {
   }, [props]);
 
   return (
+    // Size 0 ("Off") hides the canvas with CSS rather than unmounting it:
+    // the GL pipeline and mic pitch capture live in a one-shot effect that
+    // expects the canvas to exist for the whole song.
     <canvas
       className="pianoRollRoll"
       style={{
         top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
         height: `${pianoRollSize * 100}%`,
         opacity: pianoRollOpacity,
+        display: pianoRollSize <= 0 ? "none" : undefined,
       }}
       ref={canvasRef}
     ></canvas>

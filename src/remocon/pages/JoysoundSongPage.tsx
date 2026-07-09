@@ -198,7 +198,7 @@ const JoysoundSongPage = () => {
               display: "flex",
               alignItems: "center",
               gap: 8,
-              margin: "8px 0",
+              margin: "8px 0 20px",
             }}
           >
             <input
@@ -206,7 +206,7 @@ const JoysoundSongPage = () => {
               checked={youtubeVideoSyncEnabled}
               onChange={(e) => setYoutubeVideoSyncEnabled(e.target.checked)}
             />
-            Sync video timing to karaoke track
+            Sync video timing to karaoke track (Recommended)
           </label>
         </>
       ) : (

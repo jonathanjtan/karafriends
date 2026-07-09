@@ -34,6 +34,7 @@ import {
 
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import rawSchema from "inline-string:../common/schema.graphql";
+import { BGM_TRACKS, SHUFFLE_VALUE } from "../common/bgmTracks";
 import karafriendsConfig, { KarafriendsConfig } from "../common/config";
 import {
   decodeJoysoundBase64Field,
@@ -651,6 +652,7 @@ interface VideoDownloadProgress {
 }
 
 type NotARealDb = {
+  bgmTrack: string | null;
   bgmVolume: number;
   currentSong: QueueItem | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
@@ -667,6 +669,7 @@ type NotARealDb = {
 };
 
 enum SubscriptionEvent {
+  BgmTrackChanged = "BgmTrackChanged",
   BgmVolumeChanged = "BgmVolumeChanged",
   CurrentSongAdhocLyricsChanged = "CurrentSongAdhocLyricsChanged",
   CurrentSongChanged = "CurrentSongChanged",
@@ -695,13 +698,15 @@ function clampVolume(volume: number, max: number): number {
 const DEFAULT_PIANO_ROLL_OPACITY = 1.0;
 const MAX_PIANO_ROLL_OPACITY = 1.0;
 // Height as a fraction of the player screen; the remocon offers
-// small/medium/large presets (0.2 / 0.3 / 0.4) within this range.
+// off/small/medium/large presets (0 / 0.2 / 0.3 / 0.4). 0 is a special
+// "hidden" value; any other requested size is clamped into this range.
 const DEFAULT_PIANO_ROLL_SIZE = 0.3;
 const MIN_PIANO_ROLL_SIZE = 0.1;
 const MAX_PIANO_ROLL_SIZE = 0.5;
 
 // TODO: make this gql context instead of global
 let db: NotARealDb = {
+  bgmTrack: null,
   bgmVolume: DEFAULT_BGM_VOLUME,
   currentSong: null,
   currentSongAdhocLyrics: [],
@@ -752,6 +757,7 @@ function saveDb() {
 
 function loadDb(): NotARealDb {
   return {
+    bgmTrack: null,
     bgmVolume: DEFAULT_BGM_VOLUME,
     currentSong: null,
     currentSongAdhocLyrics: [],
@@ -1445,6 +1451,7 @@ const resolvers = {
 
       return { __typename: "SuggestedYoutubeVideos", videos: candidates };
     },
+    bgmTrack: () => db.bgmTrack,
     bgmVolume: () => db.bgmVolume,
     guideMelodyVolume: () => db.guideMelodyVolume,
     pianoRollOpacity: () => db.pianoRollOpacity,
@@ -1713,6 +1720,22 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setBgmTrack: (_: any, args: { track: string | null }): boolean => {
+      const track = args.track || null;
+      const isKnownTrack =
+        track === null ||
+        track === SHUFFLE_VALUE ||
+        BGM_TRACKS.some((t) => t.filename === track);
+      if (!isKnownTrack) {
+        return false;
+      }
+      db.bgmTrack = track;
+      pubsub.publish(SubscriptionEvent.BgmTrackChanged, {
+        bgmTrackChanged: db.bgmTrack,
+      });
+      saveDb();
+      return true;
+    },
     setBgmVolume: (_: any, args: { volume: number }): boolean => {
       db.bgmVolume = clampVolume(args.volume, MAX_BGM_VOLUME);
       pubsub.publish(SubscriptionEvent.BgmVolumeChanged, {
@@ -1738,10 +1761,13 @@ const resolvers = {
       return true;
     },
     setPianoRollSize: (_: any, args: { size: number }): boolean => {
-      db.pianoRollSize = Math.min(
-        Math.max(args.size, MIN_PIANO_ROLL_SIZE),
-        MAX_PIANO_ROLL_SIZE,
-      );
+      db.pianoRollSize =
+        args.size <= 0
+          ? 0
+          : Math.min(
+              Math.max(args.size, MIN_PIANO_ROLL_SIZE),
+              MAX_PIANO_ROLL_SIZE,
+            );
       pubsub.publish(SubscriptionEvent.PianoRollSizeChanged, {
         pianoRollSizeChanged: db.pianoRollSize,
       });
@@ -1768,6 +1794,10 @@ const resolvers = {
     },
   },
   Subscription: {
+    bgmTrackChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.BgmTrackChanged]),
+    },
     bgmVolumeChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([SubscriptionEvent.BgmVolumeChanged]),

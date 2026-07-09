@@ -1,7 +1,7 @@
 import M from "materialize-css";
 import React, { useEffect } from "react";
 
-import { BGM_TRACKS, SHUFFLE_VALUE } from "./bgmTracks";
+import { BGM_TRACKS, SHUFFLE_VALUE } from "../common/bgmTracks";
 import "./global";
 
 interface Props {

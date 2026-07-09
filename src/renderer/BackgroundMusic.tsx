@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
+import { BGM_DIR, BGM_TRACKS, SHUFFLE_VALUE } from "../common/bgmTracks";
 import usePlaybackState from "../common/hooks/usePlaybackState";
-import { BGM_DIR, BGM_TRACKS, SHUFFLE_VALUE } from "./bgmTracks";
 
 interface Props {
   trackFilename: string | null;

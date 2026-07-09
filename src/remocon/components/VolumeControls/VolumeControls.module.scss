@@ -23,6 +23,18 @@
   accent-color: #1cb3ff;
 }
 
+.trackSelect {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 4px 6px;
+  border: 1px solid #1cb3ff;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #1cb3ff;
+  font-size: 13px;
+}
+
 .sizeButtons {
   display: flex;
   gap: 6px;

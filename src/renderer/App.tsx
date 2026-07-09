@@ -5,6 +5,7 @@ import { fetchQuery, graphql, useMutation, useSubscription } from "react-relay";
 
 import { HOSTNAME } from "../common/constants";
 import environment from "../common/graphqlEnvironment";
+import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
 import { KuroshiroSingleton } from "../common/joysoundParser";
@@ -23,11 +24,12 @@ import { AppQueueAddedSubscription } from "./__generated__/AppQueueAddedSubscrip
 import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServiceHealthMutation.graphql";
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
-const BGM_STORAGE_KEY = "bgmTrack";
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
-// Volumes used to be renderer-local; they now live in the main process
-// (synced via useBgmVolume/useGuideMelodyVolume) so the remocon can control
-// them too. These keys only remain for the one-time migration below.
+// Volumes and the BGM track used to be renderer-local; they now live in the
+// main process (synced via useBgmVolume/useGuideMelodyVolume/useBgmTrack) so
+// the remocon can control them too. These keys only remain for the one-time
+// migration below.
+const LEGACY_BGM_TRACK_STORAGE_KEY = "bgmTrack";
 const LEGACY_BGM_VOLUME_STORAGE_KEY = "bgmVolume";
 const LEGACY_GUIDE_MELODY_VOLUME_STORAGE_KEY = "guideMelodyVolume";
 
@@ -82,19 +84,7 @@ function App(props: {
   const [mics, _setMics] = useState<InputDevice[]>([]);
   const [hostname, setHostname] = useState(HOSTNAME);
   const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [bgmTrack, _setBgmTrack] = useState<string | null>(() =>
-    localStorage.getItem(BGM_STORAGE_KEY),
-  );
-
-  const setBgmTrack = (filename: string | null) => {
-    if (filename === null) {
-      localStorage.removeItem(BGM_STORAGE_KEY);
-    } else {
-      localStorage.setItem(BGM_STORAGE_KEY, filename);
-    }
-    _setBgmTrack(filename);
-  };
-
+  const { bgmTrack, setBgmTrack } = useBgmTrack();
   const { bgmVolume, setBgmVolume } = useBgmVolume();
   const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
 
@@ -115,6 +105,12 @@ function App(props: {
         setGuideMelodyVolume(Number(storedGuideMelodyVolume));
       }
       localStorage.removeItem(LEGACY_GUIDE_MELODY_VOLUME_STORAGE_KEY);
+    }
+
+    const storedBgmTrack = localStorage.getItem(LEGACY_BGM_TRACK_STORAGE_KEY);
+    if (storedBgmTrack !== null) {
+      setBgmTrack(storedBgmTrack);
+      localStorage.removeItem(LEGACY_BGM_TRACK_STORAGE_KEY);
     }
   }, []);
 

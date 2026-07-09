@@ -747,28 +747,36 @@ const LYRICS_BLOCK_DESCENT =
   TEXT_PADDING * 2 -
   LYRICS_BLOCK_ASCENT;
 
-// Keeps lyrics rows from hiding behind the piano roll: if the telop places
-// any row above pianoRollClearance, shift every row down together, and only
-// compress their spacing when the remaining screen can't fit the original
-// span. With no piano roll on screen (clearance 0) this is an exact no-op.
+// Keeps lyrics rows from hiding behind the piano roll: while the roll is on
+// screen, the whole set of rows is centered vertically in the space between
+// the roll's bottom edge and the bottom of the screen (so lyrics don't hug
+// the bottom of the screen as the roll grows), compressing their spacing
+// only when that space can't fit the original span. With no piano roll on
+// screen (clearance 0) this is an exact no-op.
 function remapLyricsYPos(
   yPos: number,
   minYPos: number,
   maxYPos: number,
   pianoRollClearance: number,
 ): number {
-  const minAllowedYPos = pianoRollClearance + LYRICS_BLOCK_ASCENT;
-  if (pianoRollClearance <= 0 || minYPos >= minAllowedYPos) {
+  if (pianoRollClearance <= 0) {
     return yPos;
   }
 
+  const minAllowedYPos = pianoRollClearance + LYRICS_BLOCK_ASCENT;
   const maxAllowedYPos = SCREEN_HEIGHT - LYRICS_BLOCK_DESCENT;
-  const scale =
+  const scale = Math.max(
     maxYPos > minYPos
       ? Math.min(1, (maxAllowedYPos - minAllowedYPos) / (maxYPos - minYPos))
-      : 1;
+      : 1,
+    0,
+  );
+  const spanHeight = (maxYPos - minYPos) * scale;
+  const centeredMinYPos =
+    minAllowedYPos +
+    Math.max(0, (maxAllowedYPos - minAllowedYPos - spanHeight) / 2);
 
-  return minAllowedYPos + (yPos - minYPos) * Math.max(scale, 0);
+  return centeredMinYPos + (yPos - minYPos) * scale;
 }
 
 function drawLyricsBlock(
@@ -837,9 +845,10 @@ export default function JoysoundRenderer(props: {
   // lives inside a one-shot effect) always sees the live synced size.
   const { pianoRollSize } = usePianoRollSize();
   const pianoRollClearanceRef = useRef(0);
-  pianoRollClearanceRef.current = props.pianoRollVisible
-    ? (PIANO_ROLL_TOP_FRACTION + pianoRollSize) * SCREEN_HEIGHT + 8
-    : 0;
+  pianoRollClearanceRef.current =
+    props.pianoRollVisible && pianoRollSize > 0
+      ? (PIANO_ROLL_TOP_FRACTION + pianoRollSize) * SCREEN_HEIGHT + 8
+      : 0;
 
   const updateSize = () => {
     const canvasElement = canvasRef.current;

@@ -1,6 +1,8 @@
 import classnames from "classnames";
 import React from "react";
 
+import { BGM_TRACKS, SHUFFLE_VALUE } from "../../../common/bgmTracks";
+import useBgmTrack from "../../../common/hooks/useBgmTrack";
 import useBgmVolume from "../../../common/hooks/useBgmVolume";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
@@ -9,12 +11,14 @@ import useUserIdentity from "../../hooks/useUserIdentity";
 import * as styles from "./VolumeControls.module.scss";
 
 const PIANO_ROLL_SIZE_PRESETS: { label: string; size: number }[] = [
+  { label: "Off", size: 0 },
   { label: "S", size: 0.2 },
   { label: "M", size: 0.3 },
   { label: "L", size: 0.4 },
 ];
 
 const VolumeControls = () => {
+  const { bgmTrack, setBgmTrack } = useBgmTrack();
   const { bgmVolume, setBgmVolume } = useBgmVolume();
   const { pianoRollOpacity, setPianoRollOpacity } = usePianoRollOpacity();
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
@@ -45,6 +49,26 @@ const VolumeControls = () => {
           value={Math.round(bgmVolume * 100)}
           onChange={(e) => setBgmVolume(Number(e.target.value) / 100)}
         />
+      </div>
+      <div>
+        <div className={styles.labelRow}>
+          <span>BGM Track</span>
+        </div>
+        <select
+          className={styles.trackSelect}
+          value={bgmTrack ?? ""}
+          onChange={(e) =>
+            setBgmTrack(e.target.value === "" ? null : e.target.value)
+          }
+        >
+          <option value="">None</option>
+          <option value={SHUFFLE_VALUE}>Shuffle</option>
+          {BGM_TRACKS.map((t) => (
+            <option key={t.filename} value={t.filename}>
+              {t.label}
+            </option>
+          ))}
+        </select>
       </div>
       <div>
         <div className={styles.labelRow}>
