@@ -108,37 +108,113 @@ function stripReadingNoise(text: string): string {
   ).trim();
 }
 
+function normalizeForYomiMatch(name: string): string {
+  return name.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+}
+
+// Helper romaji is resolved from three sources of decreasing quality: DAM's
+// human-curated katakana readings (canonical), a kuromoji IPADIC guess, and
+// this cache of everything we've already resolved. Persisting the cache
+// means a name we paid a DAM lookup or a kuromoji pass for once keeps its
+// reading across restarts, and — together with the snapshot taken in
+// pushSongToQueue — a queued song keeps the canonical reading its search
+// found even after the app reloads. Keyed by normalized name; a canonical
+// (DAM) entry is authoritative and never downgraded by a later guess.
+interface CachedReading {
+  yomi: string;
+  canonical: boolean;
+}
+const readingCache = new Map<string, CachedReading>();
+const READING_CACHE_PATH = path.resolve(TEMP_FOLDER, "reading-cache.json");
+
+function loadReadingCache(): void {
+  try {
+    if (!fs.existsSync(READING_CACHE_PATH)) return;
+    const parsed = JSON.parse(fs.readFileSync(READING_CACHE_PATH, "utf-8"));
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value && typeof (value as CachedReading).yomi === "string") {
+        readingCache.set(key, value as CachedReading);
+      }
+    }
+  } catch (e) {
+    console.error("[yomi] failed to load reading cache", e);
+  }
+}
+
+let readingCacheSaveTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleReadingCacheSave(): void {
+  if (readingCacheSaveTimer) return;
+  // Debounced: one search primes dozens of entries at once, so coalesce them
+  // into a single write rather than thrashing the disk per name.
+  readingCacheSaveTimer = setTimeout(() => {
+    readingCacheSaveTimer = null;
+    try {
+      if (!fs.existsSync(TEMP_FOLDER)) fs.mkdirSync(TEMP_FOLDER);
+      fs.writeFileSync(
+        READING_CACHE_PATH,
+        JSON.stringify(Object.fromEntries(readingCache)),
+        "utf-8",
+      );
+    } catch (e) {
+      console.error("[yomi] failed to save reading cache", e);
+    }
+  }, 2000);
+}
+
+function cacheReading(name: string, yomi: string, canonical: boolean): void {
+  if (!name || !yomi) return;
+  const key = normalizeForYomiMatch(name);
+  const existing = readingCache.get(key);
+  if (existing) {
+    // Never let a kuromoji guess clobber a canonical reading, and skip no-op
+    // writes so we don't schedule needless saves.
+    if (existing.canonical && !canonical) return;
+    if (existing.yomi === yomi && existing.canonical === canonical) return;
+  }
+  readingCache.set(key, { yomi, canonical });
+  scheduleReadingCacheSave();
+}
+
+function getCachedReading(name: string): string | null {
+  return readingCache.get(normalizeForYomiMatch(name))?.yomi ?? null;
+}
+
 async function toYomi(text: string): Promise<string> {
+  const cached = getCachedReading(text);
+  if (cached) return cached;
+
   await kuroshiroReady;
   const cleaned = stripReadingNoise(text) || text;
-  return kuroshiro.convert(cleaned, { to: "hiragana", mode: "normal" });
+  const yomi = await kuroshiro.convert(cleaned, {
+    to: "hiragana",
+    mode: "normal",
+  });
+  cacheReading(text, yomi, false);
+  return yomi;
 }
 
 // DAM's dkwebsys search returns human-curated katakana readings inline
 // (titleYomi/artistYomi), including correct proper-noun readings that
 // kuromoji's IPADIC dictionary simply doesn't carry (e.g. 涼宮→スズミヤ,
-// where kuromoji shatters it into 涼(リョウ)+宮(ミヤ)). To borrow them for
-// JOYSOUND rows we issue the *same* keyword the user searched to DAM once,
-// then index every returned title/artist by a normalized name so JOYSOUND
-// results whose name/artist matches a DAM row can adopt DAM's canonical
-// reading. One DAM search per user query, cached; any failure degrades to
-// an empty map so the kuromoji fallback still stands.
-const damYomiCache = new Map<string, Promise<Map<string, string>>>();
+// where kuromoji shatters it into 涼(リョウ)+宮(ミヤ)). We issue the *same*
+// keyword the user searched to DAM once and fold every returned title/artist
+// into the reading cache as canonical, so JOYSOUND rows — and any song later
+// queued — whose normalized name matches resolve to DAM's reading instead of
+// kuromoji's guess (see the God knows.../涼宮ハルヒ case). One DAM search per
+// query, deduped; failures are best-effort and leave the kuromoji fallback
+// in place.
+const damPrimeCache = new Map<string, Promise<void>>();
 
-function normalizeForYomiMatch(name: string): string {
-  return name.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
-}
-
-function fetchDamYomiMap(
+function primeDamReadings(
   mode: "song" | "artist",
   keyword: string,
   dkwebsys: DkwebsysAPI,
-): Promise<Map<string, string>> {
+): Promise<void> {
   const cacheKey = `${mode}:${keyword}`;
-  const cached = damYomiCache.get(cacheKey);
+  const cached = damPrimeCache.get(cacheKey);
   if (cached) return cached;
 
-  const promise = (
+  const pairsPromise =
     mode === "song"
       ? dkwebsys
           .getMusicByKeyword(keyword, 30, 0)
@@ -154,27 +230,23 @@ function fetchDamYomiMap(
             result.list.map(
               (artist) => [artist.artist, artist.artistYomi] as const,
             ),
-          )
-  )
+          );
+
+  const promise = pairsPromise
     .then((pairs) => {
-      const map = new Map<string, string>();
-      for (const [name, yomi] of pairs) {
-        if (name && yomi) map.set(normalizeForYomiMatch(name), yomi);
-      }
-      return map;
+      for (const [name, yomi] of pairs) cacheReading(name, yomi, true);
     })
     .catch((e) => {
-      // Don't let a transient DAM failure poison this keyword's cache — drop
-      // the entry so a later search retries instead of sticking with empties.
-      damYomiCache.delete(cacheKey);
+      // Don't poison the dedupe cache on a transient failure — drop it so a
+      // later search retries instead of sticking with the failure.
+      damPrimeCache.delete(cacheKey);
       console.error(
         `[yomi] DAM canonical-reading lookup failed for "${keyword}"`,
         e,
       );
-      return new Map<string, string>();
     });
 
-  damYomiCache.set(cacheKey, promise);
+  damPrimeCache.set(cacheKey, promise);
   return promise;
 }
 
@@ -507,10 +579,6 @@ interface JoysoundSongParent {
   readonly id: string;
   readonly name: string;
   readonly artistName: string;
-  // Canonical readings borrowed from DAM at search time; null/absent falls
-  // back to the kuromoji guess in nameYomiResolvers.
-  readonly nameYomi?: string | null;
-  readonly artistNameYomi?: string | null;
   readonly lyricsPreview?: string | null;
   readonly tieUp?: string | null;
 }
@@ -518,9 +586,6 @@ interface JoysoundSongParent {
 interface JoysoundArtistParent {
   readonly id: string;
   readonly name: string;
-  // Canonical reading borrowed from DAM at search time; falls back to the
-  // kuromoji guess when absent.
-  readonly nameYomi?: string | null;
 }
 
 interface SongParent {
@@ -667,6 +732,13 @@ interface QueueItemInterface {
   readonly playtime?: number | null;
   readonly timestamp: string;
   readonly userIdentity: UserIdentity;
+  // Reading snapshot taken at queue time from the reading cache (see
+  // pushSongToQueue); persisted in queue.json so a queued song keeps the
+  // canonical DAM reading its search found across restarts. Absent on older
+  // persisted items, which fall back to the cache/kuromoji in
+  // nameYomiResolvers.
+  readonly nameYomi?: string | null;
+  readonly artistNameYomi?: string | null;
 }
 
 export interface JoysoundQueueItem extends QueueItemInterface {
@@ -978,22 +1050,34 @@ function pushSongToQueue(
   queueItem: QueueItem,
   pushToHead: boolean = false,
 ): QueueSongResult {
+  // Snapshot the best reading we currently have onto the queue item so it
+  // rides along in queue.json: a song queued right after its search keeps the
+  // canonical DAM reading even across an app restart, and a later cache change
+  // can't retroactively alter an already-queued song's romaji. Falls back to
+  // the cache/kuromoji in nameYomiResolvers when nothing is cached yet.
+  const enrichedItem: QueueItem = {
+    ...queueItem,
+    nameYomi: queueItem.nameYomi ?? getCachedReading(queueItem.name),
+    artistNameYomi:
+      queueItem.artistNameYomi ?? getCachedReading(queueItem.artistName),
+  };
+
   const eta =
     (db.currentSong?.playtime || 0) +
     db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0);
 
   console.log(
     `pushSongToQueue: pushing ${JSON.stringify(
-      queueItem,
+      enrichedItem,
     )} with an eta of ${eta}; pushToHead=${pushToHead}`,
   );
 
   if (pushToHead === true) {
     // To give things time to download, we don't actually push to the front, but the second.
     // Due to :js:, this is OK regardless of the size of db.songQueue
-    db.songQueue.splice(1, 0, queueItem);
+    db.songQueue.splice(1, 0, enrichedItem);
   } else {
-    db.songQueue.push(queueItem);
+    db.songQueue.push(enrichedItem);
   }
 
   pubsub.publish(SubscriptionEvent.QueueChanged, {
@@ -1004,7 +1088,7 @@ function pushSongToQueue(
   });
 
   pubsub.publish(SubscriptionEvent.QueueAdded, {
-    queueAdded: queueItem,
+    queueAdded: enrichedItem,
   });
 
   saveDb();
@@ -1121,7 +1205,7 @@ const resolvers = {
   },
   JoysoundArtist: {
     nameYomi(parent: JoysoundArtistParent) {
-      return parent.nameYomi || toYomi(parent.name);
+      return toYomi(parent.name);
     },
   },
   DamQueueItem: {
@@ -1225,10 +1309,9 @@ const resolvers = {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
 
-      // Fire the DAM canonical-reading lookup in parallel with the JOYSOUND
-      // search so it adds no latency of its own; borrow its yomi for any row
-      // whose title/artist matches (see fetchDamYomiMap).
-      const damYomiPromise = fetchDamYomiMap(
+      // Prime DAM's canonical readings into the cache in parallel with the
+      // JOYSOUND search so it adds no latency of its own.
+      const damPrimePromise = primeDamReadings(
         "song",
         args.keyword,
         dataSources.dkwebsys,
@@ -1255,11 +1338,9 @@ const resolvers = {
           (song) => song.songName,
         );
 
-        const damYomi = await withTimeout(
-          damYomiPromise,
-          DAM_YOMI_TIMEOUT_MS,
-          new Map<string, string>(),
-        );
+        // Ensure DAM's readings are cached before the per-row nameYomi field
+        // resolvers run; time-boxed so a slow DAM can't stall the response.
+        await withTimeout(damPrimePromise, DAM_YOMI_TIMEOUT_MS, undefined);
 
         return {
           edges: sorted.map((song, i) => ({
@@ -1267,10 +1348,6 @@ const resolvers = {
               id: song.selSongNo,
               name: song.songName,
               artistName: song.artistName,
-              nameYomi:
-                damYomi.get(normalizeForYomiMatch(song.songName)) || null,
-              artistNameYomi:
-                damYomi.get(normalizeForYomiMatch(song.artistName)) || null,
             },
             cursor: (firstInt + i).toString(),
           })),
@@ -1291,7 +1368,7 @@ const resolvers = {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
 
-      const damYomiPromise = fetchDamYomiMap(
+      const damPrimePromise = primeDamReadings(
         "artist",
         args.keyword,
         dataSources.dkwebsys,
@@ -1315,19 +1392,15 @@ const resolvers = {
             firstInt,
           ),
       ).then(async (result) => {
-        const damYomi = await withTimeout(
-          damYomiPromise,
-          DAM_YOMI_TIMEOUT_MS,
-          new Map<string, string>(),
-        );
+        // Ensure DAM's readings are cached before the per-row nameYomi field
+        // resolvers run; time-boxed so a slow DAM can't stall the response.
+        await withTimeout(damPrimePromise, DAM_YOMI_TIMEOUT_MS, undefined);
 
         return {
           edges: result.map((artist, i) => ({
             node: {
               id: artist.artistId_digi,
               name: artist.artistName,
-              nameYomi:
-                damYomi.get(normalizeForYomiMatch(artist.artistName)) || null,
             },
             cursor: (firstInt + i).toString(),
           })),
@@ -2207,6 +2280,7 @@ export function applyGraphQLMiddleware(app: Application) {
   const serverCleanup = useServer({ schema }, wsServer);
 
   db = loadDb();
+  loadReadingCache();
 
   const server = new ApolloServer<IDataSources>({
     schema,

@@ -113,6 +113,12 @@ Everything downloaded/composited lives in
 `%LOCALAPPDATA%\Temp\karafriends_tmp\`:
 
 - `queue.json` — the persisted NotARealDb (see below).
+- `reading-cache.json` — persisted name→reading (yomi) cache backing the
+  helper romaji. Entries are `{yomi, canonical}` keyed by an NFKC-normalized
+  name; `canonical` (from DAM's curated readings) beats a kuromoji guess and
+  is never downgraded. Debounce-saved, loaded at startup. Delete it to force
+  every reading to be re-derived. See the yomi resolution path in
+  `graphql.ts` (`toYomi`/`primeDamReadings`/`pushSongToQueue` snapshot).
 - `joysound-<songId>-<suffix>.mp4` — composited Joysound video. Suffix is the
   YouTube video id (or `default` for the built-in JOYSOUND video, or
   `<ytid>-nosync` when video sync is disabled). **Delete the relevant
