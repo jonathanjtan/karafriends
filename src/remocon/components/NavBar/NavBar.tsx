@@ -71,9 +71,7 @@ const NavBar = () => {
           </Link>
         </div>
       </div>
-      {showSettings && (
-        <VolumeControls onCollapse={() => setShowSettings(false)} />
-      )}
+      {showSettings && <VolumeControls />}
     </>
   );
 };

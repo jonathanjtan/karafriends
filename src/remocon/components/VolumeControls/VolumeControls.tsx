@@ -1,7 +1,5 @@
 import classnames from "classnames";
 import React from "react";
-// tslint:disable-next-line:no-submodule-imports
-import { FaChevronUp } from "react-icons/fa";
 
 import { BGM_TRACKS, SHUFFLE_VALUE } from "../../../common/bgmTracks";
 import useBgmTrack from "../../../common/hooks/useBgmTrack";
@@ -9,6 +7,7 @@ import useBgmVolume from "../../../common/hooks/useBgmVolume";
 import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
+import useSettingsCollapsed from "../../../common/hooks/useSettingsCollapsed";
 import useConfig from "../../hooks/useConfig";
 import useServiceHealth from "../../hooks/useServiceHealth";
 import useUserIdentity from "../../hooks/useUserIdentity";
@@ -21,16 +20,13 @@ const PIANO_ROLL_SIZE_PRESETS: { label: string; size: number }[] = [
   { label: "L", size: 0.4 },
 ];
 
-interface Props {
-  onCollapse?: () => void;
-}
-
-const VolumeControls = ({ onCollapse }: Props) => {
+const VolumeControls = () => {
   const { bgmTrack, setBgmTrack } = useBgmTrack();
   const { bgmVolume, setBgmVolume } = useBgmVolume();
   const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
   const { pianoRollOpacity, setPianoRollOpacity } = usePianoRollOpacity();
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
+  const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
 
   const config = useConfig();
@@ -156,12 +152,17 @@ const VolumeControls = ({ onCollapse }: Props) => {
             Check now
           </button>
         </div>
-        {onCollapse && (
-          <button className={styles.collapseButton} onClick={onCollapse}>
-            <FaChevronUp />
-            <span>Collapse</span>
+        <div>
+          <div className={styles.labelRow}>
+            <span>TV Settings Panel</span>
+          </div>
+          <button
+            className={styles.recheckButton}
+            onClick={() => setSettingsCollapsed(!settingsCollapsed)}
+          >
+            {settingsCollapsed ? "Show on TV" : "Hide on TV"}
           </button>
-        )}
+        </div>
       </div>
     </div>
   );

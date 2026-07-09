@@ -53,23 +53,6 @@
   }
 }
 
-.collapseButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  margin-top: 12px;
-  padding: 8px;
-  border: none;
-  border-top: 1px solid rgba(28, 179, 255, 0.2);
-  background: none;
-  color: #1cb3ff;
-  font-size: 14px;
-  line-height: 18px;
-  cursor: pointer;
-}
-
 .healthSpinner {
   display: inline-block;
   width: 12px;

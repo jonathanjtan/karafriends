@@ -877,6 +877,7 @@ type NotARealDb = {
   pianoRollSize: number;
   pitchShiftSemis: number;
   playbackState: PlaybackState;
+  settingsCollapsed: boolean;
   songQueue: QueueItem[];
   downloadQueue: DownloadQueueItem[];
   songHistory: SongHistoryItem[];
@@ -894,6 +895,7 @@ enum SubscriptionEvent {
   PianoRollSizeChanged = "PianoRollSizeChanged",
   PitchShiftSemisChanged = "PitchShiftSemisChanged",
   PlaybackStateChanged = "PlaybackStateChanged",
+  SettingsCollapsedChanged = "SettingsCollapsedChanged",
   QueueAdded = "QueueAdded",
   QueueChanged = "QueueChanged",
 }
@@ -931,6 +933,7 @@ let db: NotARealDb = {
   pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
   pitchShiftSemis: 0,
   playbackState: PlaybackState.WAITING,
+  settingsCollapsed: false,
   songQueue: [],
   downloadQueue: [],
   songHistory: [],
@@ -982,6 +985,7 @@ function loadDb(): NotARealDb {
     pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
     pitchShiftSemis: 0,
     playbackState: PlaybackState.WAITING,
+    settingsCollapsed: false,
     songQueue: [],
     downloadQueue: [],
     songHistory: [],
@@ -1719,6 +1723,7 @@ const resolvers = {
     pianoRollOpacity: () => db.pianoRollOpacity,
     pianoRollSize: () => db.pianoRollSize,
     pitchShiftSemis: () => db.pitchShiftSemis,
+    settingsCollapsed: () => db.settingsCollapsed,
     playbackState: () => db.playbackState,
     videoDownloadProgress: (
       _: any,
@@ -1982,6 +1987,14 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setSettingsCollapsed: (_: any, args: { collapsed: boolean }): boolean => {
+      db.settingsCollapsed = args.collapsed;
+      pubsub.publish(SubscriptionEvent.SettingsCollapsedChanged, {
+        settingsCollapsedChanged: db.settingsCollapsed,
+      });
+      saveDb();
+      return true;
+    },
     setBgmTrack: (_: any, args: { track: string | null }): boolean => {
       const track = args.track || null;
       const isKnownTrack =
@@ -2059,6 +2072,12 @@ const resolvers = {
     bgmTrackChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([SubscriptionEvent.BgmTrackChanged]),
+    },
+    settingsCollapsedChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.SettingsCollapsedChanged,
+        ]),
     },
     bgmVolumeChanged: {
       subscribe: () =>

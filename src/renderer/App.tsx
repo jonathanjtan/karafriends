@@ -10,6 +10,7 @@ import environment from "../common/graphqlEnvironment";
 import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
+import useSettingsCollapsed from "../common/hooks/useSettingsCollapsed";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./App.css";
 import BackgroundMusic from "./BackgroundMusic";
@@ -27,7 +28,6 @@ import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServi
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
-const SETTINGS_COLLAPSED_STORAGE_KEY = "settingsCollapsed";
 // Volumes and the BGM track used to be renderer-local; they now live in the
 // main process (synced via useBgmVolume/useGuideMelodyVolume/useBgmTrack) so
 // the remocon can control them too. These keys only remain for the one-time
@@ -126,19 +126,9 @@ function App(props: {
   );
 
   // Collapse the Settings section so the big screen shows only the Queue
-  // during regular operation. Persisted so it survives relaunches.
-  const [settingsCollapsed, _setSettingsCollapsed] = useState<boolean>(
-    () => localStorage.getItem(SETTINGS_COLLAPSED_STORAGE_KEY) === "true",
-  );
-
-  const setSettingsCollapsed = (value: boolean) => {
-    if (value) {
-      localStorage.setItem(SETTINGS_COLLAPSED_STORAGE_KEY, "true");
-    } else {
-      localStorage.removeItem(SETTINGS_COLLAPSED_STORAGE_KEY);
-    }
-    _setSettingsCollapsed(value);
-  };
+  // during regular operation. Synced through the main process so the remocon
+  // can toggle it on the TV remotely.
+  const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
 
   const setOledFriendly = (value: boolean) => {
     if (value) {
