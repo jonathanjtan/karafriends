@@ -85,9 +85,113 @@ const kuroshiroReady = kuroshiro.init(
   }),
 );
 
+// JOYSOUND artist strings frequently carry voice-actor / featured-artist
+// metadata like "涼宮ハルヒ(C.V.平野綾)" or "○○ feat. △△". Beyond cluttering
+// the helper romaji, the interposed Latin "(C.V." tokens actively derail
+// kuromoji's tokenizer onto the wrong reading for the *surrounding* kanji:
+// 平野 in "涼宮ハルヒ(C.V.平野綾)" mis-reads as ヘイヤ, yet 平野綾 on its own
+// reads correctly as ひらのあや. Strip the noise before the reading guess so
+// it neither corrupts adjacent names nor leaks into the output.
+const READING_NOISE_PATTERNS = [
+  // (C.V. …) / （Ｃ．Ｖ．…） / (CV：…) — round parens, half/full width, opening
+  // with a C(.)V / CV voice-actor marker.
+  /[(（]\s*[cCｃＣ][.．]?\s*[vVｖＶ][.．：:]*[^)）]*[)）]/g,
+  // feat. / ft. / featuring … — consume to the end of the string (the guest
+  // credit is always a trailing clause on the primary artist name).
+  /\s*(?:feat|ft|featuring)\.?\s.*$/gi,
+];
+
+function stripReadingNoise(text: string): string {
+  return READING_NOISE_PATTERNS.reduce(
+    (acc, pattern) => acc.replace(pattern, ""),
+    text,
+  ).trim();
+}
+
 async function toYomi(text: string): Promise<string> {
   await kuroshiroReady;
-  return kuroshiro.convert(text, { to: "hiragana", mode: "normal" });
+  const cleaned = stripReadingNoise(text) || text;
+  return kuroshiro.convert(cleaned, { to: "hiragana", mode: "normal" });
+}
+
+// DAM's dkwebsys search returns human-curated katakana readings inline
+// (titleYomi/artistYomi), including correct proper-noun readings that
+// kuromoji's IPADIC dictionary simply doesn't carry (e.g. 涼宮→スズミヤ,
+// where kuromoji shatters it into 涼(リョウ)+宮(ミヤ)). To borrow them for
+// JOYSOUND rows we issue the *same* keyword the user searched to DAM once,
+// then index every returned title/artist by a normalized name so JOYSOUND
+// results whose name/artist matches a DAM row can adopt DAM's canonical
+// reading. One DAM search per user query, cached; any failure degrades to
+// an empty map so the kuromoji fallback still stands.
+const damYomiCache = new Map<string, Promise<Map<string, string>>>();
+
+function normalizeForYomiMatch(name: string): string {
+  return name.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+}
+
+function fetchDamYomiMap(
+  mode: "song" | "artist",
+  keyword: string,
+  dkwebsys: DkwebsysAPI,
+): Promise<Map<string, string>> {
+  const cacheKey = `${mode}:${keyword}`;
+  const cached = damYomiCache.get(cacheKey);
+  if (cached) return cached;
+
+  const promise = (
+    mode === "song"
+      ? dkwebsys
+          .getMusicByKeyword(keyword, 30, 0)
+          .then((result) =>
+            result.list.flatMap((song) => [
+              [song.title, song.titleYomi] as const,
+              [song.artist, song.artistYomi] as const,
+            ]),
+          )
+      : dkwebsys
+          .getArtistByKeyword(keyword, 30, 0)
+          .then((result) =>
+            result.list.map(
+              (artist) => [artist.artist, artist.artistYomi] as const,
+            ),
+          )
+  )
+    .then((pairs) => {
+      const map = new Map<string, string>();
+      for (const [name, yomi] of pairs) {
+        if (name && yomi) map.set(normalizeForYomiMatch(name), yomi);
+      }
+      return map;
+    })
+    .catch((e) => {
+      // Don't let a transient DAM failure poison this keyword's cache — drop
+      // the entry so a later search retries instead of sticking with empties.
+      damYomiCache.delete(cacheKey);
+      console.error(
+        `[yomi] DAM canonical-reading lookup failed for "${keyword}"`,
+        e,
+      );
+      return new Map<string, string>();
+    });
+
+  damYomiCache.set(cacheKey, promise);
+  return promise;
+}
+
+// The DAM lookup is a best-effort enrichment layered on top of JOYSOUND's
+// own results — never let a slow/unreachable DAM stall the search response
+// the user is waiting on. Cap how long we'll wait, then fall back.
+const DAM_YOMI_TIMEOUT_MS = 2500;
+
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  fallback: T,
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
 }
 
 function dedupeBy<Item, Key>(items: Item[], key: (item: Item) => Key): Item[] {
@@ -385,12 +489,17 @@ function pickMusicVideoCandidates(
   }));
 }
 
+// A pre-set nameYomi/artistNameYomi on the parent (e.g. DAM's canonical
+// katakana reading attached at search time) wins over the kuromoji guess.
 const nameYomiResolvers = {
-  nameYomi(parent: { name: string }) {
-    return toYomi(parent.name);
+  nameYomi(parent: { name: string; nameYomi?: string | null }) {
+    return parent.nameYomi || toYomi(parent.name);
   },
-  artistNameYomi(parent: { artistName: string }) {
-    return toYomi(parent.artistName);
+  artistNameYomi(parent: {
+    artistName: string;
+    artistNameYomi?: string | null;
+  }) {
+    return parent.artistNameYomi || toYomi(parent.artistName);
   },
 };
 
@@ -398,6 +507,10 @@ interface JoysoundSongParent {
   readonly id: string;
   readonly name: string;
   readonly artistName: string;
+  // Canonical readings borrowed from DAM at search time; null/absent falls
+  // back to the kuromoji guess in nameYomiResolvers.
+  readonly nameYomi?: string | null;
+  readonly artistNameYomi?: string | null;
   readonly lyricsPreview?: string | null;
   readonly tieUp?: string | null;
 }
@@ -405,6 +518,9 @@ interface JoysoundSongParent {
 interface JoysoundArtistParent {
   readonly id: string;
   readonly name: string;
+  // Canonical reading borrowed from DAM at search time; falls back to the
+  // kuromoji guess when absent.
+  readonly nameYomi?: string | null;
 }
 
 interface SongParent {
@@ -1005,7 +1121,7 @@ const resolvers = {
   },
   JoysoundArtist: {
     nameYomi(parent: JoysoundArtistParent) {
-      return toYomi(parent.name);
+      return parent.nameYomi || toYomi(parent.name);
     },
   },
   DamQueueItem: {
@@ -1109,6 +1225,15 @@ const resolvers = {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
 
+      // Fire the DAM canonical-reading lookup in parallel with the JOYSOUND
+      // search so it adds no latency of its own; borrow its yomi for any row
+      // whose title/artist matches (see fetchDamYomiMap).
+      const damYomiPromise = fetchDamYomiMap(
+        "song",
+        args.keyword,
+        dataSources.dkwebsys,
+      );
+
       return searchWithRomajiFallback<
         Awaited<ReturnType<JoysoundAPI["getSongListByKeyword"]>>
       >(
@@ -1123,11 +1248,17 @@ const resolvers = {
             afterInt,
             firstInt,
           ),
-      ).then((result) => {
+      ).then(async (result) => {
         const sorted = sortByTitleMatchTier(
           result as any[],
           args.keyword,
           (song) => song.songName,
+        );
+
+        const damYomi = await withTimeout(
+          damYomiPromise,
+          DAM_YOMI_TIMEOUT_MS,
+          new Map<string, string>(),
         );
 
         return {
@@ -1136,6 +1267,10 @@ const resolvers = {
               id: song.selSongNo,
               name: song.songName,
               artistName: song.artistName,
+              nameYomi:
+                damYomi.get(normalizeForYomiMatch(song.songName)) || null,
+              artistNameYomi:
+                damYomi.get(normalizeForYomiMatch(song.artistName)) || null,
             },
             cursor: (firstInt + i).toString(),
           })),
@@ -1156,6 +1291,12 @@ const resolvers = {
       const firstInt = args.first || 100;
       const afterInt = args.after ? parseInt(args.after, 10) : 1;
 
+      const damYomiPromise = fetchDamYomiMap(
+        "artist",
+        args.keyword,
+        dataSources.dkwebsys,
+      );
+
       return searchWithRomajiFallback<
         Awaited<ReturnType<JoysoundAPI["getArtistListByKeyword"]>>
       >(
@@ -1173,21 +1314,31 @@ const resolvers = {
             afterInt,
             firstInt,
           ),
-      ).then((result) => ({
-        edges: result.map((artist, i) => ({
-          node: {
-            id: artist.artistId_digi,
-            name: artist.artistName,
+      ).then(async (result) => {
+        const damYomi = await withTimeout(
+          damYomiPromise,
+          DAM_YOMI_TIMEOUT_MS,
+          new Map<string, string>(),
+        );
+
+        return {
+          edges: result.map((artist, i) => ({
+            node: {
+              id: artist.artistId_digi,
+              name: artist.artistName,
+              nameYomi:
+                damYomi.get(normalizeForYomiMatch(artist.artistName)) || null,
+            },
+            cursor: (firstInt + i).toString(),
+          })),
+          pageInfo: {
+            hasPreviousPage: false,
+            hasNextPage: result.length === firstInt,
+            startCursor: "1",
+            endCursor: (firstInt + afterInt).toString(),
           },
-          cursor: (firstInt + i).toString(),
-        })),
-        pageInfo: {
-          hasPreviousPage: false,
-          hasNextPage: result.length === firstInt,
-          startCursor: "1",
-          endCursor: (firstInt + afterInt).toString(),
-        },
-      }));
+        };
+      });
     },
     songsByName: (
       _: any,
