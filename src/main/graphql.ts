@@ -1875,7 +1875,12 @@ export const joysoundCredentialsProvider = memoize(async () => {
 });
 
 const innertubeApiProvider = memoize(async () => {
-  return Innertube.create();
+  // Ask YouTube for Japanese-locale results: with the default en-US locale,
+  // search results for JP songs come back with machine-romanized titles
+  // (e.g. tuki.'s 晩餐歌 as "tuki.『Bansanka』Official Music Video"), which
+  // breaks the MV picker's song-name-in-title filter and hides JP keywords
+  // (カラオケ, 弾き語り, ...) from its exclusion list.
+  return Innertube.create({ lang: "ja", location: "JP" });
 });
 
 // Known-good DAM song, per DAM-DEBUG-HANDOFF.md, used as a health check
