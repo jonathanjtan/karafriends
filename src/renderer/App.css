@@ -160,6 +160,82 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   margin: 12px 0;
 }
 
+/* Compact one-line-per-setting layout: a shared 3-column grid
+   (label | control | value) so every label, slider, and readout lines up
+   across rows. Rows without a numeric readout (segmented buttons, switches)
+   span the control+value columns via .settingControlWide. */
+.settingsGrid {
+  display: grid;
+  grid-template-columns: max-content 1fr 3em;
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: center;
+  text-align: left;
+  margin: 8px 0 4px;
+}
+
+.settingLabel {
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+/* Group title spanning the whole grid row ("Volume" / "Piano Roll" /
+   "Options") so the per-row labels can stay short and the label column
+   narrow. */
+.settingSubheader {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+  padding-bottom: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgba(0, 0, 0, 0.45);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+}
+
+.settingsGrid .settingSubheader:first-child {
+  margin-top: 0;
+}
+
+.settingLabelClickable {
+  cursor: pointer;
+}
+
+.settingValue {
+  font-size: 0.85rem;
+  text-align: right;
+  /* Keeps 9% / 75% / 100% from jiggling the column width while dragging. */
+  font-variant-numeric: tabular-nums;
+}
+
+.settingControlWide {
+  grid-column: 2 / 4;
+}
+
+/* Materialize gives range fields and inputs chunky vertical margins meant for
+   stacked forms; inside the grid the row gap does that job. */
+.settingsGrid .range-field {
+  margin: 0;
+  display: block;
+}
+
+.settingsGrid input[type="range"] {
+  margin: 0;
+}
+
+.settingsGrid .pianoRollSizeButtons {
+  margin-bottom: 0;
+}
+
+.settingsGrid .switch {
+  justify-self: start;
+}
+
+.settingsGrid .switch .lever {
+  margin: 0;
+}
+
 /* Render the four presets as a single segmented control: one connected button
    split into four sections (no gaps), which fits a narrow sidebar far better
    than four separate Materialize buttons whose fixed padding overflowed. */

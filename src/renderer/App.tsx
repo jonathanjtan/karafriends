@@ -16,6 +16,7 @@ import useBgmVolume from "../common/hooks/useBgmVolume";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
+import useQueueIntermissionEnabled from "../common/hooks/useQueueIntermissionEnabled";
 import useSettingsCollapsed from "../common/hooks/useSettingsCollapsed";
 import useSidebarCollapsed from "../common/hooks/useSidebarCollapsed";
 import { KuroshiroSingleton } from "../common/joysoundParser";
@@ -170,6 +171,8 @@ function App(props: {
   const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
   const { pianoRollOpacity, setPianoRollOpacity } = usePianoRollOpacity();
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
+  const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
+    useQueueIntermissionEnabled();
 
   useEffect(() => {
     const storedBgmVolume = localStorage.getItem(LEGACY_BGM_VOLUME_STORAGE_KEY);
@@ -377,7 +380,12 @@ function App(props: {
         {sidebarVisible ? <FaChevronRight /> : <FaChevronLeft />}
       </div>
       <div className="appPlayer valign-wrapper">
-        <Player mics={mics} kuroshiro={props.kuroshiro} audio={props.audio} />
+        <Player
+          mics={mics}
+          kuroshiro={props.kuroshiro}
+          audio={props.audio}
+          hostname={hostname}
+        />
         <Effects />
         <BackgroundMusic trackFilename={bgmTrack} volume={bgmVolume} />
       </div>
@@ -419,57 +427,104 @@ function App(props: {
               <BackgroundMusicSetting
                 selected={bgmTrack}
                 onChange={setBgmTrack}
-                volume={bgmVolume}
-                onVolumeChange={setBgmVolume}
               />
-              <p>Guide Melody: {Math.round(guideMelodyVolume * 100)}%</p>
-              <p className="range-field">
-                <input
-                  type="range"
-                  min="0"
-                  max="150"
-                  value={Math.round(guideMelodyVolume * 100)}
-                  onChange={(e) =>
-                    setGuideMelodyVolume(Number(e.target.value) / 100)
-                  }
-                />
-              </p>
-              <p>Piano Roll Opacity: {Math.round(pianoRollOpacity * 100)}%</p>
-              <p className="range-field">
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(pianoRollOpacity * 100)}
-                  onChange={(e) =>
-                    setPianoRollOpacity(Number(e.target.value) / 100)
-                  }
-                />
-              </p>
-              <p>Piano Roll Size</p>
-              <div className="pianoRollSizeButtons">
-                {PIANO_ROLL_SIZE_PRESETS.map(({ label, size }) => (
-                  <button
-                    key={label}
-                    className={`btn-small ${
-                      Math.abs(pianoRollSize - size) < 0.001 ? "" : "grey"
-                    }`}
-                    onClick={() => setPianoRollSize(size)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="switch">
-                <label>
-                  OLED Mode
+              <div className="settingsGrid">
+                <span className="settingSubheader">Volume</span>
+                <span className="settingLabel">BGM</span>
+                <span className="range-field settingControl">
                   <input
-                    type="checkbox"
-                    checked={oledFriendly}
-                    onChange={(e) => setOledFriendly(e.target.checked)}
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(bgmVolume * 100)}
+                    onChange={(e) => setBgmVolume(Number(e.target.value) / 100)}
                   />
-                  <span className="lever"></span>
-                </label>
+                </span>
+                <span className="settingValue">
+                  {Math.round(bgmVolume * 100)}%
+                </span>
+                <span className="settingLabel">Guide</span>
+                <span className="range-field settingControl">
+                  <input
+                    type="range"
+                    min="0"
+                    max="150"
+                    value={Math.round(guideMelodyVolume * 100)}
+                    onChange={(e) =>
+                      setGuideMelodyVolume(Number(e.target.value) / 100)
+                    }
+                  />
+                </span>
+                <span className="settingValue">
+                  {Math.round(guideMelodyVolume * 100)}%
+                </span>
+                <span className="settingSubheader">Piano Roll</span>
+                <span className="settingLabel">Opacity</span>
+                <span className="range-field settingControl">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(pianoRollOpacity * 100)}
+                    onChange={(e) =>
+                      setPianoRollOpacity(Number(e.target.value) / 100)
+                    }
+                  />
+                </span>
+                <span className="settingValue">
+                  {Math.round(pianoRollOpacity * 100)}%
+                </span>
+                <span className="settingLabel">Size</span>
+                <div className="pianoRollSizeButtons settingControlWide">
+                  {PIANO_ROLL_SIZE_PRESETS.map(({ label, size }) => (
+                    <button
+                      key={label}
+                      className={`btn-small ${
+                        Math.abs(pianoRollSize - size) < 0.001 ? "" : "grey"
+                      }`}
+                      onClick={() => setPianoRollSize(size)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span className="settingSubheader">Options</span>
+                <span
+                  className="settingLabel settingLabelClickable"
+                  onClick={() =>
+                    setQueueIntermissionEnabled(!queueIntermissionEnabled)
+                  }
+                >
+                  Intermission
+                </span>
+                <div className="switch settingControlWide">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={queueIntermissionEnabled}
+                      onChange={(e) =>
+                        setQueueIntermissionEnabled(e.target.checked)
+                      }
+                    />
+                    <span className="lever"></span>
+                  </label>
+                </div>
+                <span
+                  className="settingLabel settingLabelClickable"
+                  onClick={() => setOledFriendly(!oledFriendly)}
+                >
+                  OLED Mode
+                </span>
+                <div className="switch settingControlWide">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={oledFriendly}
+                      onChange={(e) => setOledFriendly(e.target.checked)}
+                    />
+                    <span className="lever"></span>
+                  </label>
+                </div>
               </div>
               <table className="centered">
                 <thead>

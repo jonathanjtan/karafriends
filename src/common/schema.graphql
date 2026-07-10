@@ -31,6 +31,10 @@ type Query {
   pitchShiftSemis: Int!
   playbackState: PlaybackState!
   queue: [QueueItem!]!
+  # Whether the big screen cuts to a fullscreen queue screen for a few seconds
+  # between songs (like a real DAM/JOYSOUND machine) before starting the next
+  # song. Synced so the remocon can toggle it.
+  queueIntermissionEnabled: Boolean!
   serviceHealth: ServiceHealth!
   # Whether the big-screen (renderer) Settings section is collapsed. Synced so
   # the remocon can hide/show it on the TV remotely.
@@ -83,6 +87,7 @@ type Mutation {
   setPianoRollSize(size: Float!): Boolean!
   setPitchShiftSemis(semis: Int!): Boolean!
   setPlaybackState(playbackState: PlaybackState!): Boolean!
+  setQueueIntermissionEnabled(enabled: Boolean!): Boolean!
   setSettingsCollapsed(collapsed: Boolean!): Boolean!
   setSidebarCollapsed(collapsed: Boolean!): Boolean!
 }
@@ -98,6 +103,7 @@ type Subscription {
   pianoRollSizeChanged: Float!
   pitchShiftSemisChanged: Int!
   playbackStateChanged: PlaybackState!
+  queueIntermissionEnabledChanged: Boolean!
   settingsCollapsedChanged: Boolean!
   sidebarCollapsedChanged: Boolean!
   queueAdded: QueueItem!

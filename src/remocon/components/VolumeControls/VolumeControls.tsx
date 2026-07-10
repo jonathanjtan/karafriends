@@ -8,6 +8,7 @@ import useBgmVolume from "../../../common/hooks/useBgmVolume";
 import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
+import useQueueIntermissionEnabled from "../../../common/hooks/useQueueIntermissionEnabled";
 import useSettingsCollapsed from "../../../common/hooks/useSettingsCollapsed";
 import useSidebarCollapsed from "../../../common/hooks/useSidebarCollapsed";
 import useConfig from "../../hooks/useConfig";
@@ -35,6 +36,8 @@ const VolumeControls = () => {
   const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
   const { pianoRollOpacity, setPianoRollOpacity } = usePianoRollOpacity();
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
+  const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
+    useQueueIntermissionEnabled();
   const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
@@ -159,6 +162,16 @@ const VolumeControls = () => {
             onClick={recheck}
           >
             Check Service Status Now
+          </button>
+        </div>
+        <div>
+          <button
+            className={styles.recheckButton}
+            onClick={() =>
+              setQueueIntermissionEnabled(!queueIntermissionEnabled)
+            }
+          >
+            Intermission: {queueIntermissionEnabled ? "On" : "Off"}
           </button>
         </div>
         <div>

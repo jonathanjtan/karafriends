@@ -11,6 +11,8 @@ import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.gra
 import environment from "../common/graphqlEnvironment";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
+import useQueue from "../common/hooks/useQueue";
+import useQueueIntermissionEnabled from "../common/hooks/useQueueIntermissionEnabled";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import AdhocLyrics from "./AdhocLyrics";
 import DamGuideMelodySynth from "./damGuideMelody";
@@ -18,6 +20,7 @@ import JoysoundRenderer from "./JoysoundRenderer";
 import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
 import "./Player.css";
+import QueueIntermission from "./QueueIntermission";
 import KarafriendsAudio from "./webAudio";
 
 const popSongMutation = graphql`
@@ -69,11 +72,15 @@ const POLL_INTERVAL_MS = 5 * 1000;
 const DAM_GAIN = 1.0;
 const NON_DAM_GAIN = 0.8;
 const MAX_HLS_FATAL_ERROR_RETRIES = 2;
+// How long the between-songs queue screen stays up before the next song
+// starts (when queueIntermissionEnabled is on).
+const QUEUE_INTERMISSION_MS = 5 * 1000;
 
 function Player(props: {
   mics: InputDevice[];
   kuroshiro: KuroshiroSingleton;
   audio: KarafriendsAudio;
+  hostname: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
@@ -89,6 +96,42 @@ function Player(props: {
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
   const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Between-songs queue screen. The onended/pollQueue closures are wired up
+  // once on mount, so they read the live setting and queue length through
+  // refs rather than captured state.
+  const queue = useQueue();
+  const { queueIntermissionEnabled } = useQueueIntermissionEnabled();
+  const [intermissionVisible, setIntermissionVisible] = useState(false);
+  const intermissionEnabledRef = useRef(queueIntermissionEnabled);
+  const queueLengthRef = useRef(queue.length);
+  const intermissionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollQueueRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    intermissionEnabledRef.current = queueIntermissionEnabled;
+  }, [queueIntermissionEnabled]);
+
+  useEffect(() => {
+    queueLengthRef.current = queue.length;
+  }, [queue]);
+
+  const cancelIntermission = () => {
+    if (intermissionTimerRef.current) {
+      clearTimeout(intermissionTimerRef.current);
+      intermissionTimerRef.current = null;
+    }
+    setIntermissionVisible(false);
+  };
+
+  useEffect(() => {
+    if (queueIntermissionEnabled) return;
+    // Setting turned off mid-intermission: if the next song was pending on
+    // the timer, start it now; if the idle screen was up, just hide it.
+    const timerWasPending = intermissionTimerRef.current !== null;
+    cancelIntermission();
+    if (timerWasPending) pollQueueRef.current?.();
+  }, [queueIntermissionEnabled]);
 
   const audioCtx = useRef<AudioContext | null>(null);
   const videoAudioSrc = useRef<MediaElementAudioSourceNode | null>(null);
@@ -111,6 +154,10 @@ function Player(props: {
             pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
             return;
           }
+
+          // A song is actually starting; take down the intermission screen
+          // (it stays up through empty-queue polls as the idle screen).
+          setIntermissionVisible(false);
 
           if (trackRef?.current) {
             trackRef.current.default = false;
@@ -335,7 +382,28 @@ function Player(props: {
         },
       });
 
-    videoRef.current.onended = pollQueue;
+    pollQueueRef.current = pollQueue;
+
+    videoRef.current.onended = () => {
+      // With the intermission enabled, cut to the queue screen when a song
+      // ends. Songs waiting: hold it for a few seconds, then pop the next
+      // song. Queue empty: it doubles as the idle screen ("waiting for
+      // songs" + QR code) and stays up until the next pop succeeds.
+      // Playback-error skips bypass this by calling pollQueue directly.
+      if (intermissionEnabledRef.current) {
+        setIntermissionVisible(true);
+        if (queueLengthRef.current > 0) {
+          intermissionTimerRef.current = setTimeout(() => {
+            intermissionTimerRef.current = null;
+            pollQueue();
+          }, QUEUE_INTERMISSION_MS);
+        } else {
+          pollQueue();
+        }
+        return;
+      }
+      pollQueue();
+    };
     videoRef.current.onerror = () => {
       console.error(
         "Fatal <video> element error, skipping current song",
@@ -356,6 +424,12 @@ function Player(props: {
         pollTimeoutRef.current = null;
       }
 
+      if (intermissionTimerRef.current) {
+        clearTimeout(intermissionTimerRef.current);
+
+        intermissionTimerRef.current = null;
+      }
+
       if (damGuideSynthRef.current) {
         damGuideSynthRef.current.dispose();
         damGuideSynthRef.current = null;
@@ -374,10 +448,19 @@ function Player(props: {
         videoRef.current.play();
         break;
       case "RESTARTING":
+        // Mid-intermission restart replays the song that just ended; its
+        // next natural end goes through the intermission again.
+        cancelIntermission();
         videoRef.current.currentTime = 0;
         setPlaybackState("PLAYING");
         break;
       case "SKIPPING":
+        if (intermissionTimerRef.current) {
+          // Mid-intermission skip: start the next song right away.
+          cancelIntermission();
+          pollQueueRef.current?.();
+          break;
+        }
         if (isFinite(videoRef.current.duration))
           videoRef.current.currentTime = videoRef.current.duration;
         videoRef.current.play();
@@ -435,6 +518,9 @@ function Player(props: {
         <track ref={trackRef} kind="subtitles" src="" default />
       </video>
       {shouldShowAdhocLyrics ? <AdhocLyrics /> : null}
+      {intermissionVisible ? (
+        <QueueIntermission queue={queue} hostname={props.hostname} />
+      ) : null}
     </div>
   );
 }

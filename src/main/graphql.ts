@@ -885,6 +885,7 @@ type NotARealDb = {
   pianoRollSize: number;
   pitchShiftSemis: number;
   playbackState: PlaybackState;
+  queueIntermissionEnabled: boolean;
   settingsCollapsed: boolean;
   sidebarCollapsed: boolean;
   songQueue: QueueItem[];
@@ -904,6 +905,7 @@ enum SubscriptionEvent {
   PianoRollSizeChanged = "PianoRollSizeChanged",
   PitchShiftSemisChanged = "PitchShiftSemisChanged",
   PlaybackStateChanged = "PlaybackStateChanged",
+  QueueIntermissionEnabledChanged = "QueueIntermissionEnabledChanged",
   SettingsCollapsedChanged = "SettingsCollapsedChanged",
   SidebarCollapsedChanged = "SidebarCollapsedChanged",
   QueueAdded = "QueueAdded",
@@ -943,6 +945,7 @@ let db: NotARealDb = {
   pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
   pitchShiftSemis: 0,
   playbackState: PlaybackState.WAITING,
+  queueIntermissionEnabled: false,
   settingsCollapsed: false,
   sidebarCollapsed: false,
   songQueue: [],
@@ -996,6 +999,7 @@ function loadDb(): NotARealDb {
     pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
     pitchShiftSemis: 0,
     playbackState: PlaybackState.WAITING,
+    queueIntermissionEnabled: false,
     settingsCollapsed: false,
     sidebarCollapsed: false,
     songQueue: [],
@@ -1745,6 +1749,7 @@ const resolvers = {
     pianoRollOpacity: () => db.pianoRollOpacity,
     pianoRollSize: () => db.pianoRollSize,
     pitchShiftSemis: () => db.pitchShiftSemis,
+    queueIntermissionEnabled: () => db.queueIntermissionEnabled,
     settingsCollapsed: () => db.settingsCollapsed,
     sidebarCollapsed: () => db.sidebarCollapsed,
     playbackState: () => db.playbackState,
@@ -2031,6 +2036,17 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setQueueIntermissionEnabled: (
+      _: any,
+      args: { enabled: boolean },
+    ): boolean => {
+      db.queueIntermissionEnabled = args.enabled;
+      pubsub.publish(SubscriptionEvent.QueueIntermissionEnabledChanged, {
+        queueIntermissionEnabledChanged: db.queueIntermissionEnabled,
+      });
+      saveDb();
+      return true;
+    },
     setSettingsCollapsed: (_: any, args: { collapsed: boolean }): boolean => {
       db.settingsCollapsed = args.collapsed;
       pubsub.publish(SubscriptionEvent.SettingsCollapsedChanged, {
@@ -2124,6 +2140,12 @@ const resolvers = {
     bgmTrackChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([SubscriptionEvent.BgmTrackChanged]),
+    },
+    queueIntermissionEnabledChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.QueueIntermissionEnabledChanged,
+        ]),
     },
     settingsCollapsedChanged: {
       subscribe: () =>
