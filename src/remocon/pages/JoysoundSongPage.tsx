@@ -128,6 +128,10 @@ const JoysoundSongPage = () => {
 
   const onPickLuckyCandidate = (candidateVideoId: string) => {
     setYoutubeVideoId(candidateVideoId);
+    // Re-gate the queue buttons on the new video's validation — a stale
+    // validated ID would otherwise queue the previously selected video (or
+    // one whose validation failed) while the UI shows the new pick.
+    setValidatedYoutubeVideoId("");
     clearLuckyState();
 
     history.replaceState(
@@ -146,6 +150,9 @@ const JoysoundSongPage = () => {
 
     if (newYoutubeVideoId !== null) {
       setYoutubeVideoId(newYoutubeVideoId);
+      // Same re-gating as onPickLuckyCandidate: don't let a previously
+      // validated video satisfy the new one's validation.
+      setValidatedYoutubeVideoId("");
       setWaitForVideoIdInput(false);
 
       history.replaceState(

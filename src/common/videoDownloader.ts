@@ -1263,13 +1263,33 @@ export function downloadJoysoundData(
   let videoDataPromise;
 
   if (queueItem.youtubeVideoId) {
+    // YouTube intermittently rejects a format or throttles a request (same
+    // flakiness as the intro-sync audio fetch); one retry rescues most of
+    // those before the catch below gives up and silently falls back to the
+    // song's default video.
     videoDataPromise = downloadJoysoundYoutubeVideoPromise(
       songId,
       queueItem.youtubeVideoId,
       downloadQueue,
       downloadQueueItem,
       tempFilename,
-    );
+    ).catch((e) => {
+      console.error(
+        `Joysound YouTube video download failed for ${queueItem.youtubeVideoId}, retrying once: ${e}`,
+      );
+
+      // The failed attempt removed the item from the download queue; put it
+      // back so progress reporting keeps working during the retry.
+      downloadQueue.push(downloadQueueItem);
+
+      return downloadJoysoundYoutubeVideoPromise(
+        songId,
+        queueItem.youtubeVideoId!,
+        downloadQueue,
+        downloadQueueItem,
+        tempFilename,
+      );
+    });
   } else {
     videoDataPromise = joysoundApi.getMovieUrls(songId).then((data) => {
       const videoUrl = data.movie.mov1;
