@@ -17,28 +17,55 @@ on-screen piano roll.
 
 - **Commits**: Conventional Commits, small and focused. End commit messages
   with Co-Author attributions.
-  - On Windows PowerShell, pass multi-line messages via `git commit -F
+  - On **Windows PowerShell**, pass multi-line messages via `git commit -F
 <file>` — inline here-strings mangle apostrophes/quotes and split the
     message into bogus pathspecs. Write the message to a scratch file and
-    `-F` it.
+    `-F` it. (macOS/Linux shells handle multi-line `-m` fine.)
 - **lint-staged** (Husky pre-commit) runs prettier + tslint --fix on staged
   files. Expect it to reformat your edits (import order, multi-line wrapping)
   during the commit — that's intentional, keep it.
 
-## Dev environment (Windows)
+## Dev environment (macOS / Windows / Linux)
 
-This is developed on a Windows 11 machine. Node lives at
-`C:\Program Files\nodejs`; the shell (Git Bash / PowerShell) doesn't always
-have it on PATH. Prefix commands:
-
-```sh
-# PowerShell
-$env:PATH = "C:\Program Files\nodejs;$env:PATH"; corepack yarn <script>
-# Git Bash
-export PATH="/c/Program Files/nodejs:$PATH"; corepack yarn <script>
-```
+The app builds and runs on **macOS (arm64 + x86_64), Windows (x64), and
+Linux (x64)** — all four are CI targets (see `.github/workflows/build.yaml`),
+and mac + Windows both have signed release builds. Historically it was
+developed primarily on macOS; more recently on Windows. Nothing here is
+Windows-only except the optional ASIO audio backend (see below).
 
 Package manager is **Yarn (Berry) with PnP** — there is **no `node_modules`**.
+
+### Toolchain prerequisites
+
+- **Node.js LTS** + `corepack enable` (provides the `yarn` shim). CI uses
+  `lts/*`.
+- **Rust**, both **stable and nightly** — nightly is only needed for the
+  `cargo careful` native tests (`yarn test:native`); stable builds the addon.
+  Install via `rustup`.
+- **A C toolchain / platform audio headers**: macOS → Xcode command-line
+  tools (`xcode-select --install`); Linux → `libasound2-dev` (ALSA);
+  Windows → MSVC build tools.
+- **python3 + `ephemeral-port-reserve`** (`pip install --user
+ephemeral-port-reserve`) — only for the wdio integration tests. Make sure
+  its install bin dir is on PATH.
+
+Platform notes:
+
+- **macOS**: the native addon uses **CoreAudio via `cpal`** — do **not** pass
+  `--features asio`. Build the addon for your arch with
+  `CARGO_ARGS="--target aarch64-apple-darwin"` (or `x86_64-apple-darwin`).
+- **Windows**: Node often isn't on PATH from Git Bash / PowerShell (it lives
+  at `C:\Program Files\nodejs`). Prefix commands:
+  ```sh
+  # PowerShell
+  $env:PATH = "C:\Program Files\nodejs;$env:PATH"; corepack yarn <script>
+  # Git Bash
+  export PATH="/c/Program Files/nodejs:$PATH"; corepack yarn <script>
+  ```
+  Windows can additionally opt into the **ASIO** low-latency audio backend
+  with `CARGO_ARGS="--features asio"` (requires Steinberg's ASIO SDK — see
+  `docs/windows-dev-setup.md`).
+- **Linux**: install `libasound2-dev` first; `cpal` uses ALSA.
 
 ### Commands
 
@@ -47,11 +74,19 @@ Package manager is **Yarn (Berry) with PnP** — there is **no `node_modules`**.
   server listens on **:8080**. The Electron window pops up on the dev
   machine's screen.
 - `corepack yarn build-prod` — production build (relay + native + parcel).
-- `corepack yarn package-prod` — packages `dist/karafriends-win32-x64/`
-  (+ `.zip`). **The packaged `karafriends.exe` must not be running** — it
-  locks `dist` and packaging fails with EBUSY. Close it first
-  (`Stop-Process -Name karafriends -Force`), or run package-prod in a loop
-  that waits for the process to exit.
+- `corepack yarn package-prod` — packages a platform-native bundle under
+  `dist/` (+ `.zip`): `karafriends-win32-x64/` (`.exe`) on Windows,
+  `karafriends-darwin-<arch>/karafriends.app` on macOS, `karafriends-linux-x64/`
+  on Linux. Pass `PACKAGER_ARCH` (e.g. `arm64`) to cross-target.
+  - **macOS signing/notarization is opt-in**: `packager.js` only code-signs +
+    notarizes when `NOTARIZATION_KEY_PATH` is set (the release CI sets it).
+    Without it you get an **unsigned `.app` that runs locally** — exactly what
+    you want for your own machine. A distributable build needs the Developer ID
+    cert + notarization key.
+  - **Windows**: the packaged `karafriends.exe` must not be running — it locks
+    `dist` and packaging fails with EBUSY. Close it first
+    (`Stop-Process -Name karafriends -Force`), or run package-prod in a loop
+    that waits for the process to exit.
 - `corepack yarn build-relay-dev` / `build-relay-prod` — regenerate Relay
   `__generated__` artifacts. **Required after any change to
   `src/common/schema.graphql` or any `graphql\`\`` document.** `__generated__`
@@ -67,8 +102,11 @@ files you touched.
 ### Kill / restart
 
 The dev app owns port **:8080**. To kill it:
-`Get-NetTCPConnection -LocalPort 8080 -State Listen | Stop-Process -Id
-{OwningProcess} -Force`.
+
+- **Windows**: `Get-NetTCPConnection -LocalPort 8080 -State Listen |
+Stop-Process -Id {OwningProcess} -Force`.
+- **macOS / Linux**: `lsof -ti tcp:8080 | xargs kill -9` (or
+  `kill $(lsof -ti tcp:8080)`).
 
 ### Gotchas that will waste your time
 
@@ -83,19 +121,19 @@ The dev app owns port **:8080**. To kill it:
   `require-in-the-middle`/Parcel-runtime `TypeError` (Sentry's require-patching
   racing Parcel's lazy module cache). Harmless — just retry the same request.
   - **An unhandled promise rejection anywhere in `main` kills the WHOLE app.**
-  `main/index.ts` registers `process.on("unhandledRejection", …)` (and
-  `uncaughtException`) handlers that call `process.exit(1)`. So a rejected
-  promise with no `.catch()` — including one that rejects *after* a resolver
-  has already returned (fire-and-forget downloads, predownloads,
-  subscriptions) — takes down the GraphQL server, the queue, and the
-  renderer, not just the one request. **Every async path in `main` must
-  terminate in a `.catch()`.** The `DamQueueItem.streamingUrls`/`scoringData`
-  read resolvers model it; e.g. the DAM 403 / streaming-absent conditions
-  under "DAM specifics" below only crashed the app because the queue-time
-  predownload was missing this guard.
+    `main/index.ts` registers `process.on("unhandledRejection", …)` (and
+    `uncaughtException`) handlers that call `process.exit(1)`. So a rejected
+    promise with no `.catch()` — including one that rejects _after_ a resolver
+    has already returned (fire-and-forget downloads, predownloads,
+    subscriptions) — takes down the GraphQL server, the queue, and the
+    renderer, not just the one request. **Every async path in `main` must
+    terminate in a `.catch()`.** The `DamQueueItem.streamingUrls`/`scoringData`
+    read resolvers model it; e.g. the DAM 403 / streaming-absent conditions
+    under "DAM specifics" below only crashed the app because the queue-time
+    predownload was missing this guard.
 - **Stray `null` in `queue.json`.** `saveDb` prepends `db.currentSong`
-  unconditionally, so a `null` can land in the persisted `songQueue` array at
-  `%LOCALAPPDATA%\Temp\karafriends_tmp\queue.json`, which then crashes any
+  unconditionally, so a `null` can land in the persisted `songQueue` array in
+  `queue.json` (in the temp/cache dir — see below), which then crashes any
   `queue`/`queueJoysoundSong` query with "Cannot read properties of null".
   Delete that file to reset.
 - **The remocon renders a BLANK page in a fresh headless browser.**
@@ -124,8 +162,10 @@ running app's remocon.
 
 ## The temp/cache dir
 
-Everything downloaded/composited lives in
-`%LOCALAPPDATA%\Temp\karafriends_tmp\`:
+Everything downloaded/composited lives in a `karafriends_tmp/` folder under
+the OS temp dir (`app.getPath("temp")`) — so **Windows**
+`%LOCALAPPDATA%\Temp\karafriends_tmp\`, **macOS** `$TMPDIR/karafriends_tmp/`
+(under `/var/folders/…/T/`), **Linux** `/tmp/karafriends_tmp/`:
 
 - `queue.json` — the persisted NotARealDb (see below).
 - `reading-cache.json` — persisted name→reading (yomi) cache backing the
@@ -160,8 +200,9 @@ Four bundles built by Parcel from `src/`:
 - **`src/common`** — shared code: `schema.graphql`, GraphQL environment,
   shared React hooks, `videoDownloader.ts` (the download/compose pipeline,
   used from main), DSP (`guideMelody.ts`), parsers, constants.
-- **`native/`** — a Rust `.node` addon (audio I/O via ASIO, ephemeral-port
-  reservation).
+- **`native/`** — a Rust `.node` addon (audio I/O via **`cpal`** —
+  CoreAudio on macOS, WASAPI on Windows, ALSA on Linux, with **ASIO** an
+  opt-in Windows feature; plus ephemeral-port reservation).
 
 GraphQL on **:8080** is **POST-only** (Apollo CSRF protection); it also serves
 graphql-ws subscriptions over WebSocket. The remocon talks to it; in dev,
@@ -265,10 +306,13 @@ The build script now **re-fetches the latest yt-dlp on every build**
 start failing:
 
 1. Check `yt-<id>.log` in the temp dir for the bot/429/signature error.
-2. Confirm the bundled version: `extraResources/ytdlp/yt-dlp.exe --version`.
-3. Rebuild (auto-refreshes) or manually drop the latest `yt-dlp.exe` from
-   `github.com/yt-dlp/yt-dlp/releases/latest` into `extraResources/ytdlp/`
-   **and** the packaged `dist/.../resources/extraResources/ytdlp/`.
+2. Confirm the bundled version: run the platform binary in
+   `extraResources/ytdlp/` with `--version` (`yt-dlp.exe` on Windows,
+   `yt-dlp_macos` on macOS, `yt-dlp` on Linux).
+3. Rebuild (auto-refreshes) or manually drop the latest release for your
+   platform from `github.com/yt-dlp/yt-dlp/releases/latest` into
+   `extraResources/ytdlp/` **and** the packaged
+   `dist/.../resources/extraResources/ytdlp/`.
 4. The **default** player client works with a current binary. A missing JS
    runtime (Deno) only limits available formats, it doesn't block the default
    client. Avoid `player_client=tv` — it hit DRM-protected formats here.
@@ -296,10 +340,12 @@ changes yourself: curl the :8080 GraphQL API (POST-only; UTF-8 bodies via
 with offline scratch scripts (envelope/pitch analysis, the WebGL shader
 harness), and check the temp-dir logs and composited outputs directly with
 ffmpeg. For remocon UI, drive the real app through the TCP-proxy preview
-entry. Reading app-owned credentials from
-`%APPDATA%/karafriends/config.yaml` to call the same APIs the app calls (for
-the user's own accounts) is acceptable for testing — never print or commit
-them.
+entry. Reading app-owned credentials from the platform config path
+(`%APPDATA%\karafriends\config.yaml` on Windows,
+`~/Library/Application Support/karafriends/config.yaml` on macOS,
+`~/.config/karafriends/config.yaml` on Linux — see `docs/configuration.md`) to
+call the same APIs the app calls (for the user's own accounts) is acceptable
+for testing — never print or commit them.
 
 ## More docs
 
