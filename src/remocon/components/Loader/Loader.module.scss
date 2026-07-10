@@ -15,3 +15,20 @@
     transform: rotate(359deg);
   }
 }
+
+.queryError {
+  margin: 16px auto;
+  padding: 0 16px;
+  text-align: center;
+  color: #1cb3ff;
+}
+
+.retryButton {
+  margin-top: 8px;
+  padding: 6px 16px;
+  border: 1px solid #1cb3ff;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #1cb3ff;
+  font-size: 14px;
+}
