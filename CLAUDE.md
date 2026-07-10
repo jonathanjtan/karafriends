@@ -82,6 +82,17 @@ The dev app owns port **:8080**. To kill it:
 - **First GraphQL request after a fresh launch may throw** a
   `require-in-the-middle`/Parcel-runtime `TypeError` (Sentry's require-patching
   racing Parcel's lazy module cache). Harmless — just retry the same request.
+  - **An unhandled promise rejection anywhere in `main` kills the WHOLE app.**
+  `main/index.ts` registers `process.on("unhandledRejection", …)` (and
+  `uncaughtException`) handlers that call `process.exit(1)`. So a rejected
+  promise with no `.catch()` — including one that rejects *after* a resolver
+  has already returned (fire-and-forget downloads, predownloads,
+  subscriptions) — takes down the GraphQL server, the queue, and the
+  renderer, not just the one request. **Every async path in `main` must
+  terminate in a `.catch()`.** The `DamQueueItem.streamingUrls`/`scoringData`
+  read resolvers model it; e.g. the DAM 403 / streaming-absent conditions
+  under "DAM specifics" below only crashed the app because the queue-time
+  predownload was missing this guard.
 - **Stray `null` in `queue.json`.** `saveDb` prepends `db.currentSong`
   unconditionally, so a `null` can land in the persisted `songQueue` array at
   `%LOCALAPPDATA%\Temp\karafriends_tmp\queue.json`, which then crashes any
@@ -89,7 +100,13 @@ The dev app owns port **:8080**. To kill it:
   Delete that file to reset.
 - **The remocon renders a BLANK page in a fresh headless browser.**
   `useUserIdentity` calls `window.prompt()` when no nickname is stored, which
-  throws in headless contexts and takes the whole `<App>` down. Pre-seed
+  throws in headless contexts and takes the whole `<App>` down.
+  Separately, a **failed `useLazyLoadQuery`** (services unreachable) used to
+  whitescreen the app the same way — an uncaught throw taking down `<App>`.
+  `withLoader` now wraps children in a `QueryErrorBoundary` as well as
+  `Suspense`, so a failed search renders an inline retry message. Route new
+  lazy-loaded queries through `withLoader` (or their own boundary); never
+  leave a raw `useLazyLoadQuery` with no error boundary above it. Pre-seed
   `localStorage.nickname` + `localStorage.deviceId` before loading the page.
 - **Scratch scripts that import repo deps must live inside the repo.** PnP
   only resolves packages for files under the project root. To use e.g.
