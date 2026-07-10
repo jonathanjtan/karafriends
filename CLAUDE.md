@@ -69,10 +69,16 @@ Platform notes:
 
 ### Commands
 
-- `corepack yarn run-dev` — full dev build + launch. Starts Parcel dev servers
-  for renderer+remocon on :3000 and the Electron app; the GraphQL/remocon
-  server listens on **:8080**. The Electron window pops up on the dev
-  machine's screen.
+- `corepack yarn run-dev` — full dev build + launch. Serves the built
+  renderer+remocon bundles on :3000 via a static file server
+  (`scripts/devStaticServer.mjs`), kept fresh by `parcel watch`, then launches
+  the Electron app; the GraphQL/remocon server listens on **:8080**. The
+  Electron window pops up on the dev machine's screen. (No HMR — reload the
+  page after a change. We use `parcel watch` + a static server rather than
+  `parcel serve` because `parcel serve`'s multi-target HMR build hoists bundles
+  to the server root and serves a layout inconsistent with the on-disk build,
+  which whitescreens the remocon behind the `/remocon/`-prefixing reverse
+  proxy.)
 - `corepack yarn build-prod` — production build (relay + native + parcel).
 - `corepack yarn package-prod` — packages a platform-native bundle under
   `dist/` (+ `.zip`): `karafriends-win32-x64/` (`.exe`) on Windows,
