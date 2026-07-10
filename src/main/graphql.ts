@@ -109,7 +109,15 @@ function stripReadingNoise(text: string): string {
 }
 
 function normalizeForYomiMatch(name: string): string {
-  return name.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+  // Strip dot-like separators too: DAM and JOYSOUND punctuate the same artist
+  // differently (e.g. DAM "涼宮ハルヒ(CV.平野綾)" vs JOYSOUND "涼宮ハルヒ(C.V.平野綾)"),
+  // which otherwise keys them separately and hides DAM's canonical reading
+  // (スズミヤ) behind a kuromoji guess (リョウミヤ) on the JOYSOUND row.
+  return name
+    .normalize("NFKC")
+    .replace(/[.・·]/g, "")
+    .replace(/\s+/g, "")
+    .toLowerCase();
 }
 
 // Helper romaji is resolved from three sources of decreasing quality: DAM's
