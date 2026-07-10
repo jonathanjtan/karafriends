@@ -152,6 +152,16 @@ Stop-Process -Id {OwningProcess} -Force`.
   lazy-loaded queries through `withLoader` (or their own boundary); never
   leave a raw `useLazyLoadQuery` with no error boundary above it. Pre-seed
   `localStorage.nickname` + `localStorage.deviceId` before loading the page.
+- **Remocon whitescreen with NO console error and NO GraphQL request = a
+  serve/proxy bug, not app code.** Before reading a single React file, run the
+  30-second check: `curl -s -o /dev/null -w '%{content_type}\n'
+http://localhost:8080/remocon.<hash>.js` (hash from `curl -s
+http://localhost:8080/ | grep -oE 'remocon\.[a-z0-9]+\.js'`). If it's
+  `text/html` instead of `application/javascript`, the `<script>` is being fed
+  an HTML page so the bundle never runs — `#root` stays empty, nothing throws.
+  This has bitten us twice (a reverse-proxy filename collision and a
+  `parcel serve` multi-target collision); both, plus the fast diagnostic, are
+  written up in `docs/dev-server-investigation.md`. Read that _first_ next time.
 - **Scratch scripts that import repo deps must live inside the repo.** PnP
   only resolves packages for files under the project root. To use e.g.
   `youtubei.js` from a throwaway script, drop the `.cjs` into the repo dir and
@@ -358,4 +368,4 @@ for testing — never print or commit them.
 `docs/` has longer-form writeups: `architecture.md`, `development.md`,
 `configuration.md`, `glossary.md`, `overview.md`, `windows-dev-setup.md`, and
 investigation logs (`audio-chopping-investigation.md`,
-`joysound-piano-roll-investigation.md`).
+`joysound-piano-roll-investigation.md`, `dev-server-investigation.md`).
