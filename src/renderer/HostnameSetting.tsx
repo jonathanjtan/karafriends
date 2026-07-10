@@ -22,8 +22,14 @@ export default function HostnameSetting(props: {
       ]),
   ]);
 
+  // props.hostname may be a bare key ("karafriends.local", "192.168.1.5") or an
+  // already-resolved "host:port" value (the default now resolves to a LAN IP
+  // with port). Accept either so the right option shows as selected.
   const [currentValue, setCurrentValue] = useState(
-    hostnameToValue.get(props.hostname),
+    hostnameToValue.get(props.hostname) ??
+      (Array.from(hostnameToValue.values()).includes(props.hostname)
+        ? props.hostname
+        : undefined),
   );
 
   useEffect(() => {

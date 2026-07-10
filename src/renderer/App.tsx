@@ -38,7 +38,7 @@ import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.gra
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
 const SIDEBAR_WIDTH_STORAGE_KEY = "sidebarWidth";
 const DEFAULT_SIDEBAR_WIDTH = 320;
-const MIN_SIDEBAR_WIDTH = 240;
+const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 640;
 // Mirror the remocon's Piano Roll Size presets so both surfaces match.
 const PIANO_ROLL_SIZE_PRESETS: { label: string; size: number }[] = [
@@ -58,6 +58,22 @@ const LEGACY_GUIDE_MELODY_VOLUME_STORAGE_KEY = "guideMelodyVolume";
 interface SavedMic {
   name: string;
   channel: number;
+}
+
+// Default the remocon address to a private LAN IPv4 (what a phone on the same
+// WiFi can actually reach), with the remocon port so the QR is scannable
+// out of the box. Fall back to the mDNS hostname if no LAN address is found.
+function defaultHostname(): string {
+  const { remoconPort } = window.karafriends.karafriendsConfig();
+  const ipv4 = window.karafriends
+    .ipAddresses()
+    .filter((addr) => /^\d{1,3}(\.\d{1,3}){3}$/.test(addr));
+  const preferred =
+    ipv4.find((addr) => addr.startsWith("192.168.")) ??
+    ipv4.find((addr) => addr.startsWith("10.")) ??
+    ipv4.find((addr) => /^172\.(1[6-9]|2\d|3[01])\./.test(addr)) ??
+    ipv4[0];
+  return preferred ? `${preferred}:${remoconPort}` : HOSTNAME;
 }
 
 const songAddedSubscription = graphql`
@@ -110,7 +126,7 @@ function App(props: {
   audio: KarafriendsAudio;
 }) {
   const [mics, _setMics] = useState<InputDevice[]>([]);
-  const [hostname, setHostname] = useState(HOSTNAME);
+  const [hostname, setHostname] = useState(defaultHostname);
   // Sidebar visibility is synced through the main process (like the Settings
   // section) so the remocon can fullscreen the TV's playing song remotely.
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();

@@ -160,11 +160,30 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   margin: 12px 0;
 }
 
+/* Render the four presets as a single segmented control: one connected button
+   split into four sections (no gaps), which fits a narrow sidebar far better
+   than four separate Materialize buttons whose fixed padding overflowed. */
 .pianoRollSizeButtons {
   display: flex;
   justify-content: center;
-  gap: 6px;
   margin-bottom: 12px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.pianoRollSizeButtons .btn-small {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0 0.5rem;
+  border-radius: 0;
+  box-shadow: none;
+  /* thin divider between adjacent segments */
+  border-left: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.pianoRollSizeButtons .btn-small:first-child {
+  border-left: none;
 }
 
 .serviceHealthIndicator {
