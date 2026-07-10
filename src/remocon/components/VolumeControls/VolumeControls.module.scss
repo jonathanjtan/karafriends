@@ -53,6 +53,23 @@
   }
 }
 
+.clearQueueButton {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid #e53935;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #e53935;
+  font-size: 13px;
+  line-height: 16px;
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
 .healthSpinner {
   display: inline-block;
   width: 12px;

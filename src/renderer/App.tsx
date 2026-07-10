@@ -25,6 +25,7 @@ import Player from "./Player";
 import QRCode from "./QRCode";
 import Queue from "./Queue";
 import KarafriendsAudio from "./webAudio";
+import { AppClearQueueMutation } from "./__generated__/AppClearQueueMutation.graphql";
 import { AppQueueAddedSubscription } from "./__generated__/AppQueueAddedSubscription.graphql";
 import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServiceHealthMutation.graphql";
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
@@ -78,6 +79,12 @@ const recheckServiceHealthMutation = graphql`
       joysoundAvailable
       checkedAt
     }
+  }
+`;
+
+const clearQueueMutation = graphql`
+  mutation AppClearQueueMutation {
+    clearQueue
   }
 `;
 
@@ -188,6 +195,8 @@ function App(props: {
   // only case worth showing a spinner for.
   const [commitRecheckServiceHealth, isRecheckingServiceHealth] =
     useMutation<AppRecheckServiceHealthMutation>(recheckServiceHealthMutation);
+  const [commitClearQueue, isClearingQueue] =
+    useMutation<AppClearQueueMutation>(clearQueueMutation);
 
   useEffect(() => {
     const poll = () =>
@@ -419,6 +428,19 @@ function App(props: {
                 }
               >
                 Check now
+              </button>
+              <button
+                className="btn red"
+                disabled={isClearingQueue}
+                onClick={() => {
+                  if (
+                    window.confirm("Clear the queue and skip the current song?")
+                  ) {
+                    commitClearQueue({ variables: {} });
+                  }
+                }}
+              >
+                Clear Queue
               </button>
             </div>
           )}

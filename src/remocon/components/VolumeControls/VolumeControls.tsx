@@ -1,5 +1,6 @@
 import classnames from "classnames";
 import React from "react";
+import { graphql, useMutation } from "react-relay";
 
 import { BGM_TRACKS, SHUFFLE_VALUE } from "../../../common/bgmTracks";
 import useBgmTrack from "../../../common/hooks/useBgmTrack";
@@ -12,6 +13,13 @@ import useConfig from "../../hooks/useConfig";
 import useServiceHealth from "../../hooks/useServiceHealth";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import * as styles from "./VolumeControls.module.scss";
+import { VolumeControlsClearQueueMutation } from "./__generated__/VolumeControlsClearQueueMutation.graphql";
+
+const clearQueueMutation = graphql`
+  mutation VolumeControlsClearQueueMutation {
+    clearQueue
+  }
+`;
 
 const PIANO_ROLL_SIZE_PRESETS: { label: string; size: number }[] = [
   { label: "Off", size: 0 },
@@ -28,6 +36,8 @@ const VolumeControls = () => {
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
   const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
+  const [commitClearQueue, isClearingQueue] =
+    useMutation<VolumeControlsClearQueueMutation>(clearQueueMutation);
 
   const config = useConfig();
   const identity = useUserIdentity();
@@ -157,6 +167,21 @@ const VolumeControls = () => {
             {settingsCollapsed
               ? "Show TV Settings Panel"
               : "Hide TV Settings Panel"}
+          </button>
+        </div>
+        <div>
+          <button
+            className={styles.clearQueueButton}
+            disabled={isClearingQueue}
+            onClick={() => {
+              if (
+                window.confirm("Clear the queue and skip the current song?")
+              ) {
+                commitClearQueue({ variables: {} });
+              }
+            }}
+          >
+            Clear Queue
           </button>
         </div>
       </div>

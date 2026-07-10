@@ -1987,6 +1987,27 @@ const resolvers = {
       saveDb();
       return true;
     },
+    clearQueue: (): boolean => {
+      // Empty the pending queue first, then skip whatever's playing. The
+      // renderer's Player observes SKIPPING (seeks the current video to its
+      // end -> pollQueue -> popSong), which now finds an empty queue and
+      // settles into WAITING, so the current song stops too.
+      db.songQueue = [];
+      pubsub.publish(SubscriptionEvent.QueueChanged, {
+        queueChanged: {
+          currentSong: db.currentSong,
+          newQueue: db.songQueue,
+        },
+      });
+      if (db.currentSong) {
+        db.playbackState = PlaybackState.SKIPPING;
+        pubsub.publish(SubscriptionEvent.PlaybackStateChanged, {
+          playbackStateChanged: db.playbackState,
+        });
+      }
+      saveDb();
+      return true;
+    },
     setSettingsCollapsed: (_: any, args: { collapsed: boolean }): boolean => {
       db.settingsCollapsed = args.collapsed;
       pubsub.publish(SubscriptionEvent.SettingsCollapsedChanged, {
