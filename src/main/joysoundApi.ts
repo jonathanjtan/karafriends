@@ -76,6 +76,12 @@ function parseCookies(setCookie: string, target: JoysoundCookies) {
   }
 }
 
+// Song detail is static catalog data, and the remocon re-requests it on every
+// song-page visit (plus suggestedYoutubeVideos fetches it again right after).
+// JoysoundAPI instances are per-GraphQL-request, so memoize across instances
+// at module level; failures are evicted so an error doesn't stick.
+const songDetailCache: Map<string, Promise<JoysoundSongDetail>> = new Map();
+
 function unescapeJoysoundString(str: string) {
   const htmlEntities = {
     nbsp: " ",
@@ -177,7 +183,20 @@ export class JoysoundAPI extends RESTDataSource {
     });
   }
 
-  async getSongDetail(id: string) {
+  getSongDetail(id: string): Promise<JoysoundSongDetail> {
+    const cached = songDetailCache.get(id);
+    if (cached) return cached;
+
+    const promise = this.fetchSongDetail(id).catch((error) => {
+      songDetailCache.delete(id);
+      throw error;
+    });
+    songDetailCache.set(id, promise);
+
+    return promise;
+  }
+
+  private async fetchSongDetail(id: string) {
     const creds = await this.credsProvider();
 
     const data = await this.get(`songdetail/${id}`, {

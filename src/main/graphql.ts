@@ -1686,12 +1686,23 @@ const resolvers = {
       args: { songId: string },
       { dataSources }: IDataSources,
     ): Promise<SuggestedYoutubeVideosResult> => {
-      // getSongRawData is only needed later for expectedDurationSec, not for
-      // the search query itself - kick both the raw-data fetch and the
-      // YouTube search off as soon as songDetail resolves, rather than
-      // waiting for the (heavier) raw-data fetch before even starting the
-      // search.
-      const rawDataPromise = dataSources.joysound.getSongRawData(args.songId);
+      // The telop is only needed for expectedDurationSec, not for the search
+      // query itself. A previous download of this song already left it on
+      // disk — reading that beats re-fetching the multi-megabyte getFME
+      // payload (telop + ogg) just to compute a duration. When it's missing,
+      // kick the raw-data fetch off alongside the YouTube search rather than
+      // waiting for it before even starting the search.
+      const cachedTelopFilename = path.resolve(
+        TEMP_FOLDER,
+        `joysound-${args.songId}.joy_02`,
+      );
+      const telopBufferPromise: Promise<Uint8Array> = fs.existsSync(
+        cachedTelopFilename,
+      )
+        ? fs.promises.readFile(cachedTelopFilename)
+        : dataSources.joysound
+            .getSongRawData(args.songId)
+            .then((rawData) => decodeJoysoundBase64Field(rawData.telop));
       const songDetail = await dataSources.joysound.getSongDetail(args.songId);
 
       const query = `${songDetail.artistName} ${songDetail.name}`;
@@ -1699,12 +1710,11 @@ const resolvers = {
         type: "video",
       });
 
-      const [rawData, searchResults] = await Promise.all([
-        rawDataPromise,
+      const [telopBuffer, searchResults] = await Promise.all([
+        telopBufferPromise,
         searchResultsPromise,
       ]);
 
-      const telopBuffer = decodeJoysoundBase64Field(rawData.telop);
       const expectedDurationSec = getSongDuration(
         telopBuffer.buffer as ArrayBuffer,
       );
