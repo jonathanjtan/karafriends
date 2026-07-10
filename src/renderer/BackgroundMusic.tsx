@@ -8,6 +8,13 @@ interface Props {
   volume: number;
 }
 
+// BGM eases in from silence after a song ends instead of slamming to full
+// volume, crosses track switches with a fade-out/fade-in, and ducks away
+// quickly when the next song starts. Same-track looping is untouched.
+const FADE_IN_MS = 2000;
+const TRACK_SWITCH_FADE_OUT_MS = 1200;
+const SONG_START_FADE_OUT_MS = 400;
+
 function pickRandomTrack(excludeFilename?: string): string {
   const candidates = BGM_TRACKS.filter((t) => t.filename !== excludeFilename);
   const pool = candidates.length > 0 ? candidates : BGM_TRACKS;
@@ -27,38 +34,116 @@ export default function BackgroundMusic({ trackFilename, volume }: Props) {
     if (isShuffling) setShuffledFilename(pickRandomTrack());
   }, [isShuffling]);
 
-  const activeFilename = isShuffling ? shuffledFilename : trackFilename;
-  const shouldPlay = activeFilename !== null && playbackState === "WAITING";
+  const targetFilename = isShuffling ? shuffledFilename : trackFilename;
+  const shouldPlay = targetFilename !== null && playbackState === "WAITING";
+
+  // The mounted track lags the selected one so an audible outgoing track can
+  // fade out before the <audio> element is swapped (switching tracks remounts
+  // the element; see the key= note below).
+  const [mountedFilename, setMountedFilename] = useState<string | null>(
+    targetFilename,
+  );
+
+  // Fades chase volumeRef rather than a captured value so slider drags
+  // mid-fade still land on the latest volume.
+  const volumeRef = useRef(volume);
+  const fadeRaf = useRef<number | null>(null);
+
+  const cancelFade = () => {
+    if (fadeRaf.current !== null) {
+      cancelAnimationFrame(fadeRaf.current);
+      fadeRaf.current = null;
+    }
+  };
+
+  const fadeTo = (
+    audio: HTMLAudioElement,
+    getTarget: () => number,
+    durationMs: number,
+    onDone?: () => void,
+  ) => {
+    cancelFade();
+    const startVolume = audio.volume;
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const progress = Math.min((now - startTime) / durationMs, 1);
+      audio.volume = startVolume + (getTarget() - startVolume) * progress;
+      if (progress < 1) {
+        fadeRaf.current = requestAnimationFrame(step);
+      } else {
+        fadeRaf.current = null;
+        if (onDone) onDone();
+      }
+    };
+    fadeRaf.current = requestAnimationFrame(step);
+  };
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume;
-  }, [activeFilename, volume]);
+    volumeRef.current = volume;
+    // Only apply directly when no fade is running; an active fade already
+    // chases volumeRef.
+    if (fadeRaf.current === null && audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  useEffect(() => {
+    if (targetFilename === mountedFilename) return;
+
+    const audio = audioRef.current;
+    if (shouldPlay && audio && !audio.paused) {
+      // A different track was selected while one is audible: fade the old
+      // one out, then swap (the swap remounts the element, and the effect
+      // below fades the new track in).
+      fadeTo(
+        audio,
+        () => 0,
+        TRACK_SWITCH_FADE_OUT_MS,
+        () => setMountedFilename(targetFilename),
+      );
+    } else {
+      setMountedFilename(targetFilename);
+    }
+  }, [targetFilename, mountedFilename, shouldPlay]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
     if (shouldPlay) {
-      audio.play().catch((e) => console.warn("BGM autoplay failed", e));
-    } else {
-      audio.pause();
+      // Ease in from silence — covers both BGM resuming after a song ends
+      // and a newly swapped track starting.
+      if (audio.paused) {
+        audio.volume = 0;
+        audio.play().catch((e) => console.warn("BGM autoplay failed", e));
+      }
+      fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+    } else if (!audio.paused) {
+      fadeTo(
+        audio,
+        () => 0,
+        SONG_START_FADE_OUT_MS,
+        () => audio.pause(),
+      );
     }
-  }, [activeFilename, shouldPlay]);
+  }, [mountedFilename, shouldPlay]);
 
-  if (!activeFilename) return null;
-  // key={activeFilename} forces React to fully remount the element (instead
+  useEffect(() => cancelFade, []);
+
+  if (!mountedFilename) return null;
+  // key={mountedFilename} forces React to fully remount the element (instead
   // of just updating its src in place) when switching tracks — Chromium
   // doesn't pick up a new src on an already-loaded <audio> element without
   // an explicit load() call, so without this, switching tracks silently
   // kept playing whatever was already loaded.
   return (
     <audio
-      key={activeFilename}
+      key={mountedFilename}
       ref={audioRef}
-      src={`${BGM_DIR}${activeFilename}`}
+      src={`${BGM_DIR}${mountedFilename}`}
       loop={!isShuffling}
       onEnded={
         isShuffling
-          ? () => setShuffledFilename(pickRandomTrack(activeFilename))
+          ? () => setShuffledFilename(pickRandomTrack(mountedFilename))
           : undefined
       }
     />
