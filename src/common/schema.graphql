@@ -35,6 +35,10 @@ type Query {
   # Whether the big-screen (renderer) Settings section is collapsed. Synced so
   # the remocon can hide/show it on the TV remotely.
   settingsCollapsed: Boolean!
+  # Whether the big-screen (renderer) sidebar (QR + Settings + Queue) is hidden
+  # so the playing song can go fullscreen. Synced so the remocon can toggle it
+  # on the TV remotely.
+  sidebarCollapsed: Boolean!
   songById(id: String!): Song!
   songsByName(name: String, first: Int, after: String): SongConnection!
   songHistory(first: Int, after: String): SongHistoryConnection!
@@ -80,6 +84,7 @@ type Mutation {
   setPitchShiftSemis(semis: Int!): Boolean!
   setPlaybackState(playbackState: PlaybackState!): Boolean!
   setSettingsCollapsed(collapsed: Boolean!): Boolean!
+  setSidebarCollapsed(collapsed: Boolean!): Boolean!
 }
 
 type Subscription {
@@ -94,6 +99,7 @@ type Subscription {
   pitchShiftSemisChanged: Int!
   playbackStateChanged: PlaybackState!
   settingsCollapsedChanged: Boolean!
+  sidebarCollapsedChanged: Boolean!
   queueAdded: QueueItem!
   queueChanged: SubscriptionQueueChanged!
 }

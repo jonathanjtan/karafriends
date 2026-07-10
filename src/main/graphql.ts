@@ -886,6 +886,7 @@ type NotARealDb = {
   pitchShiftSemis: number;
   playbackState: PlaybackState;
   settingsCollapsed: boolean;
+  sidebarCollapsed: boolean;
   songQueue: QueueItem[];
   downloadQueue: DownloadQueueItem[];
   songHistory: SongHistoryItem[];
@@ -904,6 +905,7 @@ enum SubscriptionEvent {
   PitchShiftSemisChanged = "PitchShiftSemisChanged",
   PlaybackStateChanged = "PlaybackStateChanged",
   SettingsCollapsedChanged = "SettingsCollapsedChanged",
+  SidebarCollapsedChanged = "SidebarCollapsedChanged",
   QueueAdded = "QueueAdded",
   QueueChanged = "QueueChanged",
 }
@@ -942,6 +944,7 @@ let db: NotARealDb = {
   pitchShiftSemis: 0,
   playbackState: PlaybackState.WAITING,
   settingsCollapsed: false,
+  sidebarCollapsed: false,
   songQueue: [],
   downloadQueue: [],
   songHistory: [],
@@ -994,6 +997,7 @@ function loadDb(): NotARealDb {
     pitchShiftSemis: 0,
     playbackState: PlaybackState.WAITING,
     settingsCollapsed: false,
+    sidebarCollapsed: false,
     songQueue: [],
     downloadQueue: [],
     songHistory: [],
@@ -1732,6 +1736,7 @@ const resolvers = {
     pianoRollSize: () => db.pianoRollSize,
     pitchShiftSemis: () => db.pitchShiftSemis,
     settingsCollapsed: () => db.settingsCollapsed,
+    sidebarCollapsed: () => db.sidebarCollapsed,
     playbackState: () => db.playbackState,
     videoDownloadProgress: (
       _: any,
@@ -2024,6 +2029,14 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setSidebarCollapsed: (_: any, args: { collapsed: boolean }): boolean => {
+      db.sidebarCollapsed = args.collapsed;
+      pubsub.publish(SubscriptionEvent.SidebarCollapsedChanged, {
+        sidebarCollapsedChanged: db.sidebarCollapsed,
+      });
+      saveDb();
+      return true;
+    },
     setBgmTrack: (_: any, args: { track: string | null }): boolean => {
       const track = args.track || null;
       const isKnownTrack =
@@ -2106,6 +2119,12 @@ const resolvers = {
       subscribe: () =>
         pubsub.asyncIterableIterator([
           SubscriptionEvent.SettingsCollapsedChanged,
+        ]),
+    },
+    sidebarCollapsedChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.SidebarCollapsedChanged,
         ]),
     },
     bgmVolumeChanged: {

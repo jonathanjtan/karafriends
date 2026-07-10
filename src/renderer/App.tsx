@@ -1,8 +1,12 @@
 import M from "materialize-css";
 import "materialize-css/dist/css/materialize.css"; // tslint:disable-line:no-submodule-imports
 import React, { useEffect, useMemo, useRef, useState } from "react";
-// tslint:disable-next-line:no-submodule-imports
-import { FaChevronDown, FaChevronUp } from "react-icons/fa";
+import {
+  FaChevronDown,
+  FaChevronLeft,
+  FaChevronRight,
+  FaChevronUp,
+} from "react-icons/fa"; // tslint:disable-line:no-submodule-imports
 import { fetchQuery, graphql, useMutation, useSubscription } from "react-relay";
 
 import { HOSTNAME } from "../common/constants";
@@ -13,6 +17,7 @@ import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import useSettingsCollapsed from "../common/hooks/useSettingsCollapsed";
+import useSidebarCollapsed from "../common/hooks/useSidebarCollapsed";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./App.css";
 import BackgroundMusic from "./BackgroundMusic";
@@ -31,6 +36,10 @@ import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServi
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
+const SIDEBAR_WIDTH_STORAGE_KEY = "sidebarWidth";
+const DEFAULT_SIDEBAR_WIDTH = 320;
+const MIN_SIDEBAR_WIDTH = 240;
+const MAX_SIDEBAR_WIDTH = 640;
 // Mirror the remocon's Piano Roll Size presets so both surfaces match.
 const PIANO_ROLL_SIZE_PRESETS: { label: string; size: number }[] = [
   { label: "Off", size: 0 },
@@ -102,7 +111,44 @@ function App(props: {
 }) {
   const [mics, _setMics] = useState<InputDevice[]>([]);
   const [hostname, setHostname] = useState(HOSTNAME);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  // Sidebar visibility is synced through the main process (like the Settings
+  // section) so the remocon can fullscreen the TV's playing song remotely.
+  const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
+  const sidebarVisible = !sidebarCollapsed;
+  // The floating collapse/expand tab auto-hides; mouse movement reveals it.
+  const [controlsVisible, setControlsVisible] = useState(false);
+  // Sidebar width is drag-resizable and persisted locally to each TV — it's a
+  // display-fit preference, not a room-wide synced setting.
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+    return Number.isFinite(stored) && stored > 0
+      ? Math.min(Math.max(stored, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH)
+      : DEFAULT_SIDEBAR_WIDTH;
+  });
+
+  const startSidebarResize = (event: React.MouseEvent) => {
+    event.preventDefault();
+    let latestWidth = sidebarWidth;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    const onMove = (moveEvent: MouseEvent) => {
+      latestWidth = Math.min(
+        Math.max(window.innerWidth - moveEvent.clientX, MIN_SIDEBAR_WIDTH),
+        MAX_SIDEBAR_WIDTH,
+      );
+      setSidebarWidth(latestWidth);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(latestWidth));
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
   const { bgmTrack, setBgmTrack } = useBgmTrack();
   const { bgmVolume, setBgmVolume } = useBgmVolume();
   const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
@@ -224,9 +270,28 @@ function App(props: {
     _setMics(newMics);
   };
 
+  // Reveal the floating sidebar toggle on mouse movement, then fade it back
+  // out after a few idle seconds so it doesn't sit on top of a fullscreened
+  // song. The tab stays interactive while hovered (handled in CSS).
+  useEffect(() => {
+    let hideTimeout: ReturnType<typeof setTimeout> | undefined;
+    const revealControls = () => {
+      setControlsVisible(true);
+      if (hideTimeout) clearTimeout(hideTimeout);
+      hideTimeout = setTimeout(() => setControlsVisible(false), 3000);
+    };
+
+    window.addEventListener("mousemove", revealControls);
+
+    return () => {
+      window.removeEventListener("mousemove", revealControls);
+      if (hideTimeout) clearTimeout(hideTimeout);
+    };
+  }, []);
+
   const handleKeyDown = (event: KeyboardEvent) => {
     if (event.key === "q" || event.key === "Q") {
-      setSidebarVisible(!sidebarVisible);
+      setSidebarCollapsed(!sidebarCollapsed);
     }
   };
 
@@ -255,7 +320,7 @@ function App(props: {
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [sidebarVisible]);
+  }, [sidebarCollapsed]);
 
   useSubscription<AppQueueAddedSubscription>(
     useMemo(
@@ -286,18 +351,30 @@ function App(props: {
   };
 
   return (
-    <div className="appMainContainer black row">
+    <div className="appMainContainer black">
       <div
-        className={`appPlayer col ${
-          sidebarVisible ? "s11" : "s12"
-        } valign-wrapper`}
+        className={`sidebarToggle ${controlsVisible ? "visible" : ""}`}
+        style={{ right: sidebarVisible ? sidebarWidth : 0 }}
+        title={sidebarVisible ? "Collapse sidebar" : "Expand sidebar"}
+        onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
       >
+        {sidebarVisible ? <FaChevronRight /> : <FaChevronLeft />}
+      </div>
+      <div className="appPlayer valign-wrapper">
         <Player mics={mics} kuroshiro={props.kuroshiro} audio={props.audio} />
         <Effects />
         <BackgroundMusic trackFilename={bgmTrack} volume={bgmVolume} />
       </div>
       {sidebarVisible && (
-        <div className="appSidebar col s1 grey lighten-3">
+        <div
+          className="appSidebar grey lighten-3"
+          style={{ width: sidebarWidth }}
+        >
+          <div
+            className="sidebarResizeHandle"
+            title="Drag to resize"
+            onMouseDown={startSidebarResize}
+          />
           <QRCode hostname={hostname} />
           <nav
             className="center-align settingsHeader"

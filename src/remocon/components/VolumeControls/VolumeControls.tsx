@@ -9,6 +9,7 @@ import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
 import useSettingsCollapsed from "../../../common/hooks/useSettingsCollapsed";
+import useSidebarCollapsed from "../../../common/hooks/useSidebarCollapsed";
 import useConfig from "../../hooks/useConfig";
 import useServiceHealth from "../../hooks/useServiceHealth";
 import useUserIdentity from "../../hooks/useUserIdentity";
@@ -35,6 +36,7 @@ const VolumeControls = () => {
   const { pianoRollOpacity, setPianoRollOpacity } = usePianoRollOpacity();
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
   const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
+  const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
   const [commitClearQueue, isClearingQueue] =
     useMutation<VolumeControlsClearQueueMutation>(clearQueueMutation);
@@ -167,6 +169,16 @@ const VolumeControls = () => {
             {settingsCollapsed
               ? "Show TV Settings Panel"
               : "Hide TV Settings Panel"}
+          </button>
+        </div>
+        <div>
+          <button
+            className={styles.recheckButton}
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+          >
+            {sidebarCollapsed
+              ? "Expand TV Sidebar"
+              : "Collapse TV Sidebar (Fullscreen Song)"}
           </button>
         </div>
         <div>
