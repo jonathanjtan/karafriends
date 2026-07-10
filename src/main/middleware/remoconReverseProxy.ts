@@ -11,9 +11,17 @@ function remoconReverseProxy(devPort: number) {
         next();
         return;
       }
+      // Requests that aren't already under a target directory get routed to
+      // the remocon target. The trailing slashes matter: the remocon bundle
+      // is named `remocon.<hash>.js`, so a bare `startsWith("/remocon")` also
+      // matches that *filename* and wrongly skips the prefix — fetching
+      // `:devPort/remocon.<hash>.js` (parcel's SPA fallback HTML) instead of
+      // `:devPort/remocon/remocon.<hash>.js` (the actual bundle), which
+      // whitescreens the remocon.
       fetch(
         `http://127.0.0.1:${devPort}/${
-          !req.path.startsWith("/remocon") && !req.path.startsWith("/renderer")
+          !req.path.startsWith("/remocon/") &&
+          !req.path.startsWith("/renderer/")
             ? "remocon"
             : ""
         }${req.originalUrl}`,
