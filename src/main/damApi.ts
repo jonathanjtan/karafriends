@@ -115,7 +115,24 @@ export class MinseiAPI extends RESTDataSource {
         },
       },
     )
-      .then((data) => data.json() as Promise<MinseiLogin>)
+      .then(async (response) => {
+        // win10.clubdam.com sits behind CloudFront and geo-blocks non-Japan
+        // IPs with a 403 text/html page; parsing that as JSON surfaces as a
+        // bare SyntaxError with no app frames.
+        const bodyText = await response.text();
+        if (!response.ok) {
+          throw new Error(
+            `DAM login failed: HTTP ${response.status} ${response.statusText} (win10.clubdam.com geo-blocks non-Japan IPs; check VPN/network)`,
+          );
+        }
+        try {
+          return JSON.parse(bodyText) as MinseiLogin;
+        } catch {
+          throw new Error(
+            `DAM login failed: non-JSON response from win10.clubdam.com (likely geo-blocked; check VPN/network): ${bodyText.slice(0, 200)}`,
+          );
+        }
+      })
       .then((data) => MinseiAPI.checkError(data));
   }
 

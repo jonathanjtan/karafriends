@@ -47,6 +47,7 @@ import {
 import { DkwebsysAPI, MinseiAPI, MinseiCredentialsProvider } from "./damApi";
 import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
 import { getJoysoundScoringData } from "./joysoundMelody";
+import memoizeWithFailureEviction from "./memoizeWithFailureEviction";
 
 import { memoize } from "lodash";
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
@@ -2234,22 +2235,26 @@ const schema = makeExecutableSchema({
   resolvers,
 });
 
-export const minseiCredentialsProvider = memoize(async () => {
-  const { damUsername, damPassword } = karafriendsConfig;
-  const minseiLoginResult = await MinseiAPI.login(damUsername, damPassword);
-  return {
-    userCode: damUsername,
-    authToken: minseiLoginResult.data.authToken,
-  };
-});
+export const minseiCredentialsProvider = memoizeWithFailureEviction(
+  async () => {
+    const { damUsername, damPassword } = karafriendsConfig;
+    const minseiLoginResult = await MinseiAPI.login(damUsername, damPassword);
+    return {
+      userCode: damUsername,
+      authToken: minseiLoginResult.data.authToken,
+    };
+  },
+);
 
-export const joysoundCredentialsProvider = memoize(async () => {
-  const joysoundEmail = encodeURIComponent(karafriendsConfig.joysoundEmail);
-  const joysoundPassword = encodeURIComponent(
-    karafriendsConfig.joysoundPassword,
-  );
-  return JoysoundAPI.login(joysoundEmail, joysoundPassword);
-});
+export const joysoundCredentialsProvider = memoizeWithFailureEviction(
+  async () => {
+    const joysoundEmail = encodeURIComponent(karafriendsConfig.joysoundEmail);
+    const joysoundPassword = encodeURIComponent(
+      karafriendsConfig.joysoundPassword,
+    );
+    return JoysoundAPI.login(joysoundEmail, joysoundPassword);
+  },
+);
 
 const innertubeApiProvider = memoize(async () => {
   // Ask YouTube for Japanese-locale results: with the default en-US locale,
