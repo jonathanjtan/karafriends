@@ -431,6 +431,9 @@ function App(props: {
               <div className="settingsGrid">
                 <span className="settingSubheader">Volume</span>
                 <span className="settingLabel">BGM</span>
+                <span className="settingValue">
+                  {Math.round(bgmVolume * 100)}%
+                </span>
                 <span className="range-field settingControl">
                   <input
                     type="range"
@@ -440,10 +443,10 @@ function App(props: {
                     onChange={(e) => setBgmVolume(Number(e.target.value) / 100)}
                   />
                 </span>
-                <span className="settingValue">
-                  {Math.round(bgmVolume * 100)}%
-                </span>
                 <span className="settingLabel">Guide</span>
+                <span className="settingValue">
+                  {Math.round(guideMelodyVolume * 100)}%
+                </span>
                 <span className="range-field settingControl">
                   <input
                     type="range"
@@ -455,11 +458,11 @@ function App(props: {
                     }
                   />
                 </span>
-                <span className="settingValue">
-                  {Math.round(guideMelodyVolume * 100)}%
-                </span>
                 <span className="settingSubheader">Piano Roll</span>
                 <span className="settingLabel">Opacity</span>
+                <span className="settingValue">
+                  {Math.round(pianoRollOpacity * 100)}%
+                </span>
                 <span className="range-field settingControl">
                   <input
                     type="range"
@@ -470,9 +473,6 @@ function App(props: {
                       setPianoRollOpacity(Number(e.target.value) / 100)
                     }
                   />
-                </span>
-                <span className="settingValue">
-                  {Math.round(pianoRollOpacity * 100)}%
                 </span>
                 <span className="settingLabel">Size</span>
                 <div className="pianoRollSizeButtons settingControlWide">

@@ -24,6 +24,10 @@
   flex-direction: column;
   position: relative;
   overflow-y: auto;
+  /* Settings rows reflow against the sidebar's own drag-resized width (see
+     the @container blocks below), not the window's. */
+  container-type: inline-size;
+  container-name: sidebar;
 }
 
 /* Give the packed settings controls some horizontal breathing room from the
@@ -172,6 +176,14 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   align-items: center;
   text-align: left;
   margin: 8px 0 4px;
+  /* Slider rows are authored label → value → control so the narrow layout
+     (below) can drop the control onto its own line; dense flow backfills the
+     control into the middle column here in the wide layout. */
+  grid-auto-flow: row dense;
+}
+
+.settingControl {
+  grid-column: 2;
 }
 
 .settingLabel {
@@ -203,6 +215,7 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
 }
 
 .settingValue {
+  grid-column: 3;
   font-size: 0.85rem;
   text-align: right;
   /* Keeps 9% / 75% / 100% from jiggling the column width while dragging. */
@@ -262,6 +275,19 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   border-left: none;
 }
 
+/* Compact the service health table to match the settings grid's density:
+   Materialize's default 15px row padding and full-size cells read oversized
+   next to the packed rows above it. */
+.appSidebar .section table {
+  margin: 4px 0;
+}
+
+.appSidebar .section table th,
+.appSidebar .section table td {
+  padding: 6px 5px;
+  font-size: 0.9rem;
+}
+
 .serviceHealthIndicator {
   display: inline-flex;
   align-items: center;
@@ -269,6 +295,8 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   width: 1.1em;
   height: 1.1em;
   vertical-align: middle;
+  /* Emoji glyphs render visually larger than text at the same size. */
+  font-size: 0.85em;
 }
 
 .serviceHealthSpinner {
@@ -284,5 +312,54 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
 @keyframes serviceHealthSpin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Narrow-sidebar layout (the sidebar is drag-resizable down to 180px): a
+   one-line label|slider|value row leaves ~35px of slider track, so drop each
+   control onto its own full-width line under a label|value line instead. */
+@container sidebar (max-width: 259px) {
+  .settingsGrid {
+    grid-template-columns: 1fr max-content;
+    row-gap: 4px;
+    /* The wide layout's dense flow would backfill the next label into the
+       empty cell beside "Size"; nothing needs backfilling in this layout. */
+    grid-auto-flow: row;
+  }
+
+  .settingValue {
+    grid-column: 2;
+  }
+
+  .settingControl,
+  .settingsGrid .pianoRollSizeButtons {
+    grid-column: 1 / -1;
+  }
+
+  /* Switches are narrow enough to stay inline: label left, lever right. */
+  .settingsGrid .switch {
+    grid-column: 2;
+    justify-self: end;
+  }
+
+  /* Keep the segment letters readable now that four of them share <230px. */
+  .pianoRollSizeButtons .btn-small {
+    padding: 0 0.25rem;
+    font-size: 0.8rem;
+  }
+
+  /* Materialize .btn's fixed 16px side padding can overflow ("CLEAR MICS");
+     full-width smaller buttons fit and align with the full-width sliders. */
+  .appSidebar .section .btn {
+    width: 100%;
+    margin: 8px 0;
+    padding: 0 8px;
+    font-size: 0.85rem;
+  }
+
+  .appSidebar .section table th,
+  .appSidebar .section table td {
+    padding: 5px 4px;
+    font-size: 0.85rem;
   }
 }
