@@ -980,15 +980,25 @@ function saveDb() {
       pitchShiftSemis: 0,
       currentSong: null,
       currentSongAdhocLyrics: [],
-      songQueue: [db.currentSong, ...db.songQueue],
+      // Re-queue the in-flight song so it survives a restart — but only if
+      // there is one; a bare [db.currentSong, ...] spread persisted a null
+      // on every idle-time save, which then broke the (non-nullable) queue
+      // query on the next launch.
+      songQueue: [db.currentSong, ...db.songQueue].filter(
+        (song): song is QueueItem => song !== null,
+      ),
       downloadQueue: [],
+      // A fresh process is never mid-song; restoring a stale PLAYING from a
+      // session killed mid-song left the renderer waiting forever (no BGM,
+      // idle screen) for a song that isn't there.
+      playbackState: PlaybackState.WAITING,
     }),
     "utf-8",
   );
 }
 
 function loadDb(): NotARealDb {
-  return {
+  const loaded: NotARealDb = {
     bgmTrack: null,
     bgmVolume: DEFAULT_BGM_VOLUME,
     currentSong: null,
@@ -1009,6 +1019,12 @@ function loadDb(): NotARealDb {
     ...(fs.existsSync(DB_PATH) &&
       JSON.parse(fs.readFileSync(DB_PATH, "utf-8"))),
   };
+  // Heal artifacts written by older saveDb versions: stray nulls in
+  // songQueue (from the unconditional currentSong prepend) and a stale
+  // non-WAITING playbackState from a session killed mid-song.
+  loaded.songQueue = loaded.songQueue.filter((song) => song !== null);
+  loaded.playbackState = PlaybackState.WAITING;
+  return loaded;
 }
 
 const pubsub = new PubSub();
