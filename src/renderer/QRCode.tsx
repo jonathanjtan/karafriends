@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from "react";
 
 import "./QRCode.css";
 
-function QRCode(props: { hostname: string }) {
+function QRCode(props: { hostname: string; inverted?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -17,12 +17,15 @@ function QRCode(props: { hostname: string }) {
         {
           errorCorrectionLevel: "L",
           width: canvasRef.current.clientWidth,
+          color: props.inverted
+            ? { dark: "#ffffff", light: "#000000" }
+            : undefined,
         },
         (error) => {
           if (error) {
             console.error(error);
           }
-        }
+        },
       );
     }
 

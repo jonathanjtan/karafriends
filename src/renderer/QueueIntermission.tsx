@@ -43,6 +43,9 @@ export default function QueueIntermission(props: {
       <div className="queueIntermissionQr">
         <QRCode hostname={props.hostname} />
       </div>
+      <div className="queueIntermissionQrInverted">
+        <QRCode hostname={props.hostname} inverted />
+      </div>
       <div className="queueIntermissionHeader">次の演奏曲 / Up Next</div>
       {nextUp ? (
         <div className="queueIntermissionNextUp">

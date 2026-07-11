@@ -23,6 +23,18 @@
   border-radius: 1vh;
 }
 
+/* Second copy in the opposite corner, inverted (white modules on black) so it
+   blends into the dark overlay; the padding doubles as its dark quiet zone. */
+.queueIntermissionQrInverted {
+  position: absolute;
+  bottom: 3vh;
+  right: 3vh;
+  width: 16vh;
+  padding: 1vh;
+  background: black;
+  border-radius: 1vh;
+}
+
 .queueIntermissionHeader {
   font-size: 3vh;
   font-weight: bold;
