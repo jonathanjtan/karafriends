@@ -137,11 +137,13 @@ Stop-Process -Id {OwningProcess} -Force`.
     read resolvers model it; e.g. the DAM 403 / streaming-absent conditions
     under "DAM specifics" below only crashed the app because the queue-time
     predownload was missing this guard.
-- **Stray `null` in `queue.json`.** `saveDb` prepends `db.currentSong`
-  unconditionally, so a `null` can land in the persisted `songQueue` array in
-  `queue.json` (in the temp/cache dir — see below), which then crashes any
-  `queue`/`queueJoysoundSong` query with "Cannot read properties of null".
-  Delete that file to reset.
+- **Stray `null` in `queue.json`** (fixed; kept for archaeology): `saveDb`
+  used to prepend `db.currentSong` unconditionally, so every idle-time save
+  persisted a leading `null` in `songQueue`, breaking `queue` queries on the
+  next launch until the first `popSong` shifted it out. `saveDb` now filters
+  it (and resets `playbackState` to WAITING — a stale persisted PLAYING left
+  the renderer BGM-less on relaunch), and `loadDb` heals old files on load,
+  so no manual `queue.json` deletion is needed anymore.
 - **The remocon renders a BLANK page in a fresh headless browser.**
   `useUserIdentity` calls `window.prompt()` when no nickname is stored, which
   throws in headless contexts and takes the whole `<App>` down.
@@ -242,6 +244,15 @@ clients via a **shared React hook**:
 - Non-float / non-debounced settings (bgmTrack, pitchShiftSemis) have their
   own small hooks with the same fetch/subscribe/mutate shape but commit
   immediately.
+
+All these hooks share resilience plumbing — copy it when writing a new one:
+the initial fetch goes through **`fetchQueryWithRetry`** (`src/common/hooks`)
+so a flaky first request after launch retries with backoff instead of
+silently leaving the default value (this is what made BGM "sometimes not
+kick in" after `run-dev`), and they refetch on **`WS_RECONNECTED_EVENT`**
+(dispatched by `graphqlEnvironment` whenever the graphql-ws socket
+(re)connects; `retryAttempts: Infinity` there keeps clients reconnecting
+across server restarts instead of freezing on stale values).
 
 **To add a synced setting**: add the field to `NotARealDb` + both `db` init
 sites + `loadDb`, add query/mutation/subscription to `schema.graphql`, add
