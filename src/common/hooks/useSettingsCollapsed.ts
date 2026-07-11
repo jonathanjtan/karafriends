@@ -6,7 +6,8 @@ import {
   useMutation,
 } from "react-relay";
 
-import environment from "../graphqlEnvironment";
+import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
+import fetchQueryWithRetry from "./fetchQueryWithRetry";
 import { useSettingsCollapsedMutation } from "./__generated__/useSettingsCollapsedMutation.graphql";
 import { useSettingsCollapsedQuery } from "./__generated__/useSettingsCollapsedQuery.graphql";
 import { useSettingsCollapsedSubscription } from "./__generated__/useSettingsCollapsedSubscription.graphql";
@@ -56,15 +57,14 @@ export default function useSettingsCollapsed() {
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<useSettingsCollapsedQuery>(
+    const initialQuery = fetchQueryWithRetry<useSettingsCollapsedQuery>(
       environment,
       settingsCollapsedQuery,
       {},
-    ).subscribe({
-      next: (response: useSettingsCollapsedQuery["response"]) =>
-        setLocalSettingsCollapsed(response.settingsCollapsed),
-    });
+      (response) => setLocalSettingsCollapsed(response.settingsCollapsed),
+    );
 
     const subscription = requestSubscription<useSettingsCollapsedSubscription>(
       environment,
@@ -80,6 +80,7 @@ export default function useSettingsCollapsed() {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
       initialQuery.unsubscribe();
       subscription.dispose();

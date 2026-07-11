@@ -27,7 +27,7 @@ function fetchQuery(request: RequestParameters, variables: Variables) {
         query: request.text,
         variables,
       }),
-    }
+    },
   ).then((response) => {
     return response.json();
   });
@@ -45,9 +45,21 @@ function getSubscriptionUrl(): string {
   return `${wsProtocol}://${window.location.hostname}:${window.location.port}/graphql`;
 }
 
+// Fired on window whenever the subscription websocket (re)connects, so
+// synced-setting hooks can refetch values that changed while disconnected.
+// Without this — and without infinite retries — a client left open across a
+// server restart exhausted graphql-ws's default 5 retry attempts (~30s of
+// backoff, less than a dev rebuild), permanently lost its subscriptions, and
+// displayed stale state until a manual reload.
+export const WS_RECONNECTED_EVENT = "karafriends:ws-reconnected";
+
 const subscriptionClient = createClient({
   url: getSubscriptionUrl(),
+  retryAttempts: Infinity,
   shouldRetry: () => true,
+  on: {
+    connected: () => window.dispatchEvent(new Event(WS_RECONNECTED_EVENT)),
+  },
 });
 
 const subscribe = (operation: RequestParameters, variables: Variables) => {
@@ -60,7 +72,7 @@ const subscribe = (operation: RequestParameters, variables: Variables) => {
         query: operation.text,
         variables,
       },
-      sink
+      sink,
     );
   });
 };

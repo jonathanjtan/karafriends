@@ -6,7 +6,8 @@ import {
   useMutation,
 } from "react-relay";
 
-import environment from "../graphqlEnvironment";
+import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
+import fetchQueryWithRetry from "./fetchQueryWithRetry";
 import { useSidebarCollapsedMutation } from "./__generated__/useSidebarCollapsedMutation.graphql";
 import { useSidebarCollapsedQuery } from "./__generated__/useSidebarCollapsedQuery.graphql";
 import { useSidebarCollapsedSubscription } from "./__generated__/useSidebarCollapsedSubscription.graphql";
@@ -57,15 +58,14 @@ export default function useSidebarCollapsed() {
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<useSidebarCollapsedQuery>(
+    const initialQuery = fetchQueryWithRetry<useSidebarCollapsedQuery>(
       environment,
       sidebarCollapsedQuery,
       {},
-    ).subscribe({
-      next: (response: useSidebarCollapsedQuery["response"]) =>
-        setLocalSidebarCollapsed(response.sidebarCollapsed),
-    });
+      (response) => setLocalSidebarCollapsed(response.sidebarCollapsed),
+    );
 
     const subscription = requestSubscription<useSidebarCollapsedSubscription>(
       environment,
@@ -81,6 +81,7 @@ export default function useSidebarCollapsed() {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
       initialQuery.unsubscribe();
       subscription.dispose();

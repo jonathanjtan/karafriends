@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { fetchQuery, graphql, requestSubscription } from "react-relay";
 
-import environment from "../graphqlEnvironment";
+import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
+import fetchQueryWithRetry from "./fetchQueryWithRetry";
 import { useQueueQueueQuery } from "./__generated__/useQueueQueueQuery.graphql";
 import { useQueueQueueSubscription } from "./__generated__/useQueueQueueSubscription.graphql";
 
@@ -108,15 +109,14 @@ export default function useQueue() {
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<useQueueQueueQuery>(
+    const initialQuery = fetchQueryWithRetry<useQueueQueueQuery>(
       environment,
       queueQuery,
       {},
-    ).subscribe({
-      next: ({ currentSong, queue }: useQueueQueueQuery["response"]) =>
-        setQueueState(withETAs(currentSong, queue)),
-    });
+      ({ currentSong, queue }) => setQueueState(withETAs(currentSong, queue)),
+    );
 
     const subscription = requestSubscription<useQueueQueueSubscription>(
       environment,
@@ -138,6 +138,7 @@ export default function useQueue() {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
       initialQuery.unsubscribe();
       subscription.dispose();

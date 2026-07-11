@@ -6,7 +6,8 @@ import {
   useMutation,
 } from "react-relay";
 
-import environment from "../graphqlEnvironment";
+import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
+import fetchQueryWithRetry from "./fetchQueryWithRetry";
 import { useQueueIntermissionEnabledMutation } from "./__generated__/useQueueIntermissionEnabledMutation.graphql";
 import { useQueueIntermissionEnabledQuery } from "./__generated__/useQueueIntermissionEnabledQuery.graphql";
 import { useQueueIntermissionEnabledSubscription } from "./__generated__/useQueueIntermissionEnabledSubscription.graphql";
@@ -58,15 +59,15 @@ export default function useQueueIntermissionEnabled() {
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<useQueueIntermissionEnabledQuery>(
+    const initialQuery = fetchQueryWithRetry<useQueueIntermissionEnabledQuery>(
       environment,
       queueIntermissionEnabledQuery,
       {},
-    ).subscribe({
-      next: (response: useQueueIntermissionEnabledQuery["response"]) =>
+      (response) =>
         setLocalQueueIntermissionEnabled(response.queueIntermissionEnabled),
-    });
+    );
 
     const subscription =
       requestSubscription<useQueueIntermissionEnabledSubscription>(
@@ -85,6 +86,7 @@ export default function useQueueIntermissionEnabled() {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
       initialQuery.unsubscribe();
       subscription.dispose();

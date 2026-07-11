@@ -6,7 +6,8 @@ import {
   useMutation,
 } from "react-relay";
 
-import environment from "../graphqlEnvironment";
+import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
+import fetchQueryWithRetry from "./fetchQueryWithRetry";
 import { usePitchShiftSemisMutation } from "./__generated__/usePitchShiftSemisMutation.graphql";
 import { usePitchShiftSemisQuery } from "./__generated__/usePitchShiftSemisQuery.graphql";
 import { usePitchShiftSemisSubscription } from "./__generated__/usePitchShiftSemisSubscription.graphql";
@@ -54,15 +55,14 @@ export default function usePitchShiftSemis() {
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<usePitchShiftSemisQuery>(
+    const initialQuery = fetchQueryWithRetry<usePitchShiftSemisQuery>(
       environment,
       pitchShiftSemisQuery,
       {},
-    ).subscribe({
-      next: (response: usePitchShiftSemisQuery["response"]) =>
-        setLocalPitchShiftSemis(response.pitchShiftSemis),
-    });
+      (response) => setLocalPitchShiftSemis(response.pitchShiftSemis),
+    );
 
     const subscription = requestSubscription<usePitchShiftSemisSubscription>(
       environment,
@@ -78,6 +78,7 @@ export default function usePitchShiftSemis() {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
       initialQuery.unsubscribe();
       subscription.dispose();

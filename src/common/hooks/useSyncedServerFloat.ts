@@ -6,7 +6,8 @@ import {
   OperationType,
 } from "relay-runtime";
 
-import environment from "../graphqlEnvironment";
+import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
+import fetchQueryWithRetry from "./fetchQueryWithRetry";
 
 // Sliders fire continuously while dragging; batch the resulting mutations
 // so the server isn't hit dozens of times per drag.
@@ -62,15 +63,14 @@ export default function useSyncedServerFloat<
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<TQuery>(
+    const initialQuery = fetchQueryWithRetry<TQuery>(
       environment,
       config.query,
       {},
-    ).subscribe({
-      next: (response: TQuery["response"]) =>
-        applyRemoteValue(config.getQueryValue(response)),
-    });
+      (response) => applyRemoteValue(config.getQueryValue(response)),
+    );
 
     const subscription = requestSubscription<TSubscription>(environment, {
       subscription: config.subscription,
@@ -82,6 +82,7 @@ export default function useSyncedServerFloat<
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
       initialQuery.unsubscribe();
       subscription.dispose();

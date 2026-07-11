@@ -6,7 +6,8 @@ import {
   useMutation,
 } from "react-relay";
 
-import environment from "../graphqlEnvironment";
+import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
+import fetchQueryWithRetry from "./fetchQueryWithRetry";
 import { useBgmTrackMutation } from "./__generated__/useBgmTrackMutation.graphql";
 import { useBgmTrackQuery } from "./__generated__/useBgmTrackQuery.graphql";
 import { useBgmTrackSubscription } from "./__generated__/useBgmTrackSubscription.graphql";
@@ -51,15 +52,14 @@ export default function useBgmTrack() {
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<useBgmTrackQuery>(
+    const initialQuery = fetchQueryWithRetry<useBgmTrackQuery>(
       environment,
       bgmTrackQuery,
       {},
-    ).subscribe({
-      next: (response: useBgmTrackQuery["response"]) =>
-        setLocalBgmTrack(response.bgmTrack ?? null),
-    });
+      (response) => setLocalBgmTrack(response.bgmTrack ?? null),
+    );
 
     const subscription = requestSubscription<useBgmTrackSubscription>(
       environment,
@@ -74,6 +74,7 @@ export default function useBgmTrack() {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
       initialQuery.unsubscribe();
       subscription.dispose();

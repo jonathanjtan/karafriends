@@ -6,7 +6,8 @@ import {
   useMutation,
 } from "react-relay";
 
-import environment from "../graphqlEnvironment";
+import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
+import fetchQueryWithRetry from "./fetchQueryWithRetry";
 import { usePlaybackStateMutation } from "./__generated__/usePlaybackStateMutation.graphql";
 import { usePlaybackStateQuery } from "./__generated__/usePlaybackStateQuery.graphql";
 import { usePlaybackStateSubscription } from "./__generated__/usePlaybackStateSubscription.graphql";
@@ -44,7 +45,7 @@ export default function usePlaybackState() {
       fetchQuery<usePlaybackStateQuery>(
         environment,
         playbackStateQuery,
-        {}
+        {},
       ).subscribe({
         next: (response: usePlaybackStateQuery["response"]) =>
           setLocalPlaybackState(response.playbackState),
@@ -52,15 +53,14 @@ export default function usePlaybackState() {
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<usePlaybackStateQuery>(
+    const initialQuery = fetchQueryWithRetry<usePlaybackStateQuery>(
       environment,
       playbackStateQuery,
-      {}
-    ).subscribe({
-      next: (response: usePlaybackStateQuery["response"]) =>
-        setLocalPlaybackState(response.playbackState),
-    });
+      {},
+      (response) => setLocalPlaybackState(response.playbackState),
+    );
 
     const subscription = requestSubscription<usePlaybackStateSubscription>(
       environment,
@@ -70,11 +70,12 @@ export default function usePlaybackState() {
         onNext: (response) => {
           if (response) setLocalPlaybackState(response.playbackStateChanged);
         },
-      }
+      },
     );
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
       initialQuery.unsubscribe();
       subscription.dispose();
