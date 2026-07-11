@@ -142,10 +142,15 @@ function App(props: {
       ? Math.min(Math.max(stored, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH)
       : DEFAULT_SIDEBAR_WIDTH;
   });
+  // Width changes from collapse/expand animate; drag-resize must not (a
+  // transition would make the sidebar lag behind the cursor), so the
+  // transition is suspended while a drag is in progress.
+  const [sidebarResizing, setSidebarResizing] = useState(false);
 
   const startSidebarResize = (event: React.MouseEvent) => {
     event.preventDefault();
     let latestWidth = sidebarWidth;
+    setSidebarResizing(true);
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
 
@@ -159,6 +164,7 @@ function App(props: {
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      setSidebarResizing(false);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
       localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(latestWidth));
@@ -389,7 +395,15 @@ function App(props: {
         <Effects />
         <BackgroundMusic trackFilename={bgmTrack} volume={bgmVolume} />
       </div>
-      {sidebarVisible && (
+      {/* Stays mounted while collapsed so the width can animate shut; the
+          inner sidebar keeps its full width so the content doesn't reflow
+          mid-transition, it just slides out of the clipped container. */}
+      <div
+        className={`appSidebarContainer ${sidebarVisible ? "" : "collapsed"} ${
+          sidebarResizing ? "resizing" : ""
+        }`}
+        style={{ width: sidebarVisible ? sidebarWidth : 0 }}
+      >
         <div
           className="appSidebar grey lighten-3"
           style={{ width: sidebarWidth }}
@@ -595,7 +609,7 @@ function App(props: {
           <nav className="center-align">Queue</nav>
           <Queue />
         </div>
-      )}
+      </div>
     </div>
   );
 }

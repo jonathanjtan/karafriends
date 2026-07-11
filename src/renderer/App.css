@@ -18,8 +18,34 @@
   min-width: 0;
 }
 
-.appSidebar {
+/* Animated shell around the sidebar: collapse/expand slides it shut by
+   transitioning this wrapper's width (the inner .appSidebar keeps its full
+   width and gets clipped). The duration matches .sidebarToggle's `right`
+   transition so the tab rides the sidebar edge. `visibility` flips only
+   after the closing transition ends, keeping the hidden sidebar out of tab
+   order without blinking it out early. */
+.appSidebarContainer {
   flex: 0 0 auto;
+  height: 100%;
+  overflow: hidden;
+  transition:
+    width 0.25s ease,
+    visibility 0s;
+}
+
+.appSidebarContainer.collapsed {
+  visibility: hidden;
+  transition:
+    width 0.25s ease,
+    visibility 0s 0.25s;
+}
+
+/* Drag-to-resize must track the cursor 1:1, not ease toward it. */
+.appSidebarContainer.resizing {
+  transition: none;
+}
+
+.appSidebar {
   display: flex;
   flex-direction: column;
   position: relative;
