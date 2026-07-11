@@ -124,6 +124,16 @@ function Player(props: {
     setIntermissionVisible(false);
   };
 
+  // The onended path only covers songs that finish while the app is up; show
+  // the idle screen any time we're WAITING with nothing playing too (fresh
+  // launch, or the setting flipped on while idle). It comes down via the
+  // pop-success handler when a song actually starts.
+  useEffect(() => {
+    if (playbackState === "WAITING" && queueIntermissionEnabled) {
+      setIntermissionVisible(true);
+    }
+  }, [playbackState, queueIntermissionEnabled]);
+
   useEffect(() => {
     if (queueIntermissionEnabled) return;
     // Setting turned off mid-intermission: if the next song was pending on
