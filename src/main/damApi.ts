@@ -21,6 +21,17 @@ const BASE_MINSEI_REQUEST = {
   contractId: "1",
 };
 
+// Structurally matches promise-retry's OperationOptions (from the "retry"
+// package, which PnP won't let us import directly as it's not a declared
+// dependency).
+export type RetryOptions = {
+  retries?: number;
+  factor?: number;
+  minTimeout?: number;
+  maxTimeout?: number;
+  randomize?: boolean;
+};
+
 export type MinseiCredentialsProvider = () => Promise<{
   userCode: string;
   authToken: string;
@@ -136,21 +147,25 @@ export class MinseiAPI extends RESTDataSource {
       .then((data) => MinseiAPI.checkError(data));
   }
 
-  getMusicStreamingUrls(requestNo: string) {
-    // This endpoint seems to be flaky
-    return promiseRetry((retry) =>
-      this.credsProvider()
-        .then((creds) =>
-          this.post<MinseiStreamingUrls>(
-            "/cwa/win/minsei/music/playLog/GetMusicStreamingURL.api",
-            { requestNo, ...creds },
-          ),
-        )
-        .then(MinseiAPI.checkError)
-        .catch((err) => {
-          console.error(err);
-          return retry(err);
-        }),
+  getMusicStreamingUrls(requestNo: string, retryOptions?: RetryOptions) {
+    // This endpoint seems to be flaky. Callers that need to fail fast (e.g.
+    // the service health check) can pass tighter retryOptions; the default
+    // is promise-retry's 10 retries with exponential backoff (~17 min).
+    return promiseRetry(
+      (retry) =>
+        this.credsProvider()
+          .then((creds) =>
+            this.post<MinseiStreamingUrls>(
+              "/cwa/win/minsei/music/playLog/GetMusicStreamingURL.api",
+              { requestNo, ...creds },
+            ),
+          )
+          .then(MinseiAPI.checkError)
+          .catch((err) => {
+            console.error(err);
+            return retry(err);
+          }),
+      retryOptions,
     );
   }
 

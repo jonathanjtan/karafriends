@@ -355,6 +355,19 @@ Note the search path (youtubei.js) and the download path (yt-dlp) are
   unblocks when the VPN is toggled. This is not a karafriends bug; the service
   health check is the intended mitigation (warn + let you cycle VPN without a
   restart). JOYSOUND never hits this (text/search APIs only).
+- Separately, DAM's **auth host `win10.clubdam.com` (CloudFront) geo-blocks
+  non-Japan IPs** with a 403 `text/html` page — so login itself fails off-VPN
+  (opposite polarity from the CDN case above). `MinseiAPI.login` detects the
+  non-JSON body and throws a descriptive error, and both credentials
+  providers use `memoizeWithFailureEviction` so a failed login is retried on
+  the next request instead of staying cached until relaunch. JOYSOUND's
+  `sound-cafe.jp` login is also network-sensitive (no `set-cookie` from some
+  exits). The manual "check now" health check (`recheckServiceHealth`) is the
+  recovery path after changing networks: it forces a fresh check (bypassing
+  the in-flight dedupe), resets both credential caches for a from-scratch
+  re-login, and fails fast (2 attempts + a 30s hang ceiling per service) rather
+  than sitting in `getMusicStreamingUrls`'s default ~17-minute
+  `promiseRetry` backoff, which playback paths intentionally keep.
 - Some songs are catalog-present but streaming-absent
   (empty `mModelMusicInfoList`, `GetMusicStreamingURL` returns NG) — a
   physical-machine-only license. Scoring reference data may still work.

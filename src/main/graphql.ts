@@ -2012,7 +2012,7 @@ const resolvers = {
       return newSong;
     },
     recheckServiceHealth: async (): Promise<ServiceHealthState> => {
-      return triggerHealthCheck();
+      return triggerHealthCheck(true);
     },
     removeSong: (
       _: any,
@@ -2269,16 +2269,72 @@ const innertubeApiProvider = memoize(async () => {
 // canary when there's no last-known-good id persisted yet.
 const DAM_HEALTH_CHECK_CANARY_SONG_ID = "3246-51"; // Lemon / 米津玄師
 
+// The health check exists to tell the user quickly whether the services are
+// reachable, so it must fail fast: one retry after 500ms instead of
+// promise-retry's default 10-retry/~17-minute exponential backoff (which is
+// what made the "Check now" spinner hang while geo-blocked).
+const HEALTH_CHECK_RETRY_OPTIONS = { retries: 1, minTimeout: 500 };
+
+// Hard ceiling on each service's health probe, so a hung socket (no HTTP
+// error, just silence) can't pin the spinner either. On timeout the service
+// is reported unavailable; the abandoned probe settles harmlessly in the
+// background (its rejections are handled, per the main-process rule).
+// Sized for a slow residential link + VPN, not just fiber: the probe is
+// RTT-bound (fresh TLS handshakes for login + streaming API + a 1-byte CDN
+// fetch, worst case ×2 attempts), which at a few hundred ms per round trip
+// can legitimately take >20s — a timeout that fires on a *working* slow
+// connection would falsely report the service down. Real failures (403,
+// DNS, refused) still return in a few seconds; the ceiling only guards
+// silent hangs.
+const HEALTH_CHECK_TIMEOUT_MS = 30 * 1000;
+
+function healthProbeWithTimeout(
+  probe: Promise<boolean>,
+  serviceName: string,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      console.error(
+        `[healthcheck] ${serviceName} check timed out after ${HEALTH_CHECK_TIMEOUT_MS}ms`,
+      );
+      resolve(false);
+    }, HEALTH_CHECK_TIMEOUT_MS);
+    probe.then(
+      (result) => {
+        clearTimeout(timer);
+        resolve(result);
+      },
+      (err) => {
+        clearTimeout(timer);
+        console.error(`[healthcheck] ${serviceName} check failed:`, err);
+        resolve(false);
+      },
+    );
+  });
+}
+
 async function checkDamStreamingUrl(
   minsei: MinseiAPI,
   fetcher: Fetcher,
   songId: string,
 ): Promise<boolean> {
-  const streamingUrls = await minsei.getMusicStreamingUrls(songId);
+  const streamingUrls = await minsei.getMusicStreamingUrls(
+    songId,
+    HEALTH_CHECK_RETRY_OPTIONS,
+  );
   const url = karafriendsConfig.useLowBitrateUrl
     ? streamingUrls.list[0].lowBitrateUrl
     : streamingUrls.list[0].highBitrateUrl;
-  const response = await fetcher(url, { method: "GET" });
+  // Probe a single byte: this is the real video URL, and node-fetch only
+  // backpressure-pauses an unconsumed body rather than cancelling it, so a
+  // bare GET leaves a socket slowly pulling video in the background — which
+  // matters on slow (e.g. 40Mbps) connections where the periodic checks
+  // would contend with an active download. 206 counts as ok; a CDN that
+  // ignores Range just degrades to the old full-GET behavior.
+  const response = await fetcher(url, {
+    method: "GET",
+    headers: { Range: "bytes=0-0" },
+  });
   return response.ok;
 }
 
@@ -2352,8 +2408,8 @@ async function runHealthCheck(
   });
 
   const [damAvailable, joysoundAvailable] = await Promise.all([
-    checkDamHealth(minsei, dkwebsys, fetcher),
-    checkJoysoundHealth(joysound),
+    healthProbeWithTimeout(checkDamHealth(minsei, dkwebsys, fetcher), "DAM"),
+    healthProbeWithTimeout(checkJoysoundHealth(joysound), "Joysound"),
   ]);
 
   console.log(
@@ -2365,8 +2421,16 @@ async function runHealthCheck(
 
 // Dedupes overlapping triggers (periodic timer, per-song, and a manual
 // "check now" click could otherwise all fire a real network check at once).
-function triggerHealthCheck(): Promise<ServiceHealthState> {
-  if (healthCheckInFlight) return healthCheckInFlight;
+// A manual "check now" passes force=true to start a fresh check immediately
+// instead of joining an in-flight one — the whole point of the button is
+// "my network just changed, re-probe NOW", and the in-flight check may have
+// started before the change (or, historically, be sitting in retry backoff).
+// The run counter lets a superseded run finish without clobbering the shared
+// state with its stale result.
+let latestHealthCheckRun = 0;
+
+function triggerHealthCheck(force = false): Promise<ServiceHealthState> {
+  if (healthCheckInFlight && !force) return healthCheckInFlight;
 
   if (!runHealthCheckOnce) {
     return Promise.resolve(
@@ -2378,10 +2442,26 @@ function triggerHealthCheck(): Promise<ServiceHealthState> {
     );
   }
 
+  if (force) {
+    // A manual "check now" re-probes everything from scratch, including the
+    // logins: a cached success may hold an auth token the service has since
+    // expired, and without this the button couldn't recover from that.
+    // Periodic/per-song checks keep the cached creds — re-logging-in every
+    // 3 minutes would be needless load on the services.
+    minseiCredentialsProvider.reset();
+    joysoundCredentialsProvider.reset();
+  }
+
+  const thisRun = ++latestHealthCheckRun;
+  // runHealthCheckOnce never rejects: both service probes resolve false on
+  // error/timeout (healthProbeWithTimeout), so this chain needs no .catch().
   healthCheckInFlight = runHealthCheckOnce().then((result) => {
-    currentServiceHealth = { ...result, checkedAt: Date.now().toString() };
-    healthCheckInFlight = null;
-    return currentServiceHealth;
+    const state = { ...result, checkedAt: Date.now().toString() };
+    if (thisRun === latestHealthCheckRun) {
+      currentServiceHealth = state;
+      healthCheckInFlight = null;
+    }
+    return state;
   });
 
   return healthCheckInFlight;
