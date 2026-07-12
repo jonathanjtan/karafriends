@@ -1857,10 +1857,24 @@ const resolvers = {
         .then((data) => {
           // XXX: This should be already be a number but typescript tells me it is not
           const selectedIndex = data.list[+queueItem.streamingUrlIdx];
+          // Streaming-absent songs (physical-machine-only licenses) return an
+          // empty list; leave the song queued and let the guarded
+          // streamingUrls read resolver handle it at play time.
+          if (!selectedIndex) {
+            throw new Error(
+              `no streaming URL at index ${queueItem.streamingUrlIdx}`,
+            );
+          }
           const url = karafriendsConfig.useLowBitrateUrl
             ? selectedIndex.lowBitrateUrl
             : selectedIndex.highBitrateUrl;
           downloadDamVideo(url, queueItem.songId, queueItem.streamingUrlIdx);
+        })
+        .catch((e) => {
+          console.error(
+            `Failed predownloading DAM ${queueItem.songId}, skipping predownload`,
+            e,
+          );
         });
 
       return pushSongToQueue(queueItem, pushToHead);
