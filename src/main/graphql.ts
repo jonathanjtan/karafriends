@@ -878,10 +878,13 @@ interface VideoDownloadProgress {
 type NotARealDb = {
   bgmTrack: string | null;
   bgmVolume: number;
+  // Epoch ms when the current break ends; null when not on break.
+  breakEndsAt: number | null;
   currentSong: QueueItem | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   guideMelodyVolume: number;
   idToAdhocLyrics: Record<string, string[]>;
+  oledFriendly: boolean;
   pianoRollOpacity: number;
   pianoRollSize: number;
   pitchShiftSemis: number;
@@ -898,10 +901,12 @@ type NotARealDb = {
 enum SubscriptionEvent {
   BgmTrackChanged = "BgmTrackChanged",
   BgmVolumeChanged = "BgmVolumeChanged",
+  BreakEndsAtChanged = "BreakEndsAtChanged",
   CurrentSongAdhocLyricsChanged = "CurrentSongAdhocLyricsChanged",
   CurrentSongChanged = "CurrentSongChanged",
   Emote = "Emote",
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
+  OledFriendlyChanged = "OledFriendlyChanged",
   PianoRollOpacityChanged = "PianoRollOpacityChanged",
   PianoRollSizeChanged = "PianoRollSizeChanged",
   PitchShiftSemisChanged = "PitchShiftSemisChanged",
@@ -938,10 +943,12 @@ const MAX_PIANO_ROLL_SIZE = 0.5;
 let db: NotARealDb = {
   bgmTrack: null,
   bgmVolume: DEFAULT_BGM_VOLUME,
+  breakEndsAt: null,
   currentSong: null,
   currentSongAdhocLyrics: [],
   guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
   idToAdhocLyrics: {},
+  oledFriendly: false,
   pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
   pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
   pitchShiftSemis: 0,
@@ -1002,10 +1009,12 @@ function loadDb(): NotARealDb {
   const loaded: NotARealDb = {
     bgmTrack: null,
     bgmVolume: DEFAULT_BGM_VOLUME,
+    breakEndsAt: null,
     currentSong: null,
     currentSongAdhocLyrics: [],
     guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
     idToAdhocLyrics: {},
+    oledFriendly: false,
     pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
     pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
     pitchShiftSemis: 0,
@@ -1025,6 +1034,8 @@ function loadDb(): NotARealDb {
   // non-WAITING playbackState from a session killed mid-song.
   loaded.songQueue = loaded.songQueue.filter((song) => song !== null);
   loaded.playbackState = PlaybackState.WAITING;
+  // A break doesn't survive a relaunch (and a stale past deadline is noise).
+  loaded.breakEndsAt = null;
   return loaded;
 }
 
@@ -1762,7 +1773,9 @@ const resolvers = {
     },
     bgmTrack: () => db.bgmTrack,
     bgmVolume: () => db.bgmVolume,
+    breakEndsAt: () => db.breakEndsAt,
     guideMelodyVolume: () => db.guideMelodyVolume,
+    oledFriendly: () => db.oledFriendly,
     pianoRollOpacity: () => db.pianoRollOpacity,
     pianoRollSize: () => db.pianoRollSize,
     pitchShiftSemis: () => db.pitchShiftSemis,
@@ -2111,6 +2124,14 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setOledFriendly: (_: any, args: { oledFriendly: boolean }): boolean => {
+      db.oledFriendly = args.oledFriendly;
+      pubsub.publish(SubscriptionEvent.OledFriendlyChanged, {
+        oledFriendlyChanged: db.oledFriendly,
+      });
+      saveDb();
+      return true;
+    },
     setSidebarCollapsed: (_: any, args: { collapsed: boolean }): boolean => {
       db.sidebarCollapsed = args.collapsed;
       pubsub.publish(SubscriptionEvent.SidebarCollapsedChanged, {
@@ -2131,6 +2152,14 @@ const resolvers = {
       db.bgmTrack = track;
       pubsub.publish(SubscriptionEvent.BgmTrackChanged, {
         bgmTrackChanged: db.bgmTrack,
+      });
+      saveDb();
+      return true;
+    },
+    setBreakEndsAt: (_: any, args: { endsAt: number | null }): boolean => {
+      db.breakEndsAt = args.endsAt ?? null;
+      pubsub.publish(SubscriptionEvent.BreakEndsAtChanged, {
+        breakEndsAtChanged: db.breakEndsAt,
       });
       saveDb();
       return true;
@@ -2209,6 +2238,10 @@ const resolvers = {
           SubscriptionEvent.SettingsCollapsedChanged,
         ]),
     },
+    oledFriendlyChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.OledFriendlyChanged]),
+    },
     sidebarCollapsedChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([
@@ -2218,6 +2251,10 @@ const resolvers = {
     bgmVolumeChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([SubscriptionEvent.BgmVolumeChanged]),
+    },
+    breakEndsAtChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.BreakEndsAtChanged]),
     },
     guideMelodyVolumeChanged: {
       subscribe: () =>

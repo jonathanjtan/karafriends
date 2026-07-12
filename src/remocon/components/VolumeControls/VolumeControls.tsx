@@ -1,10 +1,11 @@
 import classnames from "classnames";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { graphql, useMutation } from "react-relay";
 
 import { BGM_TRACKS, SHUFFLE_VALUE } from "../../../common/bgmTracks";
 import useBgmTrack from "../../../common/hooks/useBgmTrack";
 import useBgmVolume from "../../../common/hooks/useBgmVolume";
+import useBreakEndsAt from "../../../common/hooks/useBreakEndsAt";
 import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
@@ -38,6 +39,22 @@ const VolumeControls = () => {
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
   const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
     useQueueIntermissionEnabled();
+  const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
+  // Break length is a per-phone choice; only the break itself is synced.
+  const [breakMinutes, setBreakMinutes] = useState(5);
+  // Tick while a break is active so the End Break countdown stays live. The
+  // renderer clears breakEndsAt server-side when it expires, which flips the
+  // button back via the subscription.
+  const [breakNow, setBreakNow] = useState(() => Date.now());
+  const breakActive = breakEndsAt !== null;
+  useEffect(() => {
+    if (!breakActive) return;
+    const timer = setInterval(() => setBreakNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [breakActive]);
+  const breakRemainingSecs = breakActive
+    ? Math.max(Math.round((breakEndsAt - breakNow) / 1000), 0)
+    : 0;
   const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
@@ -172,6 +189,42 @@ const VolumeControls = () => {
             }
           >
             Intermission: {queueIntermissionEnabled ? "On" : "Off"}
+          </button>
+        </div>
+        <div>
+          {!breakActive && (
+            <div className={styles.labelRow}>
+              <span>Break Length</span>
+              <span className={styles.sizeButtons}>
+                <button
+                  className={styles.sizeButton}
+                  onClick={() => setBreakMinutes(Math.max(breakMinutes - 1, 1))}
+                >
+                  −
+                </button>
+                <span>{breakMinutes} min</span>
+                <button
+                  className={styles.sizeButton}
+                  onClick={() => setBreakMinutes(breakMinutes + 1)}
+                >
+                  +
+                </button>
+              </span>
+            </div>
+          )}
+          <button
+            className={styles.recheckButton}
+            onClick={() =>
+              setBreakEndsAt(
+                breakActive ? null : Date.now() + breakMinutes * 60 * 1000,
+              )
+            }
+          >
+            {breakActive
+              ? `End Break (${Math.floor(breakRemainingSecs / 60)}:${String(
+                  breakRemainingSecs % 60,
+                ).padStart(2, "0")} left)`
+              : `Take a Break (${breakMinutes} min)`}
           </button>
         </div>
         <div>

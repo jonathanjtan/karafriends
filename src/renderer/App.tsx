@@ -13,6 +13,7 @@ import { HOSTNAME } from "../common/constants";
 import environment from "../common/graphqlEnvironment";
 import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
+import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
@@ -134,6 +135,9 @@ function App(props: {
   const sidebarVisible = !sidebarCollapsed;
   // The floating collapse/expand tab auto-hides; mouse movement reveals it.
   const [controlsVisible, setControlsVisible] = useState(false);
+  // Canonical name of the BGM track currently audible, for the intermission
+  // screen's "Now Playing" line.
+  const [bgmNowPlaying, setBgmNowPlaying] = useState<string | null>(null);
   // Sidebar width is drag-resizable and persisted locally to each TV — it's a
   // display-fit preference, not a room-wide synced setting.
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
@@ -179,6 +183,20 @@ function App(props: {
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
   const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
     useQueueIntermissionEnabled();
+  const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
+  // Break length is a per-screen choice; only the break itself is synced.
+  const [breakMinutes, setBreakMinutes] = useState(5);
+  const breakActive = breakEndsAt !== null;
+  // Tick while a break is active so the End Break countdown stays live.
+  const [breakNow, setBreakNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!breakActive) return;
+    const timer = setInterval(() => setBreakNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [breakActive]);
+  const breakRemainingSecs = breakActive
+    ? Math.max(Math.round((breakEndsAt - breakNow) / 1000), 0)
+    : 0;
 
   useEffect(() => {
     const storedBgmVolume = localStorage.getItem(LEGACY_BGM_VOLUME_STORAGE_KEY);
@@ -391,9 +409,14 @@ function App(props: {
           kuroshiro={props.kuroshiro}
           audio={props.audio}
           hostname={hostname}
+          bgmNowPlaying={bgmNowPlaying}
         />
         <Effects />
-        <BackgroundMusic trackFilename={bgmTrack} volume={bgmVolume} />
+        <BackgroundMusic
+          trackFilename={bgmTrack}
+          volume={bgmVolume}
+          onNowPlayingChange={setBgmNowPlaying}
+        />
       </div>
       {/* Stays mounted while collapsed so the width can animate shut; the
           inner sidebar keeps its full width so the content doesn't reflow
@@ -522,6 +545,43 @@ function App(props: {
                     />
                     <span className="lever"></span>
                   </label>
+                </div>
+                <span className="settingLabel">Break</span>
+                <div className="pianoRollSizeButtons settingControlWide">
+                  {!breakActive && (
+                    <>
+                      <button
+                        className="btn-small grey"
+                        onClick={() =>
+                          setBreakMinutes(Math.max(breakMinutes - 1, 1))
+                        }
+                      >
+                        −
+                      </button>
+                      <button
+                        className="btn-small grey"
+                        onClick={() => setBreakMinutes(breakMinutes + 1)}
+                      >
+                        +
+                      </button>
+                    </>
+                  )}
+                  <button
+                    className="btn-small"
+                    onClick={() =>
+                      setBreakEndsAt(
+                        breakActive
+                          ? null
+                          : Date.now() + breakMinutes * 60 * 1000,
+                      )
+                    }
+                  >
+                    {breakActive
+                      ? `End Break (${Math.floor(
+                          breakRemainingSecs / 60,
+                        )}:${String(breakRemainingSecs % 60).padStart(2, "0")})`
+                      : `Break (${breakMinutes} min)`}
+                  </button>
                 </div>
                 <span
                   className="settingLabel settingLabelClickable"

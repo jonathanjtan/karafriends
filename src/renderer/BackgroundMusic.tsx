@@ -6,22 +6,35 @@ import usePlaybackState from "../common/hooks/usePlaybackState";
 interface Props {
   trackFilename: string | null;
   volume: number;
+  // Reports the canonical name of the track currently playing (null while
+  // BGM is silent) so the intermission screen can show a "Now Playing" line.
+  onNowPlayingChange?: (canonicalName: string | null) => void;
 }
 
 // BGM eases in from silence after a song ends instead of slamming to full
 // volume, crosses track switches with a fade-out/fade-in, and ducks away
 // quickly when the next song starts. Same-track looping is untouched.
+// In shuffle mode, the outgoing track fades out over its final seconds
+// instead of ending abruptly — except when a track shuffles into itself and
+// is loopable, in which case it restarts seamlessly with no fade.
 const FADE_IN_MS = 2000;
 const TRACK_SWITCH_FADE_OUT_MS = 1200;
 const SONG_START_FADE_OUT_MS = 400;
+const SHUFFLE_END_FADE_OUT_MS = 2000;
 
-function pickRandomTrack(excludeFilename?: string): string {
-  const candidates = BGM_TRACKS.filter((t) => t.filename !== excludeFilename);
-  const pool = candidates.length > 0 ? candidates : BGM_TRACKS;
-  return pool[Math.floor(Math.random() * pool.length)].filename;
+function pickRandomTrack(): string {
+  return BGM_TRACKS[Math.floor(Math.random() * BGM_TRACKS.length)].filename;
 }
 
-export default function BackgroundMusic({ trackFilename, volume }: Props) {
+function isLoopable(filename: string): boolean {
+  return BGM_TRACKS.some((t) => t.filename === filename && t.loopable);
+}
+
+export default function BackgroundMusic({
+  trackFilename,
+  volume,
+  onNowPlayingChange,
+}: Props) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const { playbackState } = usePlaybackState();
   const isShuffling = trackFilename === SHUFFLE_VALUE;
@@ -33,6 +46,11 @@ export default function BackgroundMusic({ trackFilename, volume }: Props) {
   useEffect(() => {
     if (isShuffling) setShuffledFilename(pickRandomTrack());
   }, [isShuffling]);
+
+  // Set once per shuffle playthrough when the end-of-track transition has
+  // been decided (fade started or seamless loop armed), so timeupdate/ended
+  // don't double-trigger it.
+  const shuffleTransitionArmed = useRef(false);
 
   const targetFilename = isShuffling ? shuffledFilename : trackFilename;
   const shouldPlay = targetFilename !== null && playbackState === "WAITING";
@@ -106,9 +124,62 @@ export default function BackgroundMusic({ trackFilename, volume }: Props) {
     }
   }, [targetFilename, mountedFilename, shouldPlay]);
 
+  // The upcoming shuffle pick, chosen when the end-of-track fade is armed so
+  // the ended handler lands on the same decision.
+  const nextShufflePick = useRef<string | null>(null);
+
+  // Nearing the end of a shuffle track: pick what comes next and start the
+  // fade-out — unless the pick is the same track and it loops seamlessly,
+  // in which case leave the volume alone and let onEnded restart it.
+  const onShuffleTimeUpdate = () => {
+    const audio = audioRef.current;
+    if (!audio || !shouldPlay || shuffleTransitionArmed.current) return;
+    const remainingMs = (audio.duration - audio.currentTime) * 1000;
+    if (!isFinite(remainingMs) || remainingMs > SHUFFLE_END_FADE_OUT_MS) return;
+    const next = pickRandomTrack();
+    shuffleTransitionArmed.current = true;
+    nextShufflePick.current = next;
+    if (next === mountedFilename && isLoopable(next)) return;
+    fadeTo(audio, () => 0, Math.max(remainingMs, 1));
+  };
+
+  const onShuffleEnded = () => {
+    const audio = audioRef.current;
+    const next = nextShufflePick.current ?? pickRandomTrack();
+    const seamless =
+      next === mountedFilename &&
+      isLoopable(next) &&
+      shuffleTransitionArmed.current;
+    shuffleTransitionArmed.current = false;
+    nextShufflePick.current = null;
+    // Track ran out right as a song started (or state flapped): stay quiet
+    // and let the resume effect / watchdog restart playback later.
+    if (!shouldPlay) return;
+    if (next !== mountedFilename) {
+      // Remounts the <audio> element; the effect below fades the new track in.
+      setShuffledFilename(next);
+      return;
+    }
+    // Shuffled into itself: restart in place (setting the same filename
+    // wouldn't remount or retrigger the fade-in effect).
+    if (!audio) return;
+    cancelFade();
+    audio.currentTime = 0;
+    if (seamless) {
+      audio.volume = volumeRef.current;
+    } else {
+      audio.volume = 0;
+      fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+    }
+    audio.play().catch((e) => console.warn("BGM replay failed", e));
+  };
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    // A freshly mounted track starts a new playthrough.
+    shuffleTransitionArmed.current = false;
+    nextShufflePick.current = null;
     if (shouldPlay) {
       // Ease in from silence — covers both BGM resuming after a song ends
       // and a newly swapped track starting.
@@ -127,6 +198,37 @@ export default function BackgroundMusic({ trackFilename, volume }: Props) {
     }
   }, [mountedFilename, shouldPlay]);
 
+  // Watchdog: transitions (skips, rapid playback-state flaps, remounts,
+  // rejected play() calls) can strand the element paused while the intent
+  // says "playing". Converge on the intent instead of trusting every path.
+  useEffect(() => {
+    if (!shouldPlay) return;
+    const watchdog = setInterval(() => {
+      const audio = audioRef.current;
+      if (!audio || !audio.paused || fadeRaf.current !== null) return;
+      audio.volume = 0;
+      audio.play().catch((e) => console.warn("BGM watchdog play failed", e));
+      fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+    }, 1000);
+    return () => clearInterval(watchdog);
+  }, [mountedFilename, shouldPlay]);
+
+  // "Now Playing" is driven by the element's real play/pause events, not by
+  // intent — if playback silently fails, the label must not claim otherwise.
+  const [isAudible, setIsAudible] = useState(false);
+
+  // A remounted element starts paused, but the outgoing element never fires
+  // onPause when React unmounts it — reset explicitly.
+  useEffect(() => {
+    setIsAudible(false);
+  }, [mountedFilename]);
+
+  useEffect(() => {
+    if (!onNowPlayingChange) return;
+    const track = BGM_TRACKS.find((t) => t.filename === mountedFilename);
+    onNowPlayingChange(isAudible && track ? track.canonicalName : null);
+  }, [mountedFilename, isAudible]);
+
   useEffect(() => cancelFade, []);
 
   if (!mountedFilename) return null;
@@ -141,11 +243,10 @@ export default function BackgroundMusic({ trackFilename, volume }: Props) {
       ref={audioRef}
       src={`${BGM_DIR}${mountedFilename}`}
       loop={!isShuffling}
-      onEnded={
-        isShuffling
-          ? () => setShuffledFilename(pickRandomTrack(mountedFilename))
-          : undefined
-      }
+      onPlay={() => setIsAudible(true)}
+      onPause={() => setIsAudible(false)}
+      onTimeUpdate={isShuffling ? onShuffleTimeUpdate : undefined}
+      onEnded={isShuffling ? onShuffleEnded : undefined}
     />
   );
 }

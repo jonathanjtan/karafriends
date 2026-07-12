@@ -9,6 +9,7 @@ import YoutubePlayer from "youtube-player";
 import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.graphql";
 
 import environment from "../common/graphqlEnvironment";
+import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import useQueue from "../common/hooks/useQueue";
@@ -74,7 +75,7 @@ const NON_DAM_GAIN = 0.8;
 const MAX_HLS_FATAL_ERROR_RETRIES = 2;
 // How long the between-songs queue screen stays up before the next song
 // starts (when queueIntermissionEnabled is on).
-const QUEUE_INTERMISSION_MS = 5 * 1000;
+const QUEUE_INTERMISSION_MS = 10 * 1000;
 // Fade duration for the intermission screen; keep in sync with the
 // animation durations in QueueIntermission.css.
 const QUEUE_INTERMISSION_FADE_MS = 500;
@@ -84,6 +85,7 @@ function Player(props: {
   kuroshiro: KuroshiroSingleton;
   audio: KarafriendsAudio;
   hostname: string;
+  bgmNowPlaying: string | null;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
@@ -112,7 +114,38 @@ function Player(props: {
   const intermissionEnabledRef = useRef(queueIntermissionEnabled);
   const queueLengthRef = useRef(queue.length);
   const intermissionTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const pollQueueRef = useRef<(() => void) | null>(null);
+  // The intermission's own minimum hold deadline (epoch ms); the effective
+  // hold is the max of this and any active break.
+  const intermissionDeadlineRef = useRef<number | null>(null);
+  const pollQueueRef = useRef<((force?: boolean) => void) | null>(null);
+
+  // Break: while breakEndsAt is in the future, hold on the intermission
+  // screen (and don't pop queued songs) until it passes or is cleared.
+  const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
+  const breakEndsAtRef = useRef<number | null>(breakEndsAt);
+  const playbackStateRef = useRef(playbackState);
+
+  useEffect(() => {
+    breakEndsAtRef.current = breakEndsAt;
+  }, [breakEndsAt]);
+
+  useEffect(() => {
+    playbackStateRef.current = playbackState;
+  }, [playbackState]);
+
+  // The renderer is the single authority for expiring a break: clear it
+  // server-side the moment it runs out, so every remocon's button flips back
+  // without each client having to tick its own clock.
+  useEffect(() => {
+    if (breakEndsAt === null) return;
+    const remainingMs = breakEndsAt - Date.now();
+    if (remainingMs <= 0) {
+      setBreakEndsAt(null);
+      return;
+    }
+    const expireTimer = setTimeout(() => setBreakEndsAt(null), remainingMs);
+    return () => clearTimeout(expireTimer);
+  }, [breakEndsAt]);
 
   useEffect(() => {
     intermissionEnabledRef.current = queueIntermissionEnabled;
@@ -142,27 +175,33 @@ function Player(props: {
       clearTimeout(intermissionTimerRef.current);
       intermissionTimerRef.current = null;
     }
+    intermissionDeadlineRef.current = null;
     setIntermissionVisible(false);
   };
 
   // The onended path only covers songs that finish while the app is up; show
   // the idle screen any time we're WAITING with nothing playing too (fresh
   // launch, or the setting flipped on while idle). It comes down via the
-  // pop-success handler when a song actually starts.
+  // pop-success handler when a song actually starts. A break forces it up
+  // even with the intermission setting off — it doubles as the break screen.
   useEffect(() => {
-    if (playbackState === "WAITING" && queueIntermissionEnabled) {
+    if (
+      playbackState === "WAITING" &&
+      (queueIntermissionEnabled || breakEndsAt !== null)
+    ) {
       setIntermissionVisible(true);
     }
-  }, [playbackState, queueIntermissionEnabled]);
+  }, [playbackState, queueIntermissionEnabled, breakEndsAt]);
 
   useEffect(() => {
     if (queueIntermissionEnabled) return;
+    if (breakEndsAt !== null) return; // break keeps the screen up regardless
     // Setting turned off mid-intermission: if the next song was pending on
     // the timer, start it now; if the idle screen was up, just hide it.
     const timerWasPending = intermissionTimerRef.current !== null;
     cancelIntermission();
     if (timerWasPending) pollQueueRef.current?.();
-  }, [queueIntermissionEnabled]);
+  }, [queueIntermissionEnabled, breakEndsAt]);
 
   const audioCtx = useRef<AudioContext | null>(null);
   const videoAudioSrc = useRef<MediaElementAudioSourceNode | null>(null);
@@ -173,7 +212,21 @@ function Player(props: {
   useEffect(() => {
     if (!videoRef.current) return;
 
-    const pollQueue = () =>
+    const pollQueue = (force: boolean = false) => {
+      // On break: don't start anything. Keep checking so playback resumes
+      // shortly after the break ends or is cancelled. An explicit skip
+      // (force) overrides the break.
+      if (
+        !force &&
+        breakEndsAtRef.current !== null &&
+        breakEndsAtRef.current > Date.now()
+      ) {
+        if (playbackStateRef.current !== "WAITING") {
+          setPlaybackState("WAITING");
+        }
+        pollTimeoutRef.current = setTimeout(pollQueue, 1000);
+        return;
+      }
       commitMutation<PlayerPopSongMutation>(environment, {
         mutation: popSongMutation,
         variables: {},
@@ -412,8 +465,40 @@ function Player(props: {
           pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
         },
       });
+    };
 
     pollQueueRef.current = pollQueue;
+
+    // Hold the intermission screen until both its own minimum duration and
+    // any active break have passed, then start the next song. Checked on a
+    // short tick so a break started, extended, or ended mid-hold is honored
+    // without rearming anything.
+    const holdIntermission = (deadline: number) => {
+      intermissionDeadlineRef.current = deadline;
+      const tick = () => {
+        const breakUntil = breakEndsAtRef.current ?? 0;
+        const effective = Math.max(
+          intermissionDeadlineRef.current ?? 0,
+          breakUntil,
+        );
+        const remaining = effective - Date.now();
+        if (remaining <= 0) {
+          intermissionTimerRef.current = null;
+          intermissionDeadlineRef.current = null;
+          pollQueue();
+          return;
+        }
+        // Mid-break the room is idle; flip to WAITING so BGM plays.
+        if (breakUntil > Date.now() && playbackStateRef.current !== "WAITING") {
+          setPlaybackState("WAITING");
+        }
+        intermissionTimerRef.current = setTimeout(
+          tick,
+          Math.min(remaining, 500),
+        );
+      };
+      tick();
+    };
 
     videoRef.current.onended = () => {
       // With the intermission enabled, cut to the queue screen when a song
@@ -424,10 +509,7 @@ function Player(props: {
       if (intermissionEnabledRef.current) {
         setIntermissionVisible(true);
         if (queueLengthRef.current > 0) {
-          intermissionTimerRef.current = setTimeout(() => {
-            intermissionTimerRef.current = null;
-            pollQueue();
-          }, QUEUE_INTERMISSION_MS);
+          holdIntermission(Date.now() + QUEUE_INTERMISSION_MS);
         } else {
           pollQueue();
         }
@@ -487,9 +569,10 @@ function Player(props: {
         break;
       case "SKIPPING":
         if (intermissionTimerRef.current) {
-          // Mid-intermission skip: start the next song right away.
+          // Mid-intermission (or mid-break) skip: start the next song right
+          // away; an explicit skip overrides an active break.
           cancelIntermission();
-          pollQueueRef.current?.();
+          pollQueueRef.current?.(true);
           break;
         }
         if (isFinite(videoRef.current.duration))
@@ -554,6 +637,8 @@ function Player(props: {
           queue={queue}
           hostname={props.hostname}
           hiding={!intermissionVisible}
+          breakEndsAt={breakEndsAt}
+          bgmNowPlaying={props.bgmNowPlaying}
         />
       ) : null}
     </div>

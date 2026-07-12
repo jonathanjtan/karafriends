@@ -59,6 +59,27 @@
   border-radius: 1vh;
 }
 
+/* Pinned to the top-left corner, out of the centered flow (the QR codes own
+   the right edge). */
+.queueIntermissionNowPlayingBgm {
+  position: absolute;
+  top: 3vh;
+  left: 6vw;
+  max-width: 60vw;
+  font-size: 2.2vh;
+  color: #cccccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queueIntermissionBreak {
+  font-size: 3.5vh;
+  font-weight: bold;
+  color: #80deea;
+  font-variant-numeric: tabular-nums;
+}
+
 .queueIntermissionHeader {
   font-size: 3vh;
   font-weight: bold;

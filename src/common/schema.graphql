@@ -24,8 +24,15 @@ type Query {
   # sentinel, or null for no BGM.
   bgmTrack: String
   bgmVolume: Float!
+  # Epoch milliseconds when the current break ends, or null when not on
+  # break. While set (and in the future), the renderer holds on the
+  # intermission screen instead of starting the next song.
+  breakEndsAt: Float
   guideMelodyVolume: Float!
   nicoVideoInfo(videoId: String): NicoVideoInfoResult!
+  # Whether the big screen uses the dark OLED-friendly theme. Synced so the
+  # remocon can toggle it on the TV remotely.
+  oledFriendly: Boolean!
   pianoRollOpacity: Float!
   pianoRollSize: Float!
   pitchShiftSemis: Int!
@@ -83,7 +90,10 @@ type Mutation {
   clearQueue: Boolean!
   setBgmTrack(track: String): Boolean!
   setBgmVolume(volume: Float!): Boolean!
+  # Start a break ending at the given epoch ms, or pass null to end it.
+  setBreakEndsAt(endsAt: Float): Boolean!
   setGuideMelodyVolume(volume: Float!): Boolean!
+  setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
   setPianoRollSize(size: Float!): Boolean!
   setPitchShiftSemis(semis: Int!): Boolean!
@@ -96,10 +106,12 @@ type Mutation {
 type Subscription {
   bgmTrackChanged: String
   bgmVolumeChanged: Float!
+  breakEndsAtChanged: Float
   currentSongAdhocLyricsChanged: [AdhocLyricsEntry!]!
   currentSongChanged: QueueItem
   emote: Emote!
   guideMelodyVolumeChanged: Float!
+  oledFriendlyChanged: Boolean!
   pianoRollOpacityChanged: Float!
   pianoRollSizeChanged: Float!
   pitchShiftSemisChanged: Int!

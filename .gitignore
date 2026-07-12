@@ -43,3 +43,4 @@ __generated__
 /extraResources/ffmpeg/**/*
 /extraResources/ytdlp/*
 /buildResources/asio/*
+.claude/settings.local.json

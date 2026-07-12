@@ -1,6 +1,12 @@
 export interface BgmTrack {
   filename: string;
   label: string;
+  // Full "Title - Artist/Source" credit shown on the intermission screen's
+  // "Now Playing" line (label stays short for the remocon dropdown).
+  canonicalName: string;
+  // True when the track's end flows seamlessly back into its start, so
+  // shuffling into the same track can restart it without a fade.
+  loopable?: boolean;
 }
 
 export const BGM_DIR = "./bgm/";
@@ -17,13 +23,21 @@ export const BGM_TRACKS: readonly BgmTrack[] = [
   {
     filename: "joysound-magazine-song-selection.webm",
     label: "JOYSOUND Switch",
+    canonicalName:
+      "Magazine/Song Selection - カラオケJOYSOUND for Nintendo Switch",
+    loopable: true,
   },
   {
     filename: "joysound-streamer.webm",
     label: "JOYSOUND STREAMER",
+    canonicalName:
+      "Stream_BGM_LoFiChill_03.wav - カラオケJOYSOUND for STREAMER",
+    loopable: true,
   },
   {
     filename: "2-23-am.webm",
     label: "2:23 AM (Sharou)",
+    canonicalName: "2:23 AM - Sharou",
+    loopable: true,
   },
 ];
