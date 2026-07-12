@@ -3,7 +3,7 @@ import invariant from "ts-invariant";
 import Hls from "hls.js";
 import M from "materialize-css";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { commitMutation, fetchQuery, graphql } from "react-relay";
 import YoutubePlayer from "youtube-player";
 import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.graphql";
@@ -15,6 +15,10 @@ import usePlaybackState from "../common/hooks/usePlaybackState";
 import useQueue from "../common/hooks/useQueue";
 import useQueueIntermissionEnabled from "../common/hooks/useQueueIntermissionEnabled";
 import { KuroshiroSingleton } from "../common/joysoundParser";
+import {
+  findInstrumentalBreaks,
+  parseScoringData,
+} from "../common/scoringData";
 import AdhocLyrics from "./AdhocLyrics";
 import DamGuideMelodySynth from "./damGuideMelody";
 import JoysoundRenderer from "./JoysoundRenderer";
@@ -100,6 +104,13 @@ function Player(props: {
   // card; DAM/Youtube/Nico have no title card so they clear it immediately.
   const [pianoRollTitleCleared, setPianoRollTitleCleared] =
     useState<boolean>(true);
+  // Dims the piano roll while a JOYSOUND instrumental break is announced.
+  const [pianoRollDucked, setPianoRollDucked] = useState<boolean>(false);
+  const instrumentalBreaks = useMemo(
+    () =>
+      findInstrumentalBreaks(parseScoringData(scoringData).freeTimeIntervals),
+    [scoringData],
+  );
   const [shouldShowAdhocLyrics, setShouldShowAdhocLyrics] =
     useState<boolean>(false);
   const { playbackState, setPlaybackState } = usePlaybackState();
@@ -278,6 +289,7 @@ function Player(props: {
 
               setShouldShowPianoRoll(true);
               setPianoRollTitleCleared(true);
+              setPianoRollDucked(false);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
               setScoringData(popSong.scoringData);
@@ -393,6 +405,7 @@ function Player(props: {
               // Wait for JoysoundRenderer's title card to fade out before
               // fading the piano roll in over it.
               setPianoRollTitleCleared(false);
+              setPianoRollDucked(false);
               setScoringData(popSong.scoringData ?? []);
               setShouldShowJoysound(true);
               setShouldShowAdhocLyrics(false);
@@ -424,6 +437,7 @@ function Player(props: {
             case "YoutubeQueueItem":
               setShouldShowPianoRoll(false);
               setPianoRollTitleCleared(true);
+              setPianoRollDucked(false);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(popSong.hasAdhocLyrics);
 
@@ -448,6 +462,7 @@ function Player(props: {
             case "NicoQueueItem":
               setShouldShowPianoRoll(false);
               setPianoRollTitleCleared(true);
+              setPianoRollDucked(false);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
 
@@ -624,6 +639,8 @@ function Player(props: {
           videoRef={videoRef}
           pianoRollVisible={shouldShowPianoRoll}
           onTitleFadeout={() => setPianoRollTitleCleared(true)}
+          breaks={instrumentalBreaks}
+          onBreakActiveChange={setPianoRollDucked}
         />
       ) : null}
       {shouldShowPianoRoll ? (
@@ -633,6 +650,7 @@ function Player(props: {
           mics={props.mics}
           pitchShiftSemis={pitchShiftSemis}
           visible={pianoRollTitleCleared}
+          ducked={pianoRollDucked}
         />
       ) : null}
       <video

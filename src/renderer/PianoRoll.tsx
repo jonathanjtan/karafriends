@@ -6,9 +6,14 @@ import vec from "gl-vec2";
 import getNormals from "polyline-normals";
 import React, { useEffect, useRef, useState } from "react";
 
-import { PIANO_ROLL_TOP_FRACTION } from "../common/constants";
+import {
+  PIANO_ROLL_CURSOR_FRACTION as CURSOR_FRACTION,
+  PIANO_ROLL_TIME_WIDTH_SECS as TIME_WIDTH_SECS,
+  PIANO_ROLL_TOP_FRACTION,
+} from "../common/constants";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
+import { parseScoringData } from "../common/scoringData";
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl";
@@ -20,10 +25,10 @@ import singleColorFragShaderRaw from "./shaders/PianoRollSingleColor.frag.glsl";
 // CURSOR_FRACTION from the left edge; notes scroll right-to-left past it.
 // 0.3 * 7s leaves ~4.9s of upcoming notes visible (matching the old
 // page-at-a-time view) plus ~2.1s of trailing pitch-detection history.
-const TIME_WIDTH_SECS = 7.0;
-const CURSOR_FRACTION = 0.3;
 const PITCH_RESOLUTION = 8;
 const STROKE_WIDTH = 0.03;
+// How much to dim the roll during an announced instrumental break.
+const PIANO_ROLL_DUCK_FACTOR = 0.15;
 
 function loadShader(
   gl: WebGLRenderingContext,
@@ -446,6 +451,9 @@ export default function PianoRoll(props: {
   pitchShiftSemis: number;
   // Gates the fade-in so the roll doesn't cover a JOYSOUND title card.
   visible: boolean;
+  // Dims the roll during an announced instrumental break so it doesn't
+  // cover the break notice.
+  ducked: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
@@ -458,26 +466,16 @@ export default function PianoRoll(props: {
   useEffect(() => {
     if (!canvasRef.current || !props.videoRef.current) return;
 
-    const view = new Uint32Array(Uint8Array.from(props.scoringData).buffer);
-    const noteCount = view[1];
-    const lyricsIntervalCount = view[2];
-    const damTimeWindowIntervalCount = view[3];
-    const pogIntervalCount = view[4];
+    const {
+      notes: rawNotes,
+      freeTimeIntervals,
+      pogIntervals,
+    } = parseScoringData(props.scoringData);
 
-    const notes: {
-      startTime: number;
-      endTime: number;
-      midiNumber: number;
-    }[] = [];
-
-    const notesOffset = 6;
-    for (let i = notesOffset; i < notesOffset + noteCount * 4; i += 4) {
-      notes.push({
-        startTime: view[i] / 1000,
-        endTime: view[i + 1] / 1000,
-        midiNumber: view[i + 2] + props.pitchShiftSemis,
-      });
-    }
+    const notes = rawNotes.map((note) => ({
+      ...note,
+      midiNumber: note.midiNumber + props.pitchShiftSemis,
+    }));
 
     const medianMidiNumber = median(notes.map((note) => note.midiNumber));
 
@@ -494,58 +492,11 @@ export default function PianoRoll(props: {
 
     let currentNoteIndex = 0;
 
-    const lyricsIntervals: [number, number][] = [];
-    const lyricsIntervalsOffset = notesOffset + noteCount * 4;
-    for (
-      let i = lyricsIntervalsOffset;
-      i < lyricsIntervalsOffset + lyricsIntervalCount * 2;
-      i += 2
-    ) {
-      lyricsIntervals.push([view[i] / 1000, view[i + 1] / 1000]);
-    }
-    const combinedLyricsIntervals = lyricsIntervals.reduce<[number, number][]>(
-      (acc, cur) => {
-        if (acc.length === 0) {
-          return [cur];
-        }
-        const [prevStart, prevEnd] = acc[acc.length - 1];
-        const [curStart, curEnd] = cur;
-        if (curStart - prevEnd <= 10) {
-          acc[acc.length - 1] = [prevStart, curEnd];
-          return acc;
-        } else {
-          return acc.concat([cur]);
-        }
-      },
-      [],
-    );
-    const [freeTimeIntervals, lastLyricsIntervalEnd] =
-      combinedLyricsIntervals.reduce<[[number, number][], number]>(
-        (acc, cur) => {
-          const [intervals, prevEnd] = acc;
-          const [curStart, curEnd] = cur;
-          return [intervals.concat([[prevEnd, curStart]]), curEnd];
-        },
-        [[], 0],
-      );
-    freeTimeIntervals.push([lastLyricsIntervalEnd, 9999]);
     const freeTimePositions = freeTimeIntervals
-      .map(([start, end]) => quadToTriangles(start, 1.0, end, 0.0))
+      .map(({ startTime, endTime }) =>
+        quadToTriangles(startTime, 1.0, endTime, 0.0),
+      )
       .flat();
-
-    const damTimeWindowIntervalsOffset =
-      lyricsIntervalsOffset + lyricsIntervalCount * 2;
-
-    const pogIntervals: [number, number][] = [];
-    const pogIntervalsOffset =
-      damTimeWindowIntervalsOffset + damTimeWindowIntervalCount * 2;
-    for (
-      let i = pogIntervalsOffset;
-      i < pogIntervalsOffset + pogIntervalCount * 2;
-      i += 2
-    ) {
-      pogIntervals.push([view[i] / 1000, view[i + 1] / 1000]);
-    }
 
     function pollPitch(mic: InputDevice | null, buffer: PitchDetectionBuffer) {
       if (!mic || !props.videoRef.current) return;
@@ -624,7 +575,9 @@ export default function PianoRoll(props: {
 
       canvasRef.current.classList.toggle(
         "pianoRollPog",
-        pogIntervals.some(([start, end]) => time >= start - 1 && time <= end),
+        pogIntervals.some(
+          ({ startTime, endTime }) => time >= startTime - 1 && time <= endTime,
+        ),
       );
 
       animationFrameRequestRef.current = window.requestAnimationFrame(draw);
@@ -679,7 +632,11 @@ export default function PianoRoll(props: {
       style={{
         top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
         height: `${pianoRollSize * 100}%`,
-        opacity: props.visible ? pianoRollOpacity : 0,
+        opacity: !props.visible
+          ? 0
+          : props.ducked
+            ? pianoRollOpacity * PIANO_ROLL_DUCK_FACTOR
+            : pianoRollOpacity,
         display: pianoRollSize <= 0 ? "none" : undefined,
       }}
       ref={canvasRef}

@@ -11,11 +11,13 @@ import parseJoysoundData, {
 } from "../common/joysoundParser";
 
 import {
+  PIANO_ROLL_LOOKAHEAD_SECS,
   PIANO_ROLL_TOP_FRACTION,
   RUBY_FONT_SIZE,
   RUBY_FONT_STROKE,
 } from "../common/constants";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
+import { InstrumentalBreak } from "../common/scoringData";
 
 // XXX: These should be in their own file
 
@@ -86,6 +88,16 @@ const MAIN_FONT_STROKE = 4;
 
 const ROMAJI_FONT_SIZE = 20;
 const ROMAJI_FONT_STROKE = 2;
+
+const BREAK_FONT_SIZE = 32;
+const BREAK_FONT_STROKE = 3;
+// Bottom-of-screen subtitle position, matching where JOYSOUND itself shows
+// the "（間奏　約N秒）" notice.
+const BREAK_Y_FRACTION = 0.82;
+// The notice pops in a beat after the break starts and doesn't need to
+// stay up for the whole break; the piano roll stays ducked regardless.
+const BREAK_TEXT_DELAY_MS = 500;
+const BREAK_TEXT_DURATION_MS = 5000;
 
 const SCREEN_WIDTH = 720;
 const SCREEN_HEIGHT = 480;
@@ -403,6 +415,43 @@ function createTitleTexture(
     48 - TEXT_PADDING,
     composerYPos,
     composerText,
+  );
+
+  const result = createTextureFromImage(gl, textCtx.canvas);
+
+  textCtx.canvas.remove();
+
+  return result;
+}
+
+function createBreakTexture(
+  gl: WebGL2RenderingContext,
+  approxDurationSecs: number,
+): WebGLTexture {
+  const textCtx = document.createElement("canvas").getContext("2d");
+  invariant(textCtx);
+
+  setupTitleCanvas(textCtx);
+
+  const text = `（間奏　約${approxDurationSecs}秒）`;
+  textCtx.font = `${BREAK_FONT_SIZE * EXPAND_RATE}px ${JP_FONT_FACE}`;
+  const measure = textCtx.measureText(text);
+
+  const xPos =
+    Math.max(0, SCREEN_WIDTH * EXPAND_RATE_X - measure.width) /
+      2 /
+      EXPAND_RATE_X -
+    BREAK_FONT_STROKE -
+    TEXT_PADDING;
+  const yPos = SCREEN_HEIGHT * BREAK_Y_FRACTION;
+
+  drawTextToCanvas(
+    textCtx,
+    BREAK_FONT_SIZE,
+    BREAK_FONT_STROKE,
+    xPos,
+    yPos,
+    text,
   );
 
   const result = createTextureFromImage(gl, textCtx.canvas);
@@ -837,6 +886,8 @@ export default function JoysoundRenderer(props: {
   isRomaji: boolean;
   pianoRollVisible: boolean;
   onTitleFadeout?: () => void;
+  breaks: InstrumentalBreak[];
+  onBreakActiveChange?: (active: boolean) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
@@ -905,12 +956,18 @@ export default function JoysoundRenderer(props: {
       // Reported once the title card stops drawing, so callers (e.g. the
       // piano roll) can fade in without covering it.
       let titleFadedOutReported = false;
+      // Edge-triggered: only fires onBreakActiveChange when crossing into
+      // or out of a duck window, not every frame.
+      let isPianoRollDucked = false;
 
       const titleTexture = createTitleTexture(gl, metadata, props.isRomaji);
       const lyricsBlockTextures = createLyricsBlockTextures(
         gl,
         lyricsData,
         props.isRomaji,
+      );
+      const breakTextures = props.breaks.map((b) =>
+        createBreakTexture(gl, b.approxDurationSecs),
       );
 
       const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
@@ -1026,6 +1083,39 @@ export default function JoysoundRenderer(props: {
               ),
             );
           }
+        }
+
+        const activeBreakIndex = props.breaks.findIndex(
+          (b) =>
+            refreshTime >= b.startTime * 1000 && refreshTime < b.endTime * 1000,
+        );
+
+        if (activeBreakIndex >= 0) {
+          const noticeStart =
+            props.breaks[activeBreakIndex].startTime * 1000 +
+            BREAK_TEXT_DELAY_MS;
+
+          if (
+            refreshTime >= noticeStart &&
+            refreshTime < noticeStart + BREAK_TEXT_DURATION_MS
+          ) {
+            drawTitle(gl, glBuffers, breakTextures[activeBreakIndex]);
+          }
+        }
+
+        // Un-duck before the break's literal end: notes for the next phrase
+        // start scrolling into the piano roll's visible window
+        // PIANO_ROLL_LOOKAHEAD_SECS ahead of when they're actually due, so
+        // the roll should already be back by then, not still fading in.
+        const duckedBreakIndex = props.breaks.findIndex(
+          (b) =>
+            refreshTime >= b.startTime * 1000 &&
+            refreshTime < b.endTime * 1000 - PIANO_ROLL_LOOKAHEAD_SECS * 1000,
+        );
+
+        if (duckedBreakIndex >= 0 !== isPianoRollDucked) {
+          isPianoRollDucked = duckedBreakIndex >= 0;
+          props.onBreakActiveChange?.(isPianoRollDucked);
         }
 
         animationFrameRequestRef.current = window.requestAnimationFrame(draw);
