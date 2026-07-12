@@ -63,17 +63,11 @@ export default function QueueIntermission(props: {
         props.hiding ? "queueIntermissionHiding" : ""
       }`}
     >
-      <div className="queueIntermissionQr queueIntermissionQrTop queueIntermissionQrRight queueIntermissionQrLight">
+      <div className="queueIntermissionQr">
         <QRCode hostname={props.hostname} />
       </div>
-      <div className="queueIntermissionQr queueIntermissionQrTop queueIntermissionQrLeft queueIntermissionQrDark">
+      <div className="queueIntermissionQrInverted">
         <QRCode hostname={props.hostname} inverted />
-      </div>
-      <div className="queueIntermissionQr queueIntermissionQrBottom queueIntermissionQrRight queueIntermissionQrDark">
-        <QRCode hostname={props.hostname} inverted />
-      </div>
-      <div className="queueIntermissionQr queueIntermissionQrBottom queueIntermissionQrLeft queueIntermissionQrLight">
-        <QRCode hostname={props.hostname} />
       </div>
       {props.bgmNowPlaying ? (
         <div className="queueIntermissionNowPlayingBgm">
