@@ -880,6 +880,10 @@ type NotARealDb = {
   bgmVolume: number;
   // Epoch ms when the current break ends; null when not on break.
   breakEndsAt: number | null;
+  // Custom message shown on the intermission screen while on break, and the
+  // nickname of whoever set it (if any).
+  breakMessageText: string | null;
+  breakMessageAuthor: string | null;
   currentSong: QueueItem | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   guideMelodyVolume: number;
@@ -902,6 +906,7 @@ enum SubscriptionEvent {
   BgmTrackChanged = "BgmTrackChanged",
   BgmVolumeChanged = "BgmVolumeChanged",
   BreakEndsAtChanged = "BreakEndsAtChanged",
+  BreakMessageChanged = "BreakMessageChanged",
   CurrentSongAdhocLyricsChanged = "CurrentSongAdhocLyricsChanged",
   CurrentSongChanged = "CurrentSongChanged",
   Emote = "Emote",
@@ -944,6 +949,8 @@ let db: NotARealDb = {
   bgmTrack: null,
   bgmVolume: DEFAULT_BGM_VOLUME,
   breakEndsAt: null,
+  breakMessageText: null,
+  breakMessageAuthor: null,
   currentSong: null,
   currentSongAdhocLyrics: [],
   guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
@@ -1010,6 +1017,8 @@ function loadDb(): NotARealDb {
     bgmTrack: null,
     bgmVolume: DEFAULT_BGM_VOLUME,
     breakEndsAt: null,
+    breakMessageText: null,
+    breakMessageAuthor: null,
     currentSong: null,
     currentSongAdhocLyrics: [],
     guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
@@ -1774,6 +1783,10 @@ const resolvers = {
     bgmTrack: () => db.bgmTrack,
     bgmVolume: () => db.bgmVolume,
     breakEndsAt: () => db.breakEndsAt,
+    breakMessage: () =>
+      db.breakMessageText !== null
+        ? { text: db.breakMessageText, author: db.breakMessageAuthor }
+        : null,
     guideMelodyVolume: () => db.guideMelodyVolume,
     oledFriendly: () => db.oledFriendly,
     pianoRollOpacity: () => db.pianoRollOpacity,
@@ -2164,6 +2177,20 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setBreakMessage: (
+      _: any,
+      args: { text: string | null; author: string | null },
+    ): boolean => {
+      db.breakMessageText = args.text || null;
+      db.breakMessageAuthor = db.breakMessageText ? args.author || null : null;
+      pubsub.publish(SubscriptionEvent.BreakMessageChanged, {
+        breakMessageChanged: db.breakMessageText
+          ? { text: db.breakMessageText, author: db.breakMessageAuthor }
+          : null,
+      });
+      saveDb();
+      return true;
+    },
     setBgmVolume: (_: any, args: { volume: number }): boolean => {
       db.bgmVolume = clampVolume(args.volume, MAX_BGM_VOLUME);
       pubsub.publish(SubscriptionEvent.BgmVolumeChanged, {
@@ -2255,6 +2282,10 @@ const resolvers = {
     breakEndsAtChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([SubscriptionEvent.BreakEndsAtChanged]),
+    },
+    breakMessageChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.BreakMessageChanged]),
     },
     guideMelodyVolumeChanged: {
       subscribe: () =>

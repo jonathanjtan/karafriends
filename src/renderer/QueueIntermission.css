@@ -84,6 +84,11 @@
   font-variant-numeric: tabular-nums;
 }
 
+.queueIntermissionBreakMessage {
+  font-size: 2.4vh;
+  color: #eeeeee;
+}
+
 .queueIntermissionHeader {
   font-size: 3vh;
   font-weight: bold;

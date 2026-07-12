@@ -34,6 +34,8 @@ export default function QueueIntermission(props: {
   hiding?: boolean;
   // Epoch ms when the current break ends; null when not on break.
   breakEndsAt?: number | null;
+  // Custom message to show while on break, if any.
+  breakMessage?: { text: string; author: string | null } | null;
   // Canonical name of the BGM track currently audible, if any.
   bgmNowPlaying?: string | null;
 }) {
@@ -80,6 +82,14 @@ export default function QueueIntermission(props: {
           {props.queue.length > 0
             ? `Up next in ${formatDuration(breakRemainingMs)}...`
             : `Break ends in ${formatDuration(breakRemainingMs)}...`}
+        </div>
+      ) : null}
+      {breakActive && props.breakMessage ? (
+        <div className="queueIntermissionBreakMessage">
+          {props.breakMessage.text}{" "}
+          {props.breakMessage.author
+            ? nicknameBadge(props.breakMessage.author)
+            : null}
         </div>
       ) : null}
       <div className="queueIntermissionHeader">次の演奏曲 / Up Next</div>

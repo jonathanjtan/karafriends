@@ -10,6 +10,7 @@ import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.gra
 
 import environment from "../common/graphqlEnvironment";
 import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
+import useBreakMessage from "../common/hooks/useBreakMessage";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import useQueue from "../common/hooks/useQueue";
@@ -137,6 +138,7 @@ function Player(props: {
   // Break: while breakEndsAt is in the future, hold on the intermission
   // screen (and don't pop queued songs) until it passes or is cleared.
   const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
+  const { breakMessage } = useBreakMessage();
   const breakEndsAtRef = useRef<number | null>(breakEndsAt);
   const playbackStateRef = useRef(playbackState);
 
@@ -670,6 +672,7 @@ function Player(props: {
           hostname={props.hostname}
           hiding={!intermissionVisible}
           breakEndsAt={breakEndsAt}
+          breakMessage={breakMessage}
           bgmNowPlaying={props.bgmNowPlaying}
         />
       ) : null}

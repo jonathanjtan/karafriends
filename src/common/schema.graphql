@@ -28,6 +28,9 @@ type Query {
   # break. While set (and in the future), the renderer holds on the
   # intermission screen instead of starting the next song.
   breakEndsAt: Float
+  # Custom message shown on the intermission screen while a break is active,
+  # or null for none. Set via the remocon's "Edit Break Message" button.
+  breakMessage: BreakMessage
   guideMelodyVolume: Float!
   nicoVideoInfo(videoId: String): NicoVideoInfoResult!
   # Whether the big screen uses the dark OLED-friendly theme. Synced so the
@@ -92,6 +95,7 @@ type Mutation {
   setBgmVolume(volume: Float!): Boolean!
   # Start a break ending at the given epoch ms, or pass null to end it.
   setBreakEndsAt(endsAt: Float): Boolean!
+  setBreakMessage(text: String, author: String): Boolean!
   setGuideMelodyVolume(volume: Float!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
@@ -107,6 +111,7 @@ type Subscription {
   bgmTrackChanged: String
   bgmVolumeChanged: Float!
   breakEndsAtChanged: Float
+  breakMessageChanged: BreakMessage
   currentSongAdhocLyricsChanged: [AdhocLyricsEntry!]!
   currentSongChanged: QueueItem
   emote: Emote!
@@ -240,6 +245,12 @@ type ServiceHealth {
 type UserIdentity {
   nickname: String!
   deviceId: String!
+}
+
+type BreakMessage {
+  text: String!
+  # Nickname of whoever set the message, or null if unattributed.
+  author: String
 }
 
 input UserIdentityInput {

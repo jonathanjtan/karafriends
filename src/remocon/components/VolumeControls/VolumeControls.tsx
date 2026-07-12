@@ -6,6 +6,7 @@ import { BGM_TRACKS, SHUFFLE_VALUE } from "../../../common/bgmTracks";
 import useBgmTrack from "../../../common/hooks/useBgmTrack";
 import useBgmVolume from "../../../common/hooks/useBgmVolume";
 import useBreakEndsAt from "../../../common/hooks/useBreakEndsAt";
+import useBreakMessage from "../../../common/hooks/useBreakMessage";
 import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import useOledFriendly from "../../../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
@@ -25,6 +26,8 @@ const clearQueueMutation = graphql`
   }
 `;
 
+const DEFAULT_BREAK_MESSAGE = "⚠️ Don't forget to stay hydrated!";
+
 const PIANO_ROLL_SIZE_PRESETS: { label: string; size: number }[] = [
   { label: "Off", size: 0 },
   { label: "S", size: 0.2 },
@@ -41,6 +44,7 @@ const VolumeControls = () => {
   const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
     useQueueIntermissionEnabled();
   const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
+  const { setBreakMessage } = useBreakMessage();
   // Break length is a per-phone choice; only the break itself is synced.
   const [breakMinutes, setBreakMinutes] = useState(5);
   // Tick while a break is active so the End Break countdown stays live. The
@@ -207,6 +211,23 @@ const VolumeControls = () => {
             onClick={() => setBreakMinutes(breakMinutes + 1)}
           >
             +
+          </button>
+        </div>
+        <div>
+          <button
+            className={styles.recheckButton}
+            onClick={() => {
+              const input = window.prompt(
+                "Break message:",
+                DEFAULT_BREAK_MESSAGE,
+              );
+              if (input === null) return;
+              const trimmed = input.trim();
+              if (trimmed === "") return;
+              setBreakMessage(trimmed, identity.nickname || null);
+            }}
+          >
+            Edit Break Message
           </button>
         </div>
         <div className={styles.sectionHeader}>Display Options</div>
