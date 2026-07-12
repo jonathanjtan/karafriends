@@ -6,7 +6,11 @@
   flex-direction: column;
   justify-content: center;
   gap: 2vh;
-  padding: 4vh 6vw;
+  /* Reserve room on both edges so text never runs under the corner QR codes
+     (each QR footprint is ~18.6vh: 3vh offset + 13.6vh width + 1vh*2
+     padding); max() falls back to the original 6vw on wide screens where
+     that's already bigger. */
+  padding: 4vh max(6vw, 20vh);
   background: linear-gradient(160deg, #101020 0%, #1a1a35 60%, #101020 100%);
   color: white;
   /* Keep durations in sync with QUEUE_INTERMISSION_FADE_MS in Player.tsx. */
@@ -35,37 +39,52 @@
   }
 }
 
-/* QR codes need a light background and quiet zone to scan reliably against
-   the dark overlay. */
+/* QR codes need a light or dark background (matching quiet zone) to scan
+   reliably against the dark overlay. One in each corner, alternating light
+   and dark diagonally, so a code is always reachable regardless of where the
+   audience is sitting. Sized at 13.6vh (16vh minus 15%). Position (top/
+   bottom/left/right) and color (light/dark) are independent axes, combined
+   per-corner in the markup. */
 .queueIntermissionQr {
   position: absolute;
+  width: 13.6vh;
+  padding: 1vh;
+  border-radius: 1vh;
+}
+
+.queueIntermissionQrTop {
   top: 3vh;
-  right: 3vh;
-  width: 16vh;
-  padding: 1vh;
-  background: white;
-  border-radius: 1vh;
 }
 
-/* Second copy in the opposite corner, inverted (white modules on black) so it
-   blends into the dark overlay; the padding doubles as its dark quiet zone. */
-.queueIntermissionQrInverted {
-  position: absolute;
+.queueIntermissionQrBottom {
   bottom: 3vh;
-  right: 3vh;
-  width: 16vh;
-  padding: 1vh;
-  background: black;
-  border-radius: 1vh;
 }
 
-/* Pinned to the top-left corner, out of the centered flow (the QR codes own
-   the right edge). */
+.queueIntermissionQrLeft {
+  left: 3vh;
+}
+
+.queueIntermissionQrRight {
+  right: 3vh;
+}
+
+.queueIntermissionQrLight {
+  background: white;
+}
+
+/* Inverted (white modules on black) so it blends into the dark overlay; the
+   padding doubles as its dark quiet zone. */
+.queueIntermissionQrDark {
+  background: black;
+}
+
+/* Pinned to the top edge, out of the centered flow, shifted in from the
+   corner to clear the top-left QR code. */
 .queueIntermissionNowPlayingBgm {
   position: absolute;
   top: 3vh;
-  left: 6vw;
-  max-width: 60vw;
+  left: max(6vw, 20vh);
+  max-width: calc(100% - 2 * max(6vw, 20vh));
   font-size: 2.2vh;
   color: #cccccc;
   overflow: hidden;
@@ -141,6 +160,10 @@
 }
 
 .queueIntermissionUpcomingSong {
+  /* Without this a flex item won't shrink below its (nowrap) content width,
+     so a long song name overflows the row instead of eliding — pushing the
+     ETA out past the row's bounds instead of just truncating the name. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
