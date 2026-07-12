@@ -199,16 +199,29 @@ export default function BackgroundMusic({
   }, [mountedFilename, shouldPlay]);
 
   // Watchdog: transitions (skips, rapid playback-state flaps, remounts,
-  // rejected play() calls) can strand the element paused while the intent
-  // says "playing". Converge on the intent instead of trusting every path.
+  // rejected play() calls, an end-of-track shuffle fade that finished before
+  // the swap) can strand the element paused — or playing but stuck at
+  // volume 0 — while the intent says "playing". Converge on the intent
+  // instead of trusting every path.
   useEffect(() => {
     if (!shouldPlay) return;
     const watchdog = setInterval(() => {
       const audio = audioRef.current;
-      if (!audio || !audio.paused || fadeRaf.current !== null) return;
-      audio.volume = 0;
-      audio.play().catch((e) => console.warn("BGM watchdog play failed", e));
-      fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+      if (!audio || fadeRaf.current !== null) return;
+      if (audio.paused) {
+        audio.volume = 0;
+        audio.play().catch((e) => console.warn("BGM watchdog play failed", e));
+        fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+      } else if (
+        volumeRef.current > 0 &&
+        audio.volume < volumeRef.current - 0.01 &&
+        !shuffleTransitionArmed.current
+      ) {
+        // Playing inaudibly with no fade in progress and not mid end-of-track
+        // shuffle fade — e.g. a fade-out to 0 that never got a matching
+        // fade back in. Restore the volume so BGM isn't silently "playing".
+        fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+      }
     }, 1000);
     return () => clearInterval(watchdog);
   }, [mountedFilename, shouldPlay]);

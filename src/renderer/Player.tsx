@@ -488,8 +488,10 @@ function Player(props: {
           pollQueue();
           return;
         }
-        // Mid-break the room is idle; flip to WAITING so BGM plays.
-        if (breakUntil > Date.now() && playbackStateRef.current !== "WAITING") {
+        // While the intermission screen is held (a plain between-songs hold
+        // or an active break) the room is idle — flip to WAITING so BGM
+        // plays. pollQueue flips it back to PLAYING when the next song pops.
+        if (playbackStateRef.current !== "WAITING") {
           setPlaybackState("WAITING");
         }
         intermissionTimerRef.current = setTimeout(
