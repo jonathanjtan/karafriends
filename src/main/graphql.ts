@@ -2032,6 +2032,31 @@ const resolvers = {
       saveDb();
       return true;
     },
+    moveSong: (
+      _: any,
+      args: { songId: string; timestamp: string; offset: number },
+    ): boolean => {
+      const songIdx = db.songQueue.findIndex(
+        (item) =>
+          item.songId === args.songId && item.timestamp === args.timestamp,
+      );
+      if (songIdx === -1) return false;
+      const newIdx = Math.min(
+        Math.max(songIdx + args.offset, 0),
+        db.songQueue.length - 1,
+      );
+      if (newIdx === songIdx) return false;
+      const [song] = db.songQueue.splice(songIdx, 1);
+      db.songQueue.splice(newIdx, 0, song);
+      pubsub.publish(SubscriptionEvent.QueueChanged, {
+        queueChanged: {
+          currentSong: db.currentSong,
+          newQueue: db.songQueue,
+        },
+      });
+      saveDb();
+      return true;
+    },
     clearQueue: (): boolean => {
       // Empty the pending queue first, then skip whatever's playing. The
       // renderer's Player observes SKIPPING (seeks the current video to its

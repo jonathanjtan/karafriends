@@ -16,6 +16,8 @@ const SongQueue = () => {
           item={item}
           eta={eta}
           myNickname={nickname}
+          canMoveUp={i > 0}
+          canMoveDown={i < queue.length - 1}
         />
       ))}
       {queue.length === 0 && <span>The queue is empty</span>}

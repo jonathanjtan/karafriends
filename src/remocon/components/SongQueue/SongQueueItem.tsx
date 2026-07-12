@@ -3,7 +3,14 @@ import React, { useState } from "react";
 // tslint:disable-next-line:no-submodule-imports
 import { FaYoutube } from "react-icons/fa";
 // tslint:disable-next-line:no-submodule-imports
-import { MdClose, MdMusicVideo } from "react-icons/md";
+/* tslint:disable:no-submodule-imports */
+import {
+  MdArrowDownward,
+  MdArrowUpward,
+  MdClose,
+  MdMusicVideo,
+} from "react-icons/md";
+/* tslint:enable:no-submodule-imports */
 // tslint:disable-next-line:no-submodule-imports
 import { SiNiconico } from "react-icons/si";
 import { graphql, useMutation } from "react-relay";
@@ -16,6 +23,7 @@ import useUserIdentity from "../../hooks/useUserIdentity";
 import Marquee from "../Marquee";
 import WeebText from "../WeebText";
 import * as styles from "./SongQueue.module.scss";
+import { SongQueueItemMoveSongMutation } from "./__generated__/SongQueueItemMoveSongMutation.graphql";
 import { SongQueueItemRemoveSongMutation } from "./__generated__/SongQueueItemRemoveSongMutation.graphql";
 
 const removeSongMutation = graphql`
@@ -27,17 +35,38 @@ const removeSongMutation = graphql`
   }
 `;
 
+const moveSongMutation = graphql`
+  mutation SongQueueItemMoveSongMutation(
+    $songId: String!
+    $timestamp: String!
+    $offset: Int!
+  ) {
+    moveSong(songId: $songId, timestamp: $timestamp, offset: $offset)
+  }
+`;
+
 interface Props {
   item: useQueueQueueQuery$data["queue"][0];
   eta: number;
   myNickname: string;
   isCurrent?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }
 
-const SongQueueItem = ({ item, eta, myNickname, isCurrent }: Props) => {
+const SongQueueItem = ({
+  item,
+  eta,
+  myNickname,
+  isCurrent,
+  canMoveUp,
+  canMoveDown,
+}: Props) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
   const [commit, isInFlight] = useMutation(removeSongMutation);
+  const [commitMove, isMoveInFlight] =
+    useMutation<SongQueueItemMoveSongMutation>(moveSongMutation);
 
   const config = useConfig();
   const identity = useUserIdentity();
@@ -75,6 +104,13 @@ const SongQueueItem = ({ item, eta, myNickname, isCurrent }: Props) => {
     commit({ variables: { songId, timestamp } });
   };
 
+  const onMove = (offset: number) => {
+    if (!item.songId || !item.timestamp || isMoveInFlight) return;
+    commitMove({
+      variables: { songId: item.songId, timestamp: item.timestamp, offset },
+    });
+  };
+
   let icon = null;
   if (itemType === "DamQueueItem") icon = <MdMusicVideo />;
   if (itemType === "JoysoundQueueItem") icon = <MdMusicVideo />;
@@ -93,12 +129,24 @@ const SongQueueItem = ({ item, eta, myNickname, isCurrent }: Props) => {
             {nickname}
           </div>
           {item.songId && item.timestamp && !isCurrent && canRemove && (
-            <div
-              className={styles.remove}
-              onClick={() => onRemove(item.songId, item.timestamp)}
-            >
-              <MdClose />
-            </div>
+            <>
+              {canMoveUp && (
+                <div className={styles.move} onClick={() => onMove(-1)}>
+                  <MdArrowUpward />
+                </div>
+              )}
+              {canMoveDown && (
+                <div className={styles.move} onClick={() => onMove(1)}>
+                  <MdArrowDownward />
+                </div>
+              )}
+              <div
+                className={styles.remove}
+                onClick={() => onRemove(item.songId, item.timestamp)}
+              >
+                <MdClose />
+              </div>
+            </>
           )}
         </div>
       ) : (

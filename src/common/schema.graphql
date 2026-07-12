@@ -79,6 +79,7 @@ type Mutation {
   ): QueueSongResult!
   recheckServiceHealth: ServiceHealth!
   removeSong(songId: String!, timestamp: String!): Boolean!
+  moveSong(songId: String!, timestamp: String!, offset: Int!): Boolean!
   clearQueue: Boolean!
   setBgmTrack(track: String): Boolean!
   setBgmVolume(volume: Float!): Boolean!
