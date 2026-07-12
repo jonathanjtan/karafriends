@@ -134,9 +134,10 @@ Stop-Process -Id {OwningProcess} -Force`.
     subscriptions) — takes down the GraphQL server, the queue, and the
     renderer, not just the one request. **Every async path in `main` must
     terminate in a `.catch()`.** The `DamQueueItem.streamingUrls`/`scoringData`
-    read resolvers model it; e.g. the DAM 403 / streaming-absent conditions
-    under "DAM specifics" below only crashed the app because the queue-time
-    predownload was missing this guard.
+    read resolvers and the `queueDamSong` queue-time predownload model the
+    guard; e.g. the DAM 403 / streaming-absent conditions under "DAM
+    specifics" below used to crash the app via that predownload before it was
+    guarded. Audit any new fire-and-forget chain for this.
 - **Stray `null` in `queue.json`** (fixed; kept for archaeology): `saveDb`
   used to prepend `db.currentSong` unconditionally, so every idle-time save
   persisted a leading `null` in `songQueue`, breaking `queue` queries on the
