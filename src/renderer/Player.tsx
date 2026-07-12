@@ -96,6 +96,10 @@ function Player(props: {
   const [joysoundIsRomaji, setJoysoundIsRomaji] = useState<boolean>(false);
 
   const [shouldShowPianoRoll, setShouldShowPianoRoll] = useState<boolean>(true);
+  // Gates the piano roll's fade-in so it doesn't cover the JOYSOUND title
+  // card; DAM/Youtube/Nico have no title card so they clear it immediately.
+  const [pianoRollTitleCleared, setPianoRollTitleCleared] =
+    useState<boolean>(true);
   const [shouldShowAdhocLyrics, setShouldShowAdhocLyrics] =
     useState<boolean>(false);
   const { playbackState, setPlaybackState } = usePlaybackState();
@@ -273,6 +277,7 @@ function Player(props: {
               const { streamingUrls } = popSong;
 
               setShouldShowPianoRoll(true);
+              setPianoRollTitleCleared(true);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
               setScoringData(popSong.scoringData);
@@ -385,6 +390,9 @@ function Player(props: {
                 !!popSong.scoringData && popSong.scoringData.length > 0;
 
               setShouldShowPianoRoll(hasJoysoundScoringData);
+              // Wait for JoysoundRenderer's title card to fade out before
+              // fading the piano roll in over it.
+              setPianoRollTitleCleared(false);
               setScoringData(popSong.scoringData ?? []);
               setShouldShowJoysound(true);
               setShouldShowAdhocLyrics(false);
@@ -415,6 +423,7 @@ function Player(props: {
               break;
             case "YoutubeQueueItem":
               setShouldShowPianoRoll(false);
+              setPianoRollTitleCleared(true);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(popSong.hasAdhocLyrics);
 
@@ -438,6 +447,7 @@ function Player(props: {
               break;
             case "NicoQueueItem":
               setShouldShowPianoRoll(false);
+              setPianoRollTitleCleared(true);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
 
@@ -613,6 +623,7 @@ function Player(props: {
           kuroshiro={props.kuroshiro}
           videoRef={videoRef}
           pianoRollVisible={shouldShowPianoRoll}
+          onTitleFadeout={() => setPianoRollTitleCleared(true)}
         />
       ) : null}
       {shouldShowPianoRoll ? (
@@ -621,6 +632,7 @@ function Player(props: {
           videoRef={videoRef}
           mics={props.mics}
           pitchShiftSemis={pitchShiftSemis}
+          visible={pianoRollTitleCleared}
         />
       ) : null}
       <video

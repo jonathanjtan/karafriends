@@ -444,6 +444,8 @@ export default function PianoRoll(props: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   mics: InputDevice[];
   pitchShiftSemis: number;
+  // Gates the fade-in so the roll doesn't cover a JOYSOUND title card.
+  visible: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
@@ -677,7 +679,7 @@ export default function PianoRoll(props: {
       style={{
         top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
         height: `${pianoRollSize * 100}%`,
-        opacity: pianoRollOpacity,
+        opacity: props.visible ? pianoRollOpacity : 0,
         display: pianoRollSize <= 0 ? "none" : undefined,
       }}
       ref={canvasRef}

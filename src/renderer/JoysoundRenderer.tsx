@@ -836,6 +836,7 @@ export default function JoysoundRenderer(props: {
   kuroshiro: KuroshiroSingleton;
   isRomaji: boolean;
   pianoRollVisible: boolean;
+  onTitleFadeout?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
@@ -900,6 +901,10 @@ export default function JoysoundRenderer(props: {
         premultipliedAlpha: false,
       });
       invariant(gl);
+
+      // Reported once the title card stops drawing, so callers (e.g. the
+      // piano roll) can fade in without covering it.
+      let titleFadedOutReported = false;
 
       const titleTexture = createTitleTexture(gl, metadata, props.isRomaji);
       const lyricsBlockTextures = createLyricsBlockTextures(
@@ -994,6 +999,9 @@ export default function JoysoundRenderer(props: {
 
         if (refreshTime < metadata.fadeoutTime) {
           drawTitle(gl, glBuffers, titleTexture);
+        } else if (!titleFadedOutReported) {
+          titleFadedOutReported = true;
+          props.onTitleFadeout?.();
         }
 
         for (let i = 0; i < lyricsData.length; i++) {

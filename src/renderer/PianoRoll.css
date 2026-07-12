@@ -9,7 +9,9 @@
     rgba(0%, 0%, 10%, 0.2) 2px,
     rgba(0%, 0%, 10%, 0.2) calc(200% / 36)
   );
-  transition: box-shadow linear 1.5s;
+  transition:
+    box-shadow linear 1.5s,
+    opacity ease-in-out 1s;
 }
 
 .pianoRollPog {
