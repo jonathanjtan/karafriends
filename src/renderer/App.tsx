@@ -15,6 +15,7 @@ import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
 import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
+import useOledFriendly from "../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import useQueueIntermissionEnabled from "../common/hooks/useQueueIntermissionEnabled";
@@ -37,7 +38,10 @@ import { AppQueueAddedSubscription } from "./__generated__/AppQueueAddedSubscrip
 import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServiceHealthMutation.graphql";
 import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
-const OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
+// OLED mode used to be renderer-local; it now lives in the main process
+// (synced via useOledFriendly) so the remocon can toggle it too. The key only
+// remains for the one-time migration below.
+const LEGACY_OLED_FRIENDLY_STORAGE_KEY = "oledFriendly";
 const SIDEBAR_WIDTH_STORAGE_KEY = "sidebarWidth";
 const DEFAULT_SIDEBAR_WIDTH = 320;
 const MIN_SIDEBAR_WIDTH = 180;
@@ -228,23 +232,19 @@ function App(props: {
     props.audio.guideMelodyGain(guideMelodyVolume);
   }, [props.audio, guideMelodyVolume]);
 
-  const [oledFriendly, _setOledFriendly] = useState<boolean>(
-    () => localStorage.getItem(OLED_FRIENDLY_STORAGE_KEY) === "true",
-  );
+  const { oledFriendly, setOledFriendly } = useOledFriendly();
+
+  useEffect(() => {
+    if (localStorage.getItem(LEGACY_OLED_FRIENDLY_STORAGE_KEY) === "true") {
+      setOledFriendly(true);
+    }
+    localStorage.removeItem(LEGACY_OLED_FRIENDLY_STORAGE_KEY);
+  }, []);
 
   // Collapse the Settings section so the big screen shows only the Queue
   // during regular operation. Synced through the main process so the remocon
   // can toggle it on the TV remotely.
   const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
-
-  const setOledFriendly = (value: boolean) => {
-    if (value) {
-      localStorage.setItem(OLED_FRIENDLY_STORAGE_KEY, "true");
-    } else {
-      localStorage.removeItem(OLED_FRIENDLY_STORAGE_KEY);
-    }
-    _setOledFriendly(value);
-  };
 
   useEffect(() => {
     const html = document.documentElement;
@@ -547,27 +547,18 @@ function App(props: {
                   </label>
                 </div>
                 <span className="settingLabel">Break</span>
-                <div className="pianoRollSizeButtons settingControlWide">
-                  {!breakActive && (
-                    <>
-                      <button
-                        className="btn-small grey"
-                        onClick={() =>
-                          setBreakMinutes(Math.max(breakMinutes - 1, 1))
-                        }
-                      >
-                        −
-                      </button>
-                      <button
-                        className="btn-small grey"
-                        onClick={() => setBreakMinutes(breakMinutes + 1)}
-                      >
-                        +
-                      </button>
-                    </>
-                  )}
+                <div className="pianoRollSizeButtons breakButtons settingControlWide">
                   <button
-                    className="btn-small"
+                    className="btn-small grey"
+                    disabled={breakActive}
+                    onClick={() =>
+                      setBreakMinutes(Math.max(breakMinutes - 1, 1))
+                    }
+                  >
+                    −
+                  </button>
+                  <button
+                    className="btn-small breakActionButton"
                     onClick={() =>
                       setBreakEndsAt(
                         breakActive
@@ -577,10 +568,17 @@ function App(props: {
                     }
                   >
                     {breakActive
-                      ? `End Break (${Math.floor(
+                      ? `End break (${Math.floor(
                           breakRemainingSecs / 60,
                         )}:${String(breakRemainingSecs % 60).padStart(2, "0")})`
-                      : `Break (${breakMinutes} min)`}
+                      : `${breakMinutes}:00 break`}
+                  </button>
+                  <button
+                    className="btn-small grey"
+                    disabled={breakActive}
+                    onClick={() => setBreakMinutes(breakMinutes + 1)}
+                  >
+                    +
                   </button>
                 </div>
                 <span

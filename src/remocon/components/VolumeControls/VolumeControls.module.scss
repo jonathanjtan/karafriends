@@ -23,6 +23,16 @@
   margin-top: 8px;
 }
 
+.sectionHeader {
+  padding-top: 8px;
+  border-top: 1px solid rgba(28, 179, 255, 0.2);
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
 .serviceHealth {
   padding-top: 8px;
   border-top: 1px solid rgba(28, 179, 255, 0.2);
@@ -112,6 +122,25 @@
   font-size: 13px;
 }
 
+/* [−] [X minute break] [+] as a single line; the middle button is the
+   action and gets the space. */
+.breakRow {
+  display: flex;
+  gap: 6px;
+}
+
+.breakActionButton {
+  flex: 1 1 auto;
+  padding: 6px 8px;
+  border: 1px solid #1cb3ff;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #1cb3ff;
+  font-size: 13px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
 .sizeButtons {
   display: flex;
   gap: 6px;
@@ -126,6 +155,10 @@
   color: #1cb3ff;
   font-size: 13px;
   line-height: 16px;
+
+  &:disabled {
+    opacity: 0.5;
+  }
 }
 
 .sizeButtonActive {

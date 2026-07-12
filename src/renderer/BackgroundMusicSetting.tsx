@@ -41,7 +41,7 @@ export default function BackgroundMusicSetting({ selected, onChange }: Props) {
           </option>
         ))}
       </select>
-      <label>Background Music</label>
+      <label>BGM Track</label>
     </div>
   );
 }

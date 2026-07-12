@@ -7,6 +7,7 @@ import useBgmTrack from "../../../common/hooks/useBgmTrack";
 import useBgmVolume from "../../../common/hooks/useBgmVolume";
 import useBreakEndsAt from "../../../common/hooks/useBreakEndsAt";
 import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
+import useOledFriendly from "../../../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
 import useQueueIntermissionEnabled from "../../../common/hooks/useQueueIntermissionEnabled";
@@ -57,6 +58,7 @@ const VolumeControls = () => {
     : 0;
   const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
+  const { oledFriendly, setOledFriendly } = useOledFriendly();
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
   const [commitClearQueue, isClearingQueue] =
     useMutation<VolumeControlsClearQueueMutation>(clearQueueMutation);
@@ -85,20 +87,6 @@ const VolumeControls = () => {
       <div className={classnames(styles.body, { [styles.disabled]: disabled })}>
         <div>
           <div className={styles.labelRow}>
-            <span>Background Music</span>
-            <span>{Math.round(bgmVolume * 100)}%</span>
-          </div>
-          <input
-            className={styles.slider}
-            type="range"
-            min="0"
-            max="100"
-            value={Math.round(bgmVolume * 100)}
-            onChange={(e) => setBgmVolume(Number(e.target.value) / 100)}
-          />
-        </div>
-        <div>
-          <div className={styles.labelRow}>
             <span>BGM Track</span>
           </div>
           <select
@@ -117,6 +105,21 @@ const VolumeControls = () => {
             ))}
           </select>
         </div>
+        <div className={styles.sectionHeader}>Volume</div>
+        <div>
+          <div className={styles.labelRow}>
+            <span>Background Music</span>
+            <span>{Math.round(bgmVolume * 100)}%</span>
+          </div>
+          <input
+            className={styles.slider}
+            type="range"
+            min="0"
+            max="100"
+            value={Math.round(bgmVolume * 100)}
+            onChange={(e) => setBgmVolume(Number(e.target.value) / 100)}
+          />
+        </div>
         <div>
           <div className={styles.labelRow}>
             <span>Guide Melody</span>
@@ -131,9 +134,10 @@ const VolumeControls = () => {
             onChange={(e) => setGuideMelodyVolume(Number(e.target.value) / 100)}
           />
         </div>
+        <div className={styles.sectionHeader}>Piano Roll</div>
         <div>
           <div className={styles.labelRow}>
-            <span>Piano Roll Opacity</span>
+            <span>Opacity</span>
             <span>{Math.round(pianoRollOpacity * 100)}%</span>
           </div>
           <input
@@ -147,7 +151,7 @@ const VolumeControls = () => {
         </div>
         <div>
           <div className={styles.labelRow}>
-            <span>Piano Roll Size</span>
+            <span>Size</span>
             <span className={styles.sizeButtons}>
               {PIANO_ROLL_SIZE_PRESETS.map(({ label, size }) => (
                 <button
@@ -164,23 +168,7 @@ const VolumeControls = () => {
             </span>
           </div>
         </div>
-        <div className={styles.serviceHealth}>
-          <div className={styles.healthRow}>
-            <span>DAM</span>
-            <span>{healthIcon(serviceHealth?.damAvailable)}</span>
-          </div>
-          <div className={styles.healthRow}>
-            <span>Joysound</span>
-            <span>{healthIcon(serviceHealth?.joysoundAvailable)}</span>
-          </div>
-          <button
-            className={styles.recheckButton}
-            disabled={isRechecking}
-            onClick={recheck}
-          >
-            Check Service Status Now
-          </button>
-        </div>
+        <div className={styles.sectionHeader}>Session Options</div>
         <div>
           <button
             className={styles.recheckButton}
@@ -191,29 +179,16 @@ const VolumeControls = () => {
             Intermission: {queueIntermissionEnabled ? "On" : "Off"}
           </button>
         </div>
-        <div>
-          {!breakActive && (
-            <div className={styles.labelRow}>
-              <span>Break Length</span>
-              <span className={styles.sizeButtons}>
-                <button
-                  className={styles.sizeButton}
-                  onClick={() => setBreakMinutes(Math.max(breakMinutes - 1, 1))}
-                >
-                  −
-                </button>
-                <span>{breakMinutes} min</span>
-                <button
-                  className={styles.sizeButton}
-                  onClick={() => setBreakMinutes(breakMinutes + 1)}
-                >
-                  +
-                </button>
-              </span>
-            </div>
-          )}
+        <div className={styles.breakRow}>
           <button
-            className={styles.recheckButton}
+            className={styles.sizeButton}
+            disabled={breakActive}
+            onClick={() => setBreakMinutes(Math.max(breakMinutes - 1, 1))}
+          >
+            −
+          </button>
+          <button
+            className={styles.breakActionButton}
             onClick={() =>
               setBreakEndsAt(
                 breakActive ? null : Date.now() + breakMinutes * 60 * 1000,
@@ -221,12 +196,20 @@ const VolumeControls = () => {
             }
           >
             {breakActive
-              ? `End Break (${Math.floor(breakRemainingSecs / 60)}:${String(
+              ? `End break (${Math.floor(breakRemainingSecs / 60)}:${String(
                   breakRemainingSecs % 60,
-                ).padStart(2, "0")} left)`
-              : `Take a Break (${breakMinutes} min)`}
+                ).padStart(2, "0")})`
+              : `${breakMinutes}:00 break`}
+          </button>
+          <button
+            className={styles.sizeButton}
+            disabled={breakActive}
+            onClick={() => setBreakMinutes(breakMinutes + 1)}
+          >
+            +
           </button>
         </div>
+        <div className={styles.sectionHeader}>Display Options</div>
         <div>
           <button
             className={styles.recheckButton}
@@ -245,6 +228,31 @@ const VolumeControls = () => {
             {sidebarCollapsed
               ? "Expand TV Sidebar"
               : "Collapse TV Sidebar (Fullscreen Song)"}
+          </button>
+        </div>
+        <div>
+          <button
+            className={styles.recheckButton}
+            onClick={() => setOledFriendly(!oledFriendly)}
+          >
+            OLED Mode: {oledFriendly ? "On" : "Off"}
+          </button>
+        </div>
+        <div className={styles.serviceHealth}>
+          <div className={styles.healthRow}>
+            <span>DAM</span>
+            <span>{healthIcon(serviceHealth?.damAvailable)}</span>
+          </div>
+          <div className={styles.healthRow}>
+            <span>Joysound</span>
+            <span>{healthIcon(serviceHealth?.joysoundAvailable)}</span>
+          </div>
+          <button
+            className={styles.recheckButton}
+            disabled={isRechecking}
+            onClick={recheck}
+          >
+            Check Service Status Now
           </button>
         </div>
         <div>

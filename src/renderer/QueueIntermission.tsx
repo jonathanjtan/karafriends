@@ -95,7 +95,7 @@ export default function QueueIntermission(props: {
         <div className="queueIntermissionNextUp">
           <div className="queueIntermissionSongName">Nothing...</div>
           <div className="queueIntermissionArtistName">
-            waiting for songs — scan the QR code to queue one
+            waiting for songs — scan a QR code to queue
           </div>
         </div>
       )}

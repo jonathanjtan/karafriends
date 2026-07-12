@@ -301,6 +301,13 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   border-left: none;
 }
 
+/* Break row: same segmented look, but the middle (action) segment dominates
+   and the −/+ ends stay compact. */
+.breakButtons .breakActionButton {
+  flex: 3 1 0;
+  white-space: nowrap;
+}
+
 /* Compact the service health table to match the settings grid's density:
    Materialize's default 15px row padding and full-size cells read oversized
    next to the packed rows above it. */
