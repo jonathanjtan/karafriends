@@ -75,6 +75,9 @@ const MAX_HLS_FATAL_ERROR_RETRIES = 2;
 // How long the between-songs queue screen stays up before the next song
 // starts (when queueIntermissionEnabled is on).
 const QUEUE_INTERMISSION_MS = 5 * 1000;
+// Fade duration for the intermission screen; keep in sync with the
+// animation durations in QueueIntermission.css.
+const QUEUE_INTERMISSION_FADE_MS = 500;
 
 function Player(props: {
   mics: InputDevice[];
@@ -103,6 +106,9 @@ function Player(props: {
   const queue = useQueue();
   const { queueIntermissionEnabled } = useQueueIntermissionEnabled();
   const [intermissionVisible, setIntermissionVisible] = useState(false);
+  // Stays true through the fade-out so the screen can animate away instead
+  // of unmounting instantly.
+  const [intermissionMounted, setIntermissionMounted] = useState(false);
   const intermissionEnabledRef = useRef(queueIntermissionEnabled);
   const queueLengthRef = useRef(queue.length);
   const intermissionTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -115,6 +121,21 @@ function Player(props: {
   useEffect(() => {
     queueLengthRef.current = queue.length;
   }, [queue]);
+
+  // Fade in/out: mount immediately when shown; on hide, keep the component
+  // mounted for the fade-out animation, then unmount.
+  useEffect(() => {
+    if (intermissionVisible) {
+      setIntermissionMounted(true);
+      return;
+    }
+    if (!intermissionMounted) return;
+    const fadeTimer = setTimeout(
+      () => setIntermissionMounted(false),
+      QUEUE_INTERMISSION_FADE_MS,
+    );
+    return () => clearTimeout(fadeTimer);
+  }, [intermissionVisible]);
 
   const cancelIntermission = () => {
     if (intermissionTimerRef.current) {
@@ -528,8 +549,12 @@ function Player(props: {
         <track ref={trackRef} kind="subtitles" src="" default />
       </video>
       {shouldShowAdhocLyrics ? <AdhocLyrics /> : null}
-      {intermissionVisible ? (
-        <QueueIntermission queue={queue} hostname={props.hostname} />
+      {intermissionMounted ? (
+        <QueueIntermission
+          queue={queue}
+          hostname={props.hostname}
+          hiding={!intermissionVisible}
+        />
       ) : null}
     </div>
   );

@@ -30,6 +30,8 @@ function nicknameBadge(nickname: string) {
 export default function QueueIntermission(props: {
   queue: ReturnType<typeof useQueue>;
   hostname: string;
+  // True while fading out; the parent unmounts after the animation runs.
+  hiding?: boolean;
 }) {
   const [nextUp, ...upcoming] = props.queue;
   const hiddenCount = Math.max(upcoming.length - MAX_VISIBLE_UPCOMING, 0);
@@ -39,7 +41,11 @@ export default function QueueIntermission(props: {
   const baseEta = nextUp ? nextUp[1] : 0;
 
   return (
-    <div className="queueIntermission">
+    <div
+      className={`queueIntermission ${
+        props.hiding ? "queueIntermissionHiding" : ""
+      }`}
+    >
       <div className="queueIntermissionQr">
         <QRCode hostname={props.hostname} />
       </div>

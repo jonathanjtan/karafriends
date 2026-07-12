@@ -9,6 +9,30 @@
   padding: 4vh 6vw;
   background: linear-gradient(160deg, #101020 0%, #1a1a35 60%, #101020 100%);
   color: white;
+  /* Keep durations in sync with QUEUE_INTERMISSION_FADE_MS in Player.tsx. */
+  animation: queueIntermissionFadeIn 500ms ease-out both;
+}
+
+.queueIntermissionHiding {
+  animation: queueIntermissionFadeOut 500ms ease-in both;
+}
+
+@keyframes queueIntermissionFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes queueIntermissionFadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
 }
 
 /* QR codes need a light background and quiet zone to scan reliably against
