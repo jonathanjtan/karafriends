@@ -465,25 +465,58 @@ interface YoutubeSearchVideoItem {
 // succeed.
 const OFFICIAL_VIDEO_TAG_PATTERN = /[([【（［]\s*official\b/i;
 
+// Joysound stores artist names in Japanese script (宇多田ヒカル) while many
+// artists' official channels use a romanized name, usually in Western name
+// order ("Hikaru Utada") - a plain substring comparison can never match, so
+// the genuine artist-channel upload was ranked tier 2 and lost the
+// duration tiebreak to AMVs/remixes. Compare on an order-insensitive,
+// diacritic-stripped ASCII token set as well as the literal name; Japanese
+// script normalizes to an empty key and simply never token-matches.
+function romajiTokenKey(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .sort()
+    .join(" ");
+}
+
 function musicVideoCandidateTier(
   candidate: { readonly author: string; readonly title: string },
-  artistName: string,
+  artistNameVariants: string[],
 ): number {
   const lowerAuthor = candidate.author.toLowerCase().trim();
-  const lowerArtistName = artistName.toLowerCase().trim();
   const lowerTitle = candidate.title.toLowerCase();
+  const lowerVariants = artistNameVariants
+    .map((variant) => variant.toLowerCase().trim())
+    .filter(Boolean);
 
-  const isExactArtistChannel =
-    !!lowerArtistName && lowerAuthor === lowerArtistName;
-  const isRelatedArtistChannel =
-    !!lowerArtistName && lowerAuthor.includes(lowerArtistName);
+  const authorTokenKey = romajiTokenKey(candidate.author);
+  const authorTokens = new Set(authorTokenKey.split(" "));
+
+  const isExactArtistChannel = lowerVariants.some(
+    (variant) =>
+      lowerAuthor === variant ||
+      (!!authorTokenKey && authorTokenKey === romajiTokenKey(variant)),
+  );
+  const isRelatedArtistChannel = lowerVariants.some((variant) => {
+    if (lowerAuthor.includes(variant)) return true;
+    const variantTokens = romajiTokenKey(variant).split(" ").filter(Boolean);
+    return (
+      variantTokens.length > 0 &&
+      variantTokens.every((token) => authorTokens.has(token))
+    );
+  });
   // Strip the artist's own name before checking for a bare "official"
   // mention - some artists (e.g. "Official髭男dism") have brand names that
   // themselves contain the word, which would otherwise look like a tag on
   // every single one of their videos regardless of who uploaded it.
-  const titleWithoutArtistName = lowerArtistName
-    ? lowerTitle.split(lowerArtistName).join("")
-    : lowerTitle;
+  const titleWithoutArtistName = lowerVariants.reduce(
+    (title, variant) => title.split(variant).join(""),
+    lowerTitle,
+  );
   const isOfficialTitle = titleWithoutArtistName.includes("official");
   const hasOfficialVideoTag = OFFICIAL_VIDEO_TAG_PATTERN.test(candidate.title);
 
@@ -504,7 +537,7 @@ function musicVideoCandidateTier(
 
 function pickMusicVideoCandidates(
   videos: YoutubeSearchVideoItem[],
-  artistName: string,
+  artistNameVariants: string[],
   songName: string,
   expectedDurationSec: number,
   maxCandidates: number,
@@ -553,8 +586,8 @@ function pickMusicVideoCandidates(
 
   candidates.sort((a, b) => {
     const tierDiff =
-      musicVideoCandidateTier(a, artistName) -
-      musicVideoCandidateTier(b, artistName);
+      musicVideoCandidateTier(a, artistNameVariants) -
+      musicVideoCandidateTier(b, artistNameVariants);
 
     if (tierDiff !== 0) return tierDiff;
 
@@ -566,7 +599,8 @@ function pickMusicVideoCandidates(
 
   return candidates.slice(0, maxCandidates).map((candidate) => ({
     ...candidate,
-    isLikelyOfficial: musicVideoCandidateTier(candidate, artistName) === 0,
+    isLikelyOfficial:
+      musicVideoCandidateTier(candidate, artistNameVariants) === 0,
   }));
 }
 
@@ -1780,9 +1814,25 @@ const resolvers = {
       const videos = (searchResults.videos ??
         []) as unknown as YoutubeSearchVideoItem[];
 
+      // Also match the artist's romanized name so official channels named in
+      // Latin script ("Hikaru Utada" for 宇多田ヒカル) rank as artist
+      // channels; see romajiTokenKey. Best-effort - a kuromoji misreading
+      // just means no extra variant matches.
+      const artistNameVariants = [songDetail.artistName];
+      try {
+        await kuroshiroReady;
+        const romajiArtistName = await kuroshiro.convert(
+          songDetail.artistName,
+          { to: "romaji", mode: "spaced" },
+        );
+        if (romajiArtistName) artistNameVariants.push(romajiArtistName);
+      } catch (e) {
+        console.warn(`Failed to romanize artist name for MV suggestion: ${e}`);
+      }
+
       const candidates = pickMusicVideoCandidates(
         videos,
-        songDetail.artistName,
+        artistNameVariants,
         songDetail.name,
         expectedDurationSec,
         5,
