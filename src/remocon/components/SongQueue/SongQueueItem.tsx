@@ -157,7 +157,9 @@ const SongQueueItem = ({
       ) : (
         <div
           className={styles.initial}
-          style={{ backgroundColor: nicknameBgColor }}
+          style={
+            profilePictureUrl ? undefined : { backgroundColor: nicknameBgColor }
+          }
           onClick={() => setExpanded(true)}
         >
           {profilePictureUrl ? (

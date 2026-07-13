@@ -25,15 +25,18 @@
   color: #fff;
   font-size: 24px;
   font-weight: bold;
+}
 
-  img {
-    // PMD portraits are 40x40 pixel art — keep them crisp when scaled.
-    width: 48px;
-    height: 48px;
-    border-radius: 24px;
-    image-rendering: pixelated;
-    display: block;
-  }
+// 8px border + 40px portrait = the games' native dialogue-portrait framing
+// at 1:1 pixel scale (frame recreated in pmd-frame.png).
+.framedAvatar {
+  width: 56px;
+  height: 56px;
+  border: 8px solid transparent;
+  border-image: url("../../common/images/pmd-frame.png") 8 stretch;
+  background-color: #202020;
+  image-rendering: pixelated;
+  display: block;
 }
 
 .nicknameForm {

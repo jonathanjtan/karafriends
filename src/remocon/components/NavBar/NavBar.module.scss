@@ -36,12 +36,15 @@
   justify-self: end;
 }
 
-// PMD portraits are 40x40 pixel art — keep them crisp at nav size.
+// PMD portraits are 40x40 pixel art — keep them crisp at nav size, framed
+// like the games' dialogue portraits (see pmd-frame.png).
 .avatar {
   display: block;
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  border: 5px solid transparent;
+  border-image: url("../../../common/images/pmd-frame.png") 8 stretch;
+  background-color: #202020;
   image-rendering: pixelated;
 }
 

@@ -34,13 +34,20 @@ const ProfilePage = () => {
     <div className={styles.profilePage}>
       <h2>Profile</h2>
       <div className={styles.currentProfile}>
-        <div className={styles.badge} style={{ backgroundColor: badgeBgColor }}>
-          {identity.profilePictureUrl ? (
-            <img src={identity.profilePictureUrl} alt="" />
-          ) : (
-            identity.nickname.slice(0, 1)
-          )}
-        </div>
+        {identity.profilePictureUrl ? (
+          <img
+            className={styles.framedAvatar}
+            src={identity.profilePictureUrl}
+            alt=""
+          />
+        ) : (
+          <div
+            className={styles.badge}
+            style={{ backgroundColor: badgeBgColor }}
+          >
+            {identity.nickname.slice(0, 1)}
+          </div>
+        )}
         <span>{identity.nickname}</span>
       </div>
 
