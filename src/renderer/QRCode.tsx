@@ -21,7 +21,11 @@ const logoLoaded = new Promise<void>((resolve) => {
   }
 });
 
-function QRCode(props: { hostname: string; inverted?: boolean }) {
+function QRCode(props: {
+  hostname: string;
+  inverted?: boolean;
+  oledFriendly?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -46,7 +50,23 @@ function QRCode(props: { hostname: string; inverted?: boolean }) {
         logoSize + padding * 2,
         logoSize + padding * 2,
       );
-      ctx.drawImage(logo, x, y, logoSize, logoSize);
+
+      // html.oledFriendly applies `filter: invert(1) hue-rotate(180deg)` to
+      // the whole sidebar. That combo is a no-op for achromatic QR modules
+      // (invert alone round-trips black/white) but NOT for the logo's
+      // non-fully-saturated blue (28,179,255) — hue-rotate(180) preserves
+      // saturation/lightness while only rotating hue, so a color that isn't
+      // already at 50% lightness/100% saturation comes out darker. The
+      // filter is an involution (applying it twice is identity), so
+      // pre-applying it here cancels the CSS filter and the logo renders at
+      // its true color either way.
+      if (props.oledFriendly) {
+        ctx.filter = "invert(1) hue-rotate(180deg)";
+        ctx.drawImage(logo, x, y, logoSize, logoSize);
+        ctx.filter = "none";
+      } else {
+        ctx.drawImage(logo, x, y, logoSize, logoSize);
+      }
     }
 
     function update() {

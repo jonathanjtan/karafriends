@@ -436,7 +436,7 @@ function App(props: {
             title="Drag to resize"
             onMouseDown={startSidebarResize}
           />
-          <QRCode hostname={hostname} />
+          <QRCode hostname={hostname} oledFriendly={oledFriendly} />
           <nav
             className="center-align settingsHeader"
             onClick={() => setSettingsCollapsed(!settingsCollapsed)}
