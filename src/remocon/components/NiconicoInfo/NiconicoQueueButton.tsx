@@ -59,7 +59,7 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
   const defaultText = "Queue video";
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<NiconicoQueueButtonMutation>(
-    niconicoQueueButtonMutation
+    niconicoQueueButtonMutation,
   );
 
   useEffect(() => {
@@ -81,10 +81,10 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
               videoDownloadType: 2,
               songId: videoId,
               suffix: null,
-            }
+            },
           ).subscribe({
             next: (
-              data: NiconicoQueueButtonGetVideoDownloadProgressQuery["response"]
+              data: NiconicoQueueButtonGetVideoDownloadProgressQuery["response"],
             ) => {
               if (
                 data.videoDownloadProgress.progress === 1.0 ||
@@ -96,7 +96,7 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
                 setText(
                   `Downloading -- ${(
                     data.videoDownloadProgress.progress * 100
-                  ).toFixed(1)}%`
+                  ).toFixed(1)}%`,
                 );
               }
             },
@@ -134,15 +134,29 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
         },
         tryHeadOfQueue: e.shiftKey,
       },
-      onCompleted: ({ queueNicoSong }) => {
-        switch (queueNicoSong.__typename) {
+      onCompleted: (response) => {
+        // A resolver error nulls out the whole payload while onCompleted
+        // still fires - don't destructure it blindly.
+        const queueNicoSong = response?.queueNicoSong;
+
+        switch (queueNicoSong?.__typename) {
           case "QueueSongInfo":
             setText("Downloading");
             break;
           case "QueueSongError":
             setText(`Error: ${queueNicoSong.reason}`);
             break;
+          default:
+            setText("Error: queueing failed, try again");
+            break;
         }
+      },
+      onError: (error) => {
+        console.error(error);
+        // The "Error" text auto-resets and re-enables the button after a
+        // moment (see the effect above) - without it a dropped request
+        // leaves the button stuck disabled on "Waiting for server...".
+        setText("Error: queueing failed, try again");
       },
     });
   };

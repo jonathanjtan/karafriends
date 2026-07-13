@@ -73,17 +73,28 @@ const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
         },
         tryHeadOfQueue: e.shiftKey,
       },
-      onCompleted: ({ queueDamSong }) => {
-        switch (queueDamSong.__typename) {
+      onCompleted: (response) => {
+        // A resolver error nulls out the whole payload while onCompleted
+        // still fires - don't destructure it blindly.
+        const queueDamSong = response?.queueDamSong;
+
+        switch (queueDamSong?.__typename) {
           case "QueueSongInfo":
             setText(
-              `Estimated wait: T-${formatDuration(queueDamSong.eta * 1000)}`
+              `Estimated wait: T-${formatDuration(queueDamSong.eta * 1000)}`,
             );
             break;
           case "QueueSongError":
             setText(`Error: ${queueDamSong.reason}`);
             break;
+          default:
+            setText("Error: queueing failed, try again");
+            break;
         }
+      },
+      onError: (error) => {
+        console.error(error);
+        setText("Error: queueing failed, try again");
       },
     });
   };

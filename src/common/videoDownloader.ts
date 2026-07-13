@@ -68,7 +68,10 @@ function deleteTempFiles(prefix: string): void {
     }
 
     if (filename.includes(prefix)) {
-      fs.unlinkSync(filename);
+      // readdirSync returns basenames - unlinking those directly would
+      // resolve against cwd and throw ENOENT (failing the whole queue
+      // mutation) instead of clearing the stale temp files.
+      fs.unlinkSync(`${TEMP_FOLDER}/${filename}`);
     }
   }
 }
@@ -356,8 +359,6 @@ function downloadJoysoundVideoPromise(
 
     const onExit = (code: number, signal: number) => {
       if (code === 0) {
-        removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-
         resolve(code);
       } else {
         console.error(
@@ -388,11 +389,16 @@ function downloadJoysoundYoutubeVideoPromise(
 ): Promise<number> {
   return new Promise((resolve, reject) => {
     const ytdlpLogFilename = `${TEMP_FOLDER}/yt-${youtubeVideoId}.log`;
-    const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
+    // Append so a failed first attempt's output survives the retry's run
+    // instead of being truncated away - it's the only record of why the
+    // first attempt failed.
+    const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename, {
+      flags: "a",
+    });
 
     const env = { ...process.env };
     // Don't need a proxy to download from YouTube
-    delete process.env.http_proxy;
+    delete env.http_proxy;
 
     const ytdlp = spawn(
       resourcePaths.ytdlp,
@@ -434,7 +440,6 @@ function downloadJoysoundYoutubeVideoPromise(
       console.error(
         `Error spawning yt-dlp for Youtube Video with ID ${youtubeVideoId}: ${err.message}`,
       );
-      removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
       reject(err);
     });
 
@@ -443,14 +448,11 @@ function downloadJoysoundYoutubeVideoPromise(
         fs.unlinkSync(tempFilename);
         fs.renameSync(tempFilename + ".mp4", tempFilename);
 
-        removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
-
         resolve(code);
       } else {
         console.error(
           `Error downloading Youtube Video with ID ${youtubeVideoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
         );
-        removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
         reject(code);
       }
     });
@@ -511,7 +513,9 @@ function downloadYoutubeAudioAttempt(youtubeVideoId: string): Promise<string> {
     // A failure here silently costs the song its video sync, so unlike most
     // spawns in this file the yt-dlp output is kept in a log file.
     const logFilename = `${TEMP_FOLDER}/yt-${youtubeVideoId}-introsync.log`;
-    const logStream = fs.createWriteStream(logFilename);
+    // Append for the same reason as the video download log: keep the failed
+    // first attempt's output around for diagnosis.
+    const logStream = fs.createWriteStream(logFilename, { flags: "a" });
 
     const env = { ...process.env };
     // Don't need a proxy to download from YouTube
@@ -928,12 +932,6 @@ function padJoysoundVideoPromise(
   data: JoysoundVideoData,
   videoFilename: string,
   ffmpegLogFilename: string,
-  queueItem: JoysoundQueueItem,
-  pushToHead: boolean,
-  pushSongToQueue: (
-    queueItem: JoysoundQueueItem,
-    pushToHead: boolean,
-  ) => QueueSongResult,
   // When set, front-pad the video by exactly this many ms (a measured
   // karaoke-has-extra-head-material delay from computeYoutubeIntroOffsetMs)
   // instead of the legacy heuristic of assuming the video and song should
@@ -1139,8 +1137,7 @@ function padJoysoundVideoPromise(
             fs.unlinkSync(videoPadFilename);
             fs.unlinkSync(videoTempFilename);
             fs.unlinkSync(videoConcatFilename);
-
-            pushSongToQueue(queueItem, pushToHead);
+            fs.unlinkSync(videoListFilename);
 
             resolve(code);
           } else {
@@ -1201,6 +1198,25 @@ export function downloadJoysoundData(
 
   const tempFilename = `${videoFilename}.tmp`;
 
+  // A pipeline for this exact song+video is already in flight (its
+  // download-queue entry lives until the song is pushed to the queue) - it
+  // will land the song itself, so a repeat press is a no-op. This must be
+  // checked before the composite-cache check below: during the late pipeline
+  // stages (compose/pad) the composite file already exists on disk in a
+  // half-written state, and serving it would push the song twice.
+  if (
+    downloadQueue.some(
+      (item) =>
+        item.downloadType === 0 &&
+        item.songId === songId &&
+        item.suffix === queueItem.youtubeVideoId,
+    )
+  ) {
+    console.error(`${videoFilename} was already queued, not redownloading`);
+
+    return;
+  }
+
   if (fs.existsSync(videoFilename)) {
     console.info(`${videoFilename} already exists, not redownloading`);
 
@@ -1228,19 +1244,7 @@ export function downloadJoysoundData(
     }
   }
 
-  if (
-    isVideoCurrentlyDownloading(
-      tempFilename,
-      downloadQueue,
-      0,
-      songId,
-      queueItem.youtubeVideoId,
-    )
-  ) {
-    console.error(`${videoFilename} was already queued, not redownloading`);
-
-    return;
-  } else if (fs.existsSync(tempFilename)) {
+  if (fs.existsSync(tempFilename)) {
     console.error(`${tempFilename} exists but was not in the download queue.`);
 
     deleteTempFiles(filenamePrefix);
@@ -1277,10 +1281,6 @@ export function downloadJoysoundData(
       console.error(
         `Joysound YouTube video download failed for ${queueItem.youtubeVideoId}, retrying once: ${e}`,
       );
-
-      // The failed attempt removed the item from the download queue; put it
-      // back so progress reporting keeps working during the retry.
-      downloadQueue.push(downloadQueueItem);
 
       return downloadJoysoundYoutubeVideoPromise(
         songId,
@@ -1365,9 +1365,6 @@ export function downloadJoysoundData(
           data,
           videoFilename,
           ffmpegLogFilename,
-          queueItem,
-          pushToHead,
-          pushSongToQueue,
           -measuredIntroOffsetMs,
         );
       } else if (
@@ -1378,17 +1375,19 @@ export function downloadJoysoundData(
       ) {
         // No confident waveform measurement - fall back to the legacy
         // heuristic of assuming the video and song should end together.
-        return padJoysoundVideoPromise(
-          data,
-          videoFilename,
-          ffmpegLogFilename,
-          queueItem,
-          pushToHead,
-          pushSongToQueue,
-        );
-      } else {
-        pushSongToQueue(queueItem, pushToHead);
+        return padJoysoundVideoPromise(data, videoFilename, ffmpegLogFilename);
       }
+    })
+    .then(() => {
+      // The download-queue entry lives until the song actually lands in the
+      // queue: it's what hasMaxSongsInQueue and the in-flight guard at the
+      // top of this function consult, and removing it when the raw download
+      // finished - with 30-60s of intro-sync + compositing still to go -
+      // opened a window where a second press of the queue button wiped the
+      // in-flight pipeline's temp files and double-queued the song.
+      removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+
+      pushSongToQueue(queueItem, pushToHead);
     })
     .catch((error) => {
       console.error(

@@ -101,12 +101,14 @@ const JoysoundQueueButton = ({
             next: (
               data: JoysoundQueueButtonGetVideoDownloadProgressQuery["response"],
             ) => {
-              if (
-                data.videoDownloadProgress.progress === 1.0 ||
-                (text !== "Downloading" &&
-                  data.videoDownloadProgress.progress === -1.0)
-              ) {
+              // The server keeps the download-queue entry alive until the
+              // song actually lands in the queue, so -1 (no entry) means
+              // done - and 100% means the raw download finished but the
+              // intro-sync + compositing steps are still running.
+              if (data.videoDownloadProgress.progress === -1.0) {
                 setText("Finished Downloading");
+              } else if (data.videoDownloadProgress.progress === 1.0) {
+                setText("Processing video...");
               } else {
                 setText(
                   `Downloading -- ${(
@@ -153,15 +155,31 @@ const JoysoundQueueButton = ({
         },
         tryHeadOfQueue: e.shiftKey,
       },
-      onCompleted: ({ queueJoysoundSong }) => {
-        switch (queueJoysoundSong.__typename) {
+      onCompleted: (response) => {
+        // A resolver error nulls out the whole payload while onCompleted
+        // still fires - don't destructure it blindly.
+        const queueJoysoundSong = response?.queueJoysoundSong;
+
+        switch (queueJoysoundSong?.__typename) {
           case "QueueSongInfo":
             setText("Downloading");
             break;
           case "QueueSongError":
             setText(`Error: ${queueJoysoundSong.reason}`);
             break;
+          default:
+            // Without this the button would stay disabled on "Waiting for
+            // server..." forever after a resolver error.
+            setText("Error: queueing failed, try again");
+            break;
         }
+      },
+      onError: (error) => {
+        console.error(error);
+        // The "Error" text auto-resets and re-enables the button after a
+        // moment (see the effect above), turning a dropped request into a
+        // visible, retryable failure instead of a stuck disabled button.
+        setText("Error: queueing failed, try again");
       },
     });
   };
