@@ -45,7 +45,12 @@
   border: 5px solid transparent;
   border-image: url("../../../common/images/pmd-frame.png") 8 stretch;
   background-color: #202020;
+  background-clip: padding-box;
   image-rendering: pixelated;
+}
+
+.avatarFemale {
+  border-image-source: url("../../../common/images/pmd-frame-female.png");
 }
 
 .iconButton {

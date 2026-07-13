@@ -8,6 +8,9 @@ const IDENTITY_CHANGED_EVENT = "userIdentityChanged";
 
 const NICKNAME_STORAGE_KEY = "nickname";
 const PROFILE_PICTURE_STORAGE_KEY = "profilePictureUrl";
+const PROFILE_PICTURE_FRAME_STORAGE_KEY = "profilePictureFrame";
+
+export type ProfilePictureFrame = "male" | "female";
 
 function notifyIdentityChanged() {
   window.dispatchEvent(new Event(IDENTITY_CHANGED_EVENT));
@@ -27,12 +30,23 @@ export function setProfilePictureUrl(url: string | null) {
   notifyIdentityChanged();
 }
 
+export function setProfilePictureFrame(frame: ProfilePictureFrame) {
+  localStorage.setItem(PROFILE_PICTURE_FRAME_STORAGE_KEY, frame);
+  notifyIdentityChanged();
+}
+
 const useUserIdentity = (shouldPrompt?: boolean) => {
   const [identity, setIdentity] = useState<{
     deviceId: string;
     nickname: string;
     profilePictureUrl: string | null;
-  }>({ deviceId: "Unknown", nickname: "Unknown", profilePictureUrl: null });
+    profilePictureFrame: ProfilePictureFrame;
+  }>({
+    deviceId: "Unknown",
+    nickname: "Unknown",
+    profilePictureUrl: null,
+    profilePictureFrame: "male",
+  });
 
   useEffect(() => {
     if (!localStorage.getItem("deviceId")) {
@@ -53,6 +67,10 @@ const useUserIdentity = (shouldPrompt?: boolean) => {
         deviceId: localStorage.getItem("deviceId") || "Unknown",
         nickname: localStorage.getItem(NICKNAME_STORAGE_KEY) || "Unknown",
         profilePictureUrl: localStorage.getItem(PROFILE_PICTURE_STORAGE_KEY),
+        profilePictureFrame:
+          localStorage.getItem(PROFILE_PICTURE_FRAME_STORAGE_KEY) === "female"
+            ? "female"
+            : "male",
       });
 
     readIdentity();

@@ -28,7 +28,11 @@ export default function Queue() {
             >
               {profilePictureUrl && (
                 <img
-                  className="queueNicknameAvatar"
+                  className={`queueNicknameAvatar${
+                    item.userIdentity?.profilePictureFrame === "female"
+                      ? " queueNicknameAvatarFemale"
+                      : ""
+                  }`}
                   src={profilePictureUrl}
                   alt=""
                 />

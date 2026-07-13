@@ -21,7 +21,7 @@ const DARK_MODE_STORAGE_KEY = "darkMode";
 const SHOW_SETTINGS_STORAGE_KEY = "showSettings";
 
 const NavBar = () => {
-  const { profilePictureUrl } = useUserIdentity();
+  const { profilePictureUrl, profilePictureFrame } = useUserIdentity();
   const [darkMode, setDarkMode] = useState<boolean>(
     () => localStorage.getItem(DARK_MODE_STORAGE_KEY) === "true",
   );
@@ -63,7 +63,15 @@ const NavBar = () => {
           </Link>
           <Link to="/profile" aria-label="Profile">
             {profilePictureUrl ? (
-              <img className={styles.avatar} src={profilePictureUrl} alt="" />
+              <img
+                className={`${styles.avatar}${
+                  profilePictureFrame === "female"
+                    ? ` ${styles.avatarFemale}`
+                    : ""
+                }`}
+                src={profilePictureUrl}
+                alt=""
+              />
             ) : (
               <FaUserCircle />
             )}

@@ -736,6 +736,9 @@ export interface UserIdentity {
   // Absent on older clients/persisted queue items; null/undefined means the
   // classic colored nickname badge.
   readonly profilePictureUrl?: string | null;
+  // PMD dialogue-portrait frame around the picture: "male" (blue) or
+  // "female" (pink). Absent/null means male.
+  readonly profilePictureFrame?: string | null;
 }
 
 interface QueueItemInterface {

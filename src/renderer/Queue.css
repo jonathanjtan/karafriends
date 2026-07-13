@@ -24,9 +24,16 @@
   border: 0.25em solid transparent;
   border-image: url("../common/images/pmd-frame.png") 8 stretch;
   background-color: #202020;
+  /* Dark fill behind the portrait only — under the border it shows through
+     the frame's transparent rounded corners as a black box. */
+  background-clip: padding-box;
   vertical-align: middle;
   image-rendering: pixelated;
   margin-right: 0.2em;
+}
+
+.queueNicknameAvatarFemale {
+  border-image-source: url("../common/images/pmd-frame-female.png");
 }
 
 @keyframes queueMarquee {

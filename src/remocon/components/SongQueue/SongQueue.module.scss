@@ -44,7 +44,14 @@
   border: 4px solid transparent;
   border-image: url("../../../common/images/pmd-frame.png") 8 stretch;
   background-color: #202020;
+  // Keep the dark fill behind the portrait only — under the border it would
+  // show through the frame's transparent rounded corners as a black box.
+  background-clip: padding-box;
   margin-right: 2px;
+}
+
+.avatarFemale {
+  border-image-source: url("../../../common/images/pmd-frame-female.png");
 }
 
 .initial .avatar {

@@ -89,6 +89,11 @@ const SongQueueItem = ({
     (item.userIdentity && item.userIdentity.nickname) || "Unknown";
   const profilePictureUrl =
     (item.userIdentity && item.userIdentity.profilePictureUrl) || null;
+  const avatarClassName = `${styles.avatar}${
+    item.userIdentity?.profilePictureFrame === "female"
+      ? ` ${styles.avatarFemale}`
+      : ""
+  }`;
   const nicknameHash = cyrb53(nickname);
   const nicknameBgColor = `hsl(${(nicknameHash % 180) + 180}, 50%, 50%)`;
 
@@ -129,7 +134,7 @@ const SongQueueItem = ({
             onClick={() => setExpanded(false)}
           >
             {profilePictureUrl && (
-              <img className={styles.avatar} src={profilePictureUrl} alt="" />
+              <img className={avatarClassName} src={profilePictureUrl} alt="" />
             )}
             {nickname}
           </div>
@@ -163,7 +168,7 @@ const SongQueueItem = ({
           onClick={() => setExpanded(true)}
         >
           {profilePictureUrl ? (
-            <img className={styles.avatar} src={profilePictureUrl} alt="" />
+            <img className={avatarClassName} src={profilePictureUrl} alt="" />
           ) : (
             nickname.slice(0, 1)
           )}

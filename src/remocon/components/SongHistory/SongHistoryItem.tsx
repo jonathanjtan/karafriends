@@ -41,7 +41,11 @@ const SongHistoryItem = ({ song }: Props) => {
             Queued by:{" "}
             {song.userIdentity.profilePictureUrl && (
               <img
-                className={styles.avatar}
+                className={`${styles.avatar}${
+                  song.userIdentity.profilePictureFrame === "female"
+                    ? ` ${styles.avatarFemale}`
+                    : ""
+                }`}
                 src={song.userIdentity.profilePictureUrl}
                 alt=""
               />

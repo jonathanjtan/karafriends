@@ -35,8 +35,37 @@
   border: 8px solid transparent;
   border-image: url("../../common/images/pmd-frame.png") 8 stretch;
   background-color: #202020;
+  background-clip: padding-box;
   image-rendering: pixelated;
   display: block;
+}
+
+.framedAvatarFemale {
+  border-image-source: url("../../common/images/pmd-frame-female.png");
+}
+
+// Frame chooser: the current portrait shown in each frame variant.
+.frameChoices {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.frameChoice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.frameChoiceSelected {
+  border-color: #1cb3ff;
 }
 
 .nicknameForm {

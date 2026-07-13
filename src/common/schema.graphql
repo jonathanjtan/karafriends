@@ -248,6 +248,9 @@ type UserIdentity {
   # URL of the user's chosen profile picture (e.g. a PMDCollab portrait), or
   # null to fall back to the classic colored nickname badge.
   profilePictureUrl: String
+  # Which PMD dialogue-portrait frame to draw around the picture: "male"
+  # (blue) or "female" (pink). Null means male, matching older clients.
+  profilePictureFrame: String
 }
 
 type BreakMessage {
@@ -260,6 +263,7 @@ input UserIdentityInput {
   nickname: String!
   deviceId: String!
   profilePictureUrl: String
+  profilePictureFrame: String
 }
 
 input EmoteInput {

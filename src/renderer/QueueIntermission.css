@@ -102,9 +102,39 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
   color: #ffd54f;
 }
 
+/* When the requester has a profile picture, it sits to the left of the
+   Up Next block, nudging the whole thing rightwards. */
+.queueIntermissionNextUpRow {
+  display: flex;
+  align-items: center;
+  gap: 2vw;
+}
+
+/* PMD portrait framed like the games' dialogue portraits (pmd-frame.png),
+   2vh frame + 10vh portrait. background-clip keeps the dark fill from
+   showing through the frame's transparent rounded corners. */
+.queueIntermissionNextUpPortrait {
+  flex: none;
+  width: 14vh;
+  height: 14vh;
+  box-sizing: border-box;
+  border: 2vh solid transparent;
+  border-image: url("../common/images/pmd-frame.png") 8 stretch;
+  background-color: #202020;
+  background-clip: padding-box;
+  image-rendering: pixelated;
+}
+
+.queueIntermissionNextUpPortraitFemale {
+  border-image-source: url("../common/images/pmd-frame-female.png");
+}
+
 .queueIntermissionNextUp {
   border-left: 0.6vh solid #ffd54f;
   padding-left: 2vw;
+  /* Let the song/artist text ellipsize inside the flex row instead of
+     overflowing it. */
+  min-width: 0;
 }
 
 .queueIntermissionSongName {
@@ -129,20 +159,6 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
   border-radius: 0.25em;
   font-size: 0.7em;
   vertical-align: middle;
-}
-
-/* PMD portraits are 40x40 pixel art — keep them crisp when scaled, framed
-   like the games' dialogue portraits (see pmd-frame.png). */
-.queueIntermissionAvatar {
-  height: 1.5em;
-  width: 1.5em;
-  box-sizing: border-box;
-  border: 0.25em solid transparent;
-  border-image: url("../common/images/pmd-frame.png") 8 stretch;
-  background-color: #202020;
-  vertical-align: middle;
-  image-rendering: pixelated;
-  margin-right: 0.3em;
 }
 
 .queueIntermissionUpcoming {

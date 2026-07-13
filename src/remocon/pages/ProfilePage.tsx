@@ -5,6 +5,7 @@ import Button from "../components/Button";
 import PmdPortraitPicker from "../components/PmdPortraitPicker";
 import useUserIdentity, {
   setNickname,
+  setProfilePictureFrame,
   setProfilePictureUrl,
 } from "../hooks/useUserIdentity";
 import * as styles from "./ProfilePage.module.scss";
@@ -36,7 +37,11 @@ const ProfilePage = () => {
       <div className={styles.currentProfile}>
         {identity.profilePictureUrl ? (
           <img
-            className={styles.framedAvatar}
+            className={`${styles.framedAvatar}${
+              identity.profilePictureFrame === "female"
+                ? ` ${styles.framedAvatarFemale}`
+                : ""
+            }`}
             src={identity.profilePictureUrl}
             alt=""
           />
@@ -73,9 +78,33 @@ const ProfilePage = () => {
 
       <h3>Profile Picture</h3>
       {identity.profilePictureUrl && (
-        <Button onClick={() => setProfilePictureUrl(null)}>
-          Remove picture
-        </Button>
+        <>
+          <div className={styles.frameChoices}>
+            {(["male", "female"] as const).map((frame) => (
+              <div
+                key={frame}
+                className={`${styles.frameChoice}${
+                  identity.profilePictureFrame === frame
+                    ? ` ${styles.frameChoiceSelected}`
+                    : ""
+                }`}
+                onClick={() => setProfilePictureFrame(frame)}
+              >
+                <img
+                  className={`${styles.framedAvatar}${
+                    frame === "female" ? ` ${styles.framedAvatarFemale}` : ""
+                  }`}
+                  src={identity.profilePictureUrl ?? undefined}
+                  alt=""
+                />
+                <span>{frame === "male" ? "Male" : "Female"}</span>
+              </div>
+            ))}
+          </div>
+          <Button onClick={() => setProfilePictureUrl(null)}>
+            Remove picture
+          </Button>
+        </>
       )}
       <h4 className={styles.collectionName}>Pokémon Mystery Dungeon</h4>
       <PmdPortraitPicker
