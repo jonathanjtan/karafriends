@@ -36,6 +36,11 @@ export interface KarafriendsConfig {
   proxyUser: string;
   // HTTP Basic password of the HTTP proxy to use
   proxyPass: string;
+  // Path to a Netscape-format cookies.txt with youtube.com cookies, passed
+  // to yt-dlp so age-restricted/bot-checked videos can be downloaded. Empty
+  // means "look for youtube-cookies.txt next to this config file, else go
+  // without cookies".
+  youtubeCookiesPath: string;
 }
 
 const DEFAULT_CONFIG: KarafriendsConfig = {
@@ -55,6 +60,7 @@ const DEFAULT_CONFIG: KarafriendsConfig = {
   proxyPort: 1234,
   proxyUser: "PROXY_USER_HERE",
   proxyPass: "PROXY_PASS_HERE",
+  youtubeCookiesPath: "",
 };
 
 function applyEnvironmentOverrides(config: KarafriendsConfig) {

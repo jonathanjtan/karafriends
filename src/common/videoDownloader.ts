@@ -1,9 +1,12 @@
 import { spawn } from "child_process";
 import { app } from "electron"; // tslint:disable-line:no-implicit-dependencies
 import fs from "fs";
+import path from "path";
 import process from "process";
 
 import invariant from "ts-invariant";
+
+import karafriendsConfig from "./config";
 
 import {
   DownloadQueueItem,
@@ -60,6 +63,31 @@ export const resourcePaths: ResourcePaths =
     : process.platform === "darwin"
       ? macosResourcePaths
       : linuxResourcePaths;
+
+// Extra yt-dlp args pointing at a Netscape-format cookies.txt with
+// youtube.com cookies, letting yt-dlp download age-restricted or
+// bot-checked videos. Uses config.yaml's youtubeCookiesPath, falling back
+// to a youtube-cookies.txt dropped next to config.yaml. Resolved on every
+// spawn so a cookies file added (or refreshed) while the app is running is
+// picked up without a restart. Note yt-dlp rewrites the file on exit with
+// any cookies YouTube rotated, so it must stay writable.
+function youtubeCookieArgs(): string[] {
+  const configuredPath = karafriendsConfig.youtubeCookiesPath;
+  const cookiesPath =
+    configuredPath || path.join(app.getPath("userData"), "youtube-cookies.txt");
+
+  if (fs.existsSync(cookiesPath)) {
+    return ["--cookies", cookiesPath];
+  }
+
+  if (configuredPath) {
+    console.warn(
+      `youtubeCookiesPath is set but ${cookiesPath} does not exist; downloading without cookies`,
+    );
+  }
+
+  return [];
+}
 
 function deleteTempFiles(prefix: string): void {
   for (const filename of fs.readdirSync(TEMP_FOLDER)) {
@@ -403,6 +431,7 @@ function downloadJoysoundYoutubeVideoPromise(
     const ytdlp = spawn(
       resourcePaths.ytdlp,
       [
+        ...youtubeCookieArgs(),
         "-S",
         "res:720,ext:mp4",
         "-f",
@@ -524,6 +553,7 @@ function downloadYoutubeAudioAttempt(youtubeVideoId: string): Promise<string> {
     const ytdlp = spawn(
       resourcePaths.ytdlp,
       [
+        ...youtubeCookieArgs(),
         "-f",
         "ba",
         "--ffmpeg-location",
@@ -1481,6 +1511,7 @@ export function downloadYoutubeVideo(
   const ytdlp = spawn(
     resourcePaths.ytdlp,
     [
+      ...youtubeCookieArgs(),
       ...captionArgs,
       "-S",
       "res:720,ext:mp4:m4a",

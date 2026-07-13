@@ -18,6 +18,12 @@ operating system:
 
 If you delete the file, the next run will recreate it from defaults.
 
+Note that in **development** (`yarn run-dev`), Electron's userData folder
+is the generic `Electron` directory instead (e.g.
+`~/Library/Application Support/Electron/` on macOS), so the dev app reads
+its `config.yaml` — and companion files like `youtube-cookies.txt` — from
+there, not from the `karafriends` folder.
+
 On every startup, karafriends re-reads the file and then _writes it back_
 merged with defaults. That means any new fields added in a future
 version will appear in your file automatically; it also means comments
@@ -78,6 +84,47 @@ The Electron window's session and the Apollo data sources are both
 configured to honor these. Local addresses (RFC1918 ranges) bypass the
 proxy automatically, so the remocon traffic over your LAN is unaffected.
 
+### YouTube cookies (age-restricted videos)
+
+| Field                | Default | Meaning                                                                                           |
+| -------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `youtubeCookiesPath` | `""`    | Path to a Netscape-format `cookies.txt` with youtube.com cookies, passed to yt-dlp (`--cookies`). |
+
+Some YouTube videos are age-restricted (the official 夜に駆ける MV, for
+example) and yt-dlp can't download them anonymously — the download fails
+with "Sign in to confirm your age" and, for JOYSOUND songs, the app falls
+back to the default karaoke video. Providing logged-in YouTube cookies
+fixes this, and also helps with YouTube's "confirm you're not a bot"
+walls.
+
+When the field is empty (the default), karafriends still looks for a file
+named `youtube-cookies.txt` sitting next to `config.yaml` — dropping the
+file there is all you need to do. The file is re-checked on every
+download, so no restart is needed after adding or refreshing it.
+
+**How to generate the file:**
+
+1. Use a **throwaway Google account**, not your real one. YouTube can
+   flag or ban accounts whose cookies are used for automated downloads.
+2. Open a **private/incognito window**, log into youtube.com with that
+   account, and confirm your age once if prompted.
+3. Export the cookies for youtube.com in Netscape format using a browser
+   extension — "Get cookies.txt LOCALLY" (Chrome) or "cookies.txt"
+   (Firefox). Alternatively, with the browser still open, run
+   `yt-dlp --cookies-from-browser chrome --cookies youtube-cookies.txt --skip-download <any video URL>`
+   to dump them from the browser profile.
+4. **Close the private window immediately after exporting** and don't log
+   into that account in a browser again. YouTube rotates the session
+   cookies of an active browser session, which invalidates the export
+   within minutes; cookies from a closed session keep working for a long
+   time.
+5. Save the file as `youtube-cookies.txt` next to `config.yaml` (see the
+   paths table above), or anywhere else with `youtubeCookiesPath` set.
+
+The file must stay **writable**: yt-dlp writes back any cookies YouTube
+rotates during a download. If age-restricted downloads start failing
+again months later, re-export the file the same way.
+
 ### Admin and moderation
 
 | Field            | Default | Meaning                                                                                                                      |
@@ -135,6 +182,8 @@ proxyHost: "PROXY_HOST_HERE"
 proxyPort: 1234
 proxyUser: "PROXY_USER_HERE"
 proxyPass: "PROXY_PASS_HERE"
+
+youtubeCookiesPath: ""
 ```
 
 Note that JOYSOUND credentials are left as placeholders here. JOYSOUND
