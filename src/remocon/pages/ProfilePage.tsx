@@ -105,10 +105,6 @@ const ProfilePage = () => {
           Save
         </Button>
       </form>
-      <blockquote>
-        Songs you already queued from this device update along with your
-        profile.
-      </blockquote>
 
       <h3>Avatar</h3>
       {identity.profilePictureUrl && (
