@@ -111,8 +111,7 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
 }
 
 /* PMD portrait framed like the games' dialogue portraits (pmd-frame.png),
-   2vh frame + 10vh portrait. background-clip keeps the dark fill from
-   showing through the frame's transparent rounded corners. */
+   2vh frame + 10vh portrait. */
 .queueIntermissionNextUpPortrait {
   flex: none;
   width: 14vh;
@@ -120,8 +119,6 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
   box-sizing: border-box;
   border: 2vh solid transparent;
   border-image: url("../common/images/pmd-frame.png") 8 stretch;
-  background-color: #202020;
-  background-clip: padding-box;
   image-rendering: pixelated;
 }
 

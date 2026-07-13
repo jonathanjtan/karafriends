@@ -76,9 +76,20 @@ const ProfilePage = () => {
         Songs already in the queue keep the nickname they were queued with.
       </blockquote>
 
-      <h3>Profile Picture</h3>
+      <h3>Avatar</h3>
+      {identity.profilePictureUrl && (
+        <Button onClick={() => setProfilePictureUrl(null)}>
+          Remove avatar
+        </Button>
+      )}
+      <h4 className={styles.collectionName}>Pokémon Mystery Dungeon</h4>
+      <PmdPortraitPicker
+        selectedUrl={identity.profilePictureUrl}
+        onSelect={(url) => setProfilePictureUrl(url)}
+      />
       {identity.profilePictureUrl && (
         <>
+          <h4 className={styles.collectionName}>Frame Color</h4>
           <div className={styles.frameChoices}>
             {(["male", "female"] as const).map((frame) => (
               <div
@@ -97,20 +108,12 @@ const ProfilePage = () => {
                   src={identity.profilePictureUrl ?? undefined}
                   alt=""
                 />
-                <span>{frame === "male" ? "Male" : "Female"}</span>
+                <span>{frame === "male" ? "Blue" : "Pink"}</span>
               </div>
             ))}
           </div>
-          <Button onClick={() => setProfilePictureUrl(null)}>
-            Remove picture
-          </Button>
         </>
       )}
-      <h4 className={styles.collectionName}>Pokémon Mystery Dungeon</h4>
-      <PmdPortraitPicker
-        selectedUrl={identity.profilePictureUrl}
-        onSelect={(url) => setProfilePictureUrl(url)}
-      />
     </div>
   );
 };

@@ -198,21 +198,22 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
       )}
       {selectedMonster && (
         <div className={styles.emotions}>
-          <h4>
-            {selectedMonster.name} — pick an emotion
-            {selectedMonster.forms.length > 1 && (
+          {selectedMonster.forms.length > 1 && (
+            <h4>
+              {selectedMonster.name} — pick a version
               <select
                 value={formIdx}
                 onChange={(e) => setFormIdx(parseInt(e.target.value, 10))}
               >
                 {selectedMonster.forms.map((form, i) => (
                   <option key={form.path} value={i}>
-                    {form.fullName}
+                    {form.fullName.replace(/_/g, " ")}
                   </option>
                 ))}
               </select>
-            )}
-          </h4>
+            </h4>
+          )}
+          <h4>{selectedMonster.name} — pick an emotion</h4>
           <div className={styles.grid}>
             {(selectedForm?.portraits.emotions || []).map((portrait) => (
               <div
