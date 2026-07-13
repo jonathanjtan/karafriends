@@ -63,6 +63,13 @@
   border-radius: 1vh;
 }
 
+/* Same OLED burn-in mitigation as the sidebar QR code (App.css) — reuses its
+   oledQrWiggle keyframes, which are global to the document. */
+html.oledFriendly .queueIntermissionQr canvas,
+html.oledFriendly .queueIntermissionQrInverted canvas {
+  animation: oledQrWiggle 480s step-end infinite;
+}
+
 /* Pinned to the top-left corner, out of the centered flow (the QR codes own
    the right edge). */
 .queueIntermissionNowPlayingBgm {
