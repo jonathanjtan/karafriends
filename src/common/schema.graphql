@@ -89,6 +89,10 @@ type Mutation {
   ): QueueSongResult!
   recheckServiceHealth: ServiceHealth!
   removeSong(songId: String!, timestamp: String!): Boolean!
+  # Rewrite the identity (nickname/avatar) on everything this device has in
+  # the queue, matched by deviceId, so profile edits show up on already-queued
+  # songs. Returns true if anything changed.
+  updateUserIdentity(identity: UserIdentityInput!): Boolean!
   moveSong(songId: String!, timestamp: String!, offset: Int!): Boolean!
   clearQueue: Boolean!
   setBgmTrack(track: String): Boolean!

@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { graphql, useMutation } from "react-relay";
 
 import { cyrb53 } from "../../common/hash";
 import Button from "../components/Button";
@@ -9,11 +10,43 @@ import useUserIdentity, {
   setProfilePictureUrl,
 } from "../hooks/useUserIdentity";
 import * as styles from "./ProfilePage.module.scss";
+import { ProfilePageUpdateUserIdentityMutation } from "./__generated__/ProfilePageUpdateUserIdentityMutation.graphql";
+
+// Rewrites the identity on this device's already-queued songs so profile
+// edits show up in the queue immediately instead of only on future queues.
+const updateUserIdentityMutation = graphql`
+  mutation ProfilePageUpdateUserIdentityMutation(
+    $identity: UserIdentityInput!
+  ) {
+    updateUserIdentity(identity: $identity)
+  }
+`;
 
 const ProfilePage = () => {
   const identity = useUserIdentity();
   // null = untouched; the input shows the stored nickname until edited.
   const [nicknameDraft, setNicknameDraft] = useState<string | null>(null);
+  const [commitIdentityUpdate] =
+    useMutation<ProfilePageUpdateUserIdentityMutation>(
+      updateUserIdentityMutation,
+    );
+
+  // Push every identity change (and the current identity on mount, which
+  // heals queue items from before this page was opened) to the server so
+  // already-queued songs pick it up.
+  useEffect(() => {
+    if (identity.deviceId === "Unknown") return;
+    commitIdentityUpdate({
+      variables: {
+        identity: {
+          deviceId: identity.deviceId,
+          nickname: identity.nickname,
+          profilePictureUrl: identity.profilePictureUrl,
+          profilePictureFrame: identity.profilePictureFrame,
+        },
+      },
+    });
+  }, [identity]);
 
   const displayedNickname = nicknameDraft ?? identity.nickname;
   const trimmedDraft = (nicknameDraft ?? "").trim();
@@ -73,7 +106,8 @@ const ProfilePage = () => {
         </Button>
       </form>
       <blockquote>
-        Songs already in the queue keep the nickname they were queued with.
+        Songs you already queued from this device update along with your
+        profile.
       </blockquote>
 
       <h3>Avatar</h3>

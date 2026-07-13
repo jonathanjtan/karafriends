@@ -1110,6 +1110,13 @@ function canPushToHeadOfQueue(userIdentity: UserIdentity): boolean {
   );
 }
 
+// Latest identity seen from each device via updateUserIdentity. Songs that
+// are still downloading when a profile edit lands were captured with the old
+// identity at queue time; pushSongToQueue consults this so they arrive in the
+// queue with the edit applied. Session-scoped on purpose — persisted queue
+// items are rewritten directly by updateUserIdentity.
+const latestIdentityByDevice = new Map<string, UserIdentity>();
+
 function pushSongToQueue(
   queueItem: QueueItem,
   pushToHead: boolean = false,
@@ -1121,6 +1128,9 @@ function pushSongToQueue(
   // the cache/kuromoji in nameYomiResolvers when nothing is cached yet.
   const enrichedItem: QueueItem = {
     ...queueItem,
+    userIdentity:
+      latestIdentityByDevice.get(queueItem.userIdentity.deviceId) ??
+      queueItem.userIdentity,
     nameYomi: queueItem.nameYomi ?? getCachedReading(queueItem.name),
     artistNameYomi:
       queueItem.artistNameYomi ?? getCachedReading(queueItem.artistName),
@@ -2060,6 +2070,39 @@ const resolvers = {
     },
     recheckServiceHealth: async (): Promise<ServiceHealthState> => {
       return triggerHealthCheck(true);
+    },
+    updateUserIdentity: (_: any, args: { identity: UserIdentity }): boolean => {
+      const { identity } = args;
+      latestIdentityByDevice.set(identity.deviceId, identity);
+
+      const needsUpdate = (item: QueueItem) =>
+        item.userIdentity.deviceId === identity.deviceId &&
+        JSON.stringify(item.userIdentity) !== JSON.stringify(identity);
+
+      let changed = false;
+      db.songQueue = db.songQueue.map((item) => {
+        if (!needsUpdate(item)) return item;
+        changed = true;
+        return { ...item, userIdentity: identity };
+      });
+      // Update the playing song's snapshot too, but only announce it through
+      // queueChanged — publishing currentSongChanged would poke the renderer's
+      // playback machinery mid-song.
+      if (db.currentSong && needsUpdate(db.currentSong)) {
+        db.currentSong = { ...db.currentSong, userIdentity: identity };
+        changed = true;
+      }
+
+      if (changed) {
+        pubsub.publish(SubscriptionEvent.QueueChanged, {
+          queueChanged: {
+            currentSong: db.currentSong,
+            newQueue: db.songQueue,
+          },
+        });
+        saveDb();
+      }
+      return changed;
     },
     removeSong: (
       _: any,
