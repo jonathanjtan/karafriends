@@ -51,6 +51,10 @@ const joysoundSongPageSuggestedYoutubeVideosQuery = graphql`
   }
 `;
 
+// The server returns up to 6 ranked candidates; show the top few by default
+// with the rest behind a "show more" button.
+const INITIAL_LUCKY_CANDIDATES_SHOWN = 3;
+
 interface LuckyCandidate {
   videoId: string;
   title: string;
@@ -171,13 +175,9 @@ const JoysoundSongPage = () => {
     history.replaceState({}, "", `#/joysoundSong/${song.id}`);
   };
 
-  const isConfidentLuckyPick =
-    !!luckyCandidates &&
-    luckyCandidates.length > 1 &&
-    luckyCandidates[0].isLikelyOfficial;
   const visibleLuckyCandidates =
-    isConfidentLuckyPick && !showAllLuckyCandidates
-      ? luckyCandidates!.slice(0, 1)
+    luckyCandidates && !showAllLuckyCandidates
+      ? luckyCandidates.slice(0, INITIAL_LUCKY_CANDIDATES_SHOWN)
       : luckyCandidates;
   const hiddenLuckyCandidateCount = luckyCandidates
     ? luckyCandidates.length - (visibleLuckyCandidates?.length ?? 0)

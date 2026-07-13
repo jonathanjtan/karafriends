@@ -440,6 +440,14 @@ interface YoutubeSearchVideoItem {
   readonly title?: { text?: string };
   readonly author?: { name?: string };
   readonly duration?: { seconds?: number };
+  readonly view_count?: { text?: string };
+}
+
+// youtubei.js exposes the view count only as localized display text
+// ("115,556,754回視聴"); the leading digit group is the full count.
+function parseViewCountText(text: string | undefined): number {
+  const match = (text ?? "").match(/[\d,]+/);
+  return match ? parseInt(match[0].replace(/,/g, ""), 10) : 0;
 }
 
 // Official uploads routinely run 20-45s longer than Joysound's own catalog
@@ -549,6 +557,7 @@ function pickMusicVideoCandidates(
       title: v.title?.text ?? "",
       author: v.author?.name ?? "",
       lengthSeconds: v.duration?.seconds ?? 0,
+      viewCount: parseViewCountText(v.view_count?.text),
     }))
     .filter((v) => v.lengthSeconds > 0)
     .filter((v) => !v.author.endsWith(TOPIC_CHANNEL_SUFFIX))
@@ -590,6 +599,15 @@ function pickMusicVideoCandidates(
       musicVideoCandidateTier(b, artistNameVariants);
 
     if (tierDiff !== 0) return tierDiff;
+
+    // Within a tier, prefer the most-viewed video. Duration closeness is a
+    // bad discriminator between same-channel uploads - an artist's official
+    // channel often carries a static album-art "audio" upload alongside the
+    // real MV, and the audio track's length is *closer* to the karaoke
+    // duration (One Last Kiss: 2M-view art track at Δ1s vs the 115M-view MV
+    // at Δ8s). View count separates those by orders of magnitude; keep
+    // duration only as the final tiebreak.
+    if (a.viewCount !== b.viewCount) return b.viewCount - a.viewCount;
 
     return (
       Math.abs(a.lengthSeconds - expectedDurationSec) -
@@ -1835,7 +1853,7 @@ const resolvers = {
         artistNameVariants,
         songDetail.name,
         expectedDurationSec,
-        5,
+        6,
       );
 
       if (candidates.length === 0) {
