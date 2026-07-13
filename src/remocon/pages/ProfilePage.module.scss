@@ -1,0 +1,60 @@
+.profilePage {
+  h3 {
+    margin-top: 16px;
+  }
+}
+
+.currentProfile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 20px;
+
+  span {
+    font-weight: bold;
+  }
+}
+
+.badge {
+  width: 48px;
+  height: 48px;
+  border-radius: 24px;
+  line-height: 48px;
+  text-align: center;
+  color: #fff;
+  font-size: 24px;
+  font-weight: bold;
+
+  img {
+    // PMD portraits are 40x40 pixel art — keep them crisp when scaled.
+    width: 48px;
+    height: 48px;
+    border-radius: 24px;
+    image-rendering: pixelated;
+    display: block;
+  }
+}
+
+.nicknameForm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  input {
+    flex: 1;
+    border: none;
+    border-bottom: 4px solid #1cb3ff;
+    font-size: 20px;
+    margin: 8px 0;
+    min-width: 0;
+
+    &:focus {
+      outline: none;
+    }
+  }
+}
+
+.collectionName {
+  margin-top: 8px;
+}

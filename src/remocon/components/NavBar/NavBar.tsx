@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from "react";
-// tslint:disable-next-line:no-submodule-imports
-import { FaCog, FaHistory, FaHome, FaMoon, FaSun } from "react-icons/fa";
+/* tslint:disable:no-submodule-imports */
+import {
+  FaCog,
+  FaHistory,
+  FaHome,
+  FaMoon,
+  FaSun,
+  FaUserCircle,
+} from "react-icons/fa";
+/* tslint:enable:no-submodule-imports */
 import { Link } from "react-router";
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import icon from "url:../../images/icon.png";
 
+import useUserIdentity from "../../hooks/useUserIdentity";
 import VolumeControls from "../VolumeControls";
 import * as styles from "./NavBar.module.scss";
 
@@ -12,6 +21,7 @@ const DARK_MODE_STORAGE_KEY = "darkMode";
 const SHOW_SETTINGS_STORAGE_KEY = "showSettings";
 
 const NavBar = () => {
+  const { profilePictureUrl } = useUserIdentity();
   const [darkMode, setDarkMode] = useState<boolean>(
     () => localStorage.getItem(DARK_MODE_STORAGE_KEY) === "true",
   );
@@ -47,9 +57,18 @@ const NavBar = () => {
   return (
     <>
       <div className={styles.navBar}>
-        <Link to="/">
-          <FaHome />
-        </Link>
+        <div className={styles.leftIcons}>
+          <Link to="/">
+            <FaHome />
+          </Link>
+          <Link to="/profile" aria-label="Profile">
+            {profilePictureUrl ? (
+              <img className={styles.avatar} src={profilePictureUrl} alt="" />
+            ) : (
+              <FaUserCircle />
+            )}
+          </Link>
+        </div>
         <img height={40} src={icon} alt="空" />
         <div className={styles.rightIcons}>
           <button

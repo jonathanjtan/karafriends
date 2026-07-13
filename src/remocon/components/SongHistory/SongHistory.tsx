@@ -38,6 +38,7 @@ const historyPaginationQuery = graphql`
               timestamp
               userIdentity {
                 nickname
+                profilePictureUrl
               }
             }
 
@@ -51,6 +52,7 @@ const historyPaginationQuery = graphql`
               timestamp
               userIdentity {
                 nickname
+                profilePictureUrl
               }
             }
 
@@ -64,6 +66,7 @@ const historyPaginationQuery = graphql`
               timestamp
               userIdentity {
                 nickname
+                profilePictureUrl
               }
             }
 
@@ -77,6 +80,7 @@ const historyPaginationQuery = graphql`
               timestamp
               userIdentity {
                 nickname
+                profilePictureUrl
               }
             }
           }

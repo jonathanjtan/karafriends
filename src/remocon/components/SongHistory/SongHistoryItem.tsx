@@ -38,7 +38,15 @@ const SongHistoryItem = ({ song }: Props) => {
             <WeebText text={song.name} yomi={song.nameYomi} />
           </strong>
           <span className={styles.date}>
-            Queued by: {song.userIdentity.nickname}
+            Queued by:{" "}
+            {song.userIdentity.profilePictureUrl && (
+              <img
+                className={styles.avatar}
+                src={song.userIdentity.profilePictureUrl}
+                alt=""
+              />
+            )}
+            {song.userIdentity.nickname}
           </span>
         </div>
 

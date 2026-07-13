@@ -15,6 +15,15 @@
   animation: queueMarquee 10s linear infinite;
 }
 
+/* PMD portraits are 40x40 pixel art — keep them crisp when scaled down. */
+.queueNicknameAvatar {
+  height: 1.2em;
+  width: 1.2em;
+  vertical-align: text-bottom;
+  image-rendering: pixelated;
+  margin-right: 0.2em;
+}
+
 @keyframes queueMarquee {
   0% {
     margin-left: 0%;

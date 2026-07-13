@@ -8,7 +8,7 @@ import "./QueueIntermission.css";
 
 const MAX_VISIBLE_UPCOMING = 6;
 
-function nicknameBadge(nickname: string) {
+function nicknameBadge(nickname: string, profilePictureUrl?: string | null) {
   const nicknameHash = cyrb53(nickname);
   return (
     <span
@@ -18,6 +18,13 @@ function nicknameBadge(nickname: string) {
         color: `hsl(${nicknameHash % 180}, 100%, 50%)`,
       }}
     >
+      {profilePictureUrl ? (
+        <img
+          className="queueIntermissionAvatar"
+          src={profilePictureUrl}
+          alt=""
+        />
+      ) : null}
       {nickname}
     </span>
   );
@@ -98,7 +105,10 @@ export default function QueueIntermission(props: {
           <div className="queueIntermissionSongName">{nextUp[0].name}</div>
           <div className="queueIntermissionArtistName">
             {nextUp[0].artistName}{" "}
-            {nicknameBadge(nextUp[0].userIdentity?.nickname || "")}
+            {nicknameBadge(
+              nextUp[0].userIdentity?.nickname || "",
+              nextUp[0].userIdentity?.profilePictureUrl,
+            )}
           </div>
         </div>
       ) : (
@@ -119,7 +129,10 @@ export default function QueueIntermission(props: {
               <span className="queueIntermissionUpcomingIndex">{i + 1}</span>
               <span className="queueIntermissionUpcomingSong">
                 {item.name} - {item.artistName}{" "}
-                {nicknameBadge(item.userIdentity?.nickname || "")}
+                {nicknameBadge(
+                  item.userIdentity?.nickname || "",
+                  item.userIdentity?.profilePictureUrl,
+                )}
               </span>
               <span className="queueIntermissionUpcomingEta">
                 T+{formatDuration((eta - baseEta) * 1000)}

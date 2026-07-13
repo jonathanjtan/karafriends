@@ -87,6 +87,8 @@ const SongQueueItem = ({
   const itemType = item.__typename;
   const nickname =
     (item.userIdentity && item.userIdentity.nickname) || "Unknown";
+  const profilePictureUrl =
+    (item.userIdentity && item.userIdentity.profilePictureUrl) || null;
   const nicknameHash = cyrb53(nickname);
   const nicknameBgColor = `hsl(${(nicknameHash % 180) + 180}, 50%, 50%)`;
 
@@ -126,6 +128,9 @@ const SongQueueItem = ({
             style={{ backgroundColor: nicknameBgColor }}
             onClick={() => setExpanded(false)}
           >
+            {profilePictureUrl && (
+              <img className={styles.avatar} src={profilePictureUrl} alt="" />
+            )}
             {nickname}
           </div>
           {item.songId && item.timestamp && !isCurrent && canRemove && (
@@ -155,7 +160,11 @@ const SongQueueItem = ({
           style={{ backgroundColor: nicknameBgColor }}
           onClick={() => setExpanded(true)}
         >
-          {nickname.slice(0, 1)}
+          {profilePictureUrl ? (
+            <img className={styles.avatar} src={profilePictureUrl} alt="" />
+          ) : (
+            nickname.slice(0, 1)
+          )}
         </div>
       )}
       <div className={styles.songMeta} onClick={onClick}>

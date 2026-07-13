@@ -1,0 +1,85 @@
+.picker {
+  input {
+    border: none;
+    border-bottom: 4px solid #1cb3ff;
+    font-size: 20px;
+    width: 100%;
+    margin: 8px 0;
+
+    &:focus {
+      outline: none;
+    }
+
+    &::placeholder {
+      color: #aaa;
+    }
+  }
+}
+
+.hint {
+  color: #666;
+  margin: 8px 0;
+}
+
+.error {
+  color: #de4e4e;
+  margin: 8px 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: center;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+
+  img {
+    // PMD portraits are 40x40 pixel art — keep them crisp when scaled up.
+    width: 64px;
+    height: 64px;
+    image-rendering: pixelated;
+  }
+}
+
+.cellSelected {
+  border-color: #1cb3ff;
+}
+
+.emotions {
+  h4 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 8px 0 0;
+
+    select {
+      border: 2px solid #1cb3ff;
+      border-radius: 4px;
+      padding: 4px;
+      font-size: 14px;
+    }
+  }
+}
+
+.credit {
+  margin: 8px 0;
+  color: #666;
+  font-size: 12px;
+
+  a {
+    color: #1cb3ff;
+  }
+}

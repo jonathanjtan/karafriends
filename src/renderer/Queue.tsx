@@ -12,9 +12,31 @@ export default function Queue() {
       {queue.map(([item, eta], i) => {
         const nickname =
           (item.userIdentity && item.userIdentity.nickname) || "";
+        const profilePictureUrl =
+          (item.userIdentity && item.userIdentity.profilePictureUrl) || null;
         const nicknameHash = cyrb53(nickname);
         const nicknameColor = `hsl(${nicknameHash % 180}, 100%, 50%)`;
         const nicknameBgColor = `hsl(${(nicknameHash % 180) + 180}, 100%, 50%)`;
+        const entry = (
+          <>
+            {item.name} - {item.artistName}{" "}
+            <span
+              style={{
+                backgroundColor: nicknameBgColor,
+                color: nicknameColor,
+              }}
+            >
+              {profilePictureUrl && (
+                <img
+                  className="queueNicknameAvatar"
+                  src={profilePictureUrl}
+                  alt=""
+                />
+              )}
+              {nickname}
+            </span>{" "}
+          </>
+        );
         return (
           <div
             key={`${item.songId}_${i}`}
@@ -24,42 +46,10 @@ export default function Queue() {
             <span className="queueMarquee">
               <span className="queueMarqueeInner">
                 <span>
-                  {item.name} - {item.artistName}{" "}
-                  <span
-                    style={{
-                      backgroundColor: nicknameBgColor,
-                      color: nicknameColor,
-                    }}
-                  >
-                    {nickname}
-                  </span>{" "}
-                  {item.name} - {item.artistName}{" "}
-                  <span
-                    style={{
-                      backgroundColor: nicknameBgColor,
-                      color: nicknameColor,
-                    }}
-                  >
-                    {nickname}
-                  </span>{" "}
-                  {item.name} - {item.artistName}{" "}
-                  <span
-                    style={{
-                      backgroundColor: nicknameBgColor,
-                      color: nicknameColor,
-                    }}
-                  >
-                    {nickname}
-                  </span>{" "}
-                  {item.name} - {item.artistName}{" "}
-                  <span
-                    style={{
-                      backgroundColor: nicknameBgColor,
-                      color: nicknameColor,
-                    }}
-                  >
-                    {nickname}
-                  </span>{" "}
+                  {entry}
+                  {entry}
+                  {entry}
+                  {entry}
                 </span>
               </span>
             </span>

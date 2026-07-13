@@ -14,7 +14,7 @@
   line-height: 24px;
   animation: rotation 2s infinite linear;
 
-  > a:first-child {
+  > div:first-child {
     justify-self: start;
   }
 
@@ -23,11 +23,26 @@
   }
 }
 
+.leftIcons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .rightIcons {
   display: flex;
   align-items: center;
   gap: 12px;
   justify-self: end;
+}
+
+// PMD portraits are 40x40 pixel art — keep them crisp at nav size.
+.avatar {
+  display: block;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  image-rendering: pixelated;
 }
 
 .iconButton {

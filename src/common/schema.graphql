@@ -245,6 +245,9 @@ type ServiceHealth {
 type UserIdentity {
   nickname: String!
   deviceId: String!
+  # URL of the user's chosen profile picture (e.g. a PMDCollab portrait), or
+  # null to fall back to the classic colored nickname badge.
+  profilePictureUrl: String
 }
 
 type BreakMessage {
@@ -256,6 +259,7 @@ type BreakMessage {
 input UserIdentityInput {
   nickname: String!
   deviceId: String!
+  profilePictureUrl: String
 }
 
 input EmoteInput {

@@ -6,6 +6,10 @@
 body {
   font-family: "Roboto", sans-serif;
   color: #333;
+  // Explicit so browsers with a dark default canvas (prefers-color-scheme:
+  // dark) don't paint the page black — our dark mode is the invert filter in
+  // App.module.scss, not the UA color scheme.
+  background-color: #fff;
 }
 
 a {

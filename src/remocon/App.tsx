@@ -14,6 +14,7 @@ import JoysoundArtistSearchPage from "./pages/JoysoundArtistSearchPage";
 import JoysoundSongPage from "./pages/JoysoundSongPage";
 import JoysoundSongSearchPage from "./pages/JoysoundSongSearchPage";
 import NiconicoPage from "./pages/NiconicoPage";
+import ProfilePage from "./pages/ProfilePage";
 import SongPage from "./pages/SongPage";
 import SongSearchPage from "./pages/SongSearchPage";
 import YouTubePage from "./pages/YouTubePage";
@@ -64,6 +65,7 @@ const App = () => {
               element={<JoysoundArtistSearchPage />}
             />
             <Route path="/history" element={<HistoryPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
             <Route path="/" element={<HomePage />} />
           </Routes>
         </main>

@@ -732,6 +732,10 @@ type NicoVideoInfoResult = NicoVideoInfo | NicoVideoInfoError;
 export interface UserIdentity {
   readonly deviceId: string;
   readonly nickname: string;
+  // URL of the user's chosen profile picture (e.g. a PMDCollab portrait).
+  // Absent on older clients/persisted queue items; null/undefined means the
+  // classic colored nickname badge.
+  readonly profilePictureUrl?: string | null;
 }
 
 interface QueueItemInterface {

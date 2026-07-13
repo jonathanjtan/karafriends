@@ -35,6 +35,7 @@ const queueQuery = graphql`
         userIdentity {
           deviceId
           nickname
+          profilePictureUrl
         }
       }
     }
@@ -64,6 +65,7 @@ const queueSubscription = graphql`
           userIdentity {
             deviceId
             nickname
+            profilePictureUrl
           }
         }
       }

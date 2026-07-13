@@ -25,6 +25,7 @@ const nowPlayingQuery = graphql`
         userIdentity {
           deviceId
           nickname
+          profilePictureUrl
         }
         hasAdhocLyrics
       }
@@ -39,6 +40,7 @@ const nowPlayingQuery = graphql`
         userIdentity {
           deviceId
           nickname
+          profilePictureUrl
         }
       }
     }
@@ -58,6 +60,7 @@ const nowPlayingSubscription = graphql`
         userIdentity {
           deviceId
           nickname
+          profilePictureUrl
         }
         hasAdhocLyrics
       }
@@ -72,6 +75,7 @@ const nowPlayingSubscription = graphql`
         userIdentity {
           deviceId
           nickname
+          profilePictureUrl
         }
       }
     }
@@ -92,7 +96,7 @@ export default function useNowPlaying() {
       fetchQuery<useNowPlayingQuery>(
         environment,
         nowPlayingQuery,
-        {}
+        {},
       ).subscribe({
         next: (response: useNowPlayingQuery$data) =>
           setCurrentSong(response.currentSong),
@@ -104,7 +108,7 @@ export default function useNowPlaying() {
     const initialQuery = fetchQuery<useNowPlayingQuery>(
       environment,
       nowPlayingQuery,
-      {}
+      {},
     ).subscribe({
       next: (response: useNowPlayingQuery$data) =>
         setCurrentSong(response.currentSong),
@@ -117,7 +121,7 @@ export default function useNowPlaying() {
         variables: {},
         onNext: (response) =>
           setCurrentSong(response?.currentSongChanged || null),
-      }
+      },
     );
 
     return () => {

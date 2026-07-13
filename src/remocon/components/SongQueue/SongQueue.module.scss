@@ -33,6 +33,20 @@
   font-weight: bold;
 }
 
+// PMD portraits are 40x40 pixel art — keep them crisp when scaled down.
+.avatar {
+  height: 24px;
+  width: 24px;
+  vertical-align: top;
+  image-rendering: pixelated;
+  border-radius: 12px;
+  margin-right: 2px;
+}
+
+.initial .avatar {
+  margin-right: 0;
+}
+
 .move {
   @extend %round-button;
   padding: 4px;

@@ -1,3 +1,12 @@
 .date {
   float: right;
 }
+
+// PMD portraits are 40x40 pixel art — keep them crisp when scaled down.
+.avatar {
+  height: 16px;
+  width: 16px;
+  vertical-align: text-bottom;
+  image-rendering: pixelated;
+  margin-right: 2px;
+}

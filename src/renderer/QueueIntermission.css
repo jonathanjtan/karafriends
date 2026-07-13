@@ -131,6 +131,15 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
   vertical-align: middle;
 }
 
+/* PMD portraits are 40x40 pixel art — keep them crisp when scaled. */
+.queueIntermissionAvatar {
+  height: 1.2em;
+  width: 1.2em;
+  vertical-align: text-bottom;
+  image-rendering: pixelated;
+  margin-right: 0.3em;
+}
+
 .queueIntermissionUpcoming {
   display: flex;
   flex-direction: column;
