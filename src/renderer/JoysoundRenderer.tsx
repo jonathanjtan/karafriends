@@ -17,7 +17,10 @@ import {
   RUBY_FONT_STROKE,
 } from "../common/constants";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
-import { InstrumentalBreak } from "../common/scoringData";
+import {
+  adjustBreaksForLyrics,
+  InstrumentalBreak,
+} from "../common/scoringData";
 
 // XXX: These should be in their own file
 
@@ -890,7 +893,6 @@ export default function JoysoundRenderer(props: {
   onBreakActiveChange?: (active: boolean) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationFrameRequestRef = useRef<number>(0);
 
   // In telop coordinates, the y below which lyrics rows must stay so they
   // don't hide behind the piano roll. Held in a ref so the draw loop (which
@@ -928,6 +930,15 @@ export default function JoysoundRenderer(props: {
   };
 
   useEffect(() => {
+    // Guards the draw loop against outliving this effect instance. The
+    // cleanup's cancelAnimationFrame alone isn't enough: refresh() is async,
+    // so a teardown that fires while parseJoysoundData is still pending
+    // (StrictMode's double-mount does this on every mount) has no frame to
+    // cancel yet, and the loop it would later start became an uncancellable
+    // zombie — still firing onBreakActiveChange with a stale song's breaks.
+    let cancelled = false;
+    let animationFrameRequest = 0;
+
     const refresh = async () => {
       updateSize();
       window.addEventListener("resize", updateSize);
@@ -937,6 +948,9 @@ export default function JoysoundRenderer(props: {
         props.telop,
         props.kuroshiro,
       );
+      if (cancelled) {
+        return;
+      }
 
       const metadata = joysoundData.metadata;
       const lyricsData = joysoundData.lyrics;
@@ -957,8 +971,23 @@ export default function JoysoundRenderer(props: {
       // piano roll) can fade in without covering it.
       let titleFadedOutReported = false;
       // Edge-triggered: only fires onBreakActiveChange when crossing into
-      // or out of a duck window, not every frame.
-      let isPianoRollDucked = false;
+      // or out of a duck window, not every frame. Starts null so the first
+      // frame always reports, re-syncing the parent if a previous effect
+      // instance left it ducked.
+      let isPianoRollDucked: boolean | null = null;
+
+      // Guide-melody gaps trimmed against the telop: backing-vocal lyrics
+      // can sing through a gap, and the break should only start once the
+      // screen is clear of them.
+      const breaks = adjustBreaksForLyrics(
+        props.breaks,
+        lyricsData
+          .filter((block) => block.fadeinTime >= 0 && block.fadeoutTime >= 0)
+          .map((block) => ({
+            startTime: block.fadeinTime / 1000,
+            endTime: block.fadeoutTime / 1000,
+          })),
+      );
 
       const titleTexture = createTitleTexture(gl, metadata, props.isRomaji);
       const lyricsBlockTextures = createLyricsBlockTextures(
@@ -966,7 +995,7 @@ export default function JoysoundRenderer(props: {
         lyricsData,
         props.isRomaji,
       );
-      const breakTextures = props.breaks.map((b) =>
+      const breakTextures = breaks.map((b) =>
         createBreakTexture(gl, b.approxDurationSecs),
       );
 
@@ -1005,6 +1034,9 @@ export default function JoysoundRenderer(props: {
       };
 
       function draw(now: number) {
+        if (cancelled) {
+          return;
+        }
         invariant(gl);
         invariant(props.videoRef.current);
 
@@ -1085,15 +1117,14 @@ export default function JoysoundRenderer(props: {
           }
         }
 
-        const activeBreakIndex = props.breaks.findIndex(
+        const activeBreakIndex = breaks.findIndex(
           (b) =>
             refreshTime >= b.startTime * 1000 && refreshTime < b.endTime * 1000,
         );
 
         if (activeBreakIndex >= 0) {
           const noticeStart =
-            props.breaks[activeBreakIndex].startTime * 1000 +
-            BREAK_TEXT_DELAY_MS;
+            breaks[activeBreakIndex].startTime * 1000 + BREAK_TEXT_DELAY_MS;
 
           if (
             refreshTime >= noticeStart &&
@@ -1107,7 +1138,7 @@ export default function JoysoundRenderer(props: {
         // start scrolling into the piano roll's visible window
         // PIANO_ROLL_LOOKAHEAD_SECS ahead of when they're actually due, so
         // the roll should already be back by then, not still fading in.
-        const duckedBreakIndex = props.breaks.findIndex(
+        const duckedBreakIndex = breaks.findIndex(
           (b) =>
             refreshTime >= b.startTime * 1000 &&
             refreshTime < b.endTime * 1000 - PIANO_ROLL_LOOKAHEAD_SECS * 1000,
@@ -1118,17 +1149,18 @@ export default function JoysoundRenderer(props: {
           props.onBreakActiveChange?.(isPianoRollDucked);
         }
 
-        animationFrameRequestRef.current = window.requestAnimationFrame(draw);
+        animationFrameRequest = window.requestAnimationFrame(draw);
       }
 
-      animationFrameRequestRef.current = window.requestAnimationFrame(draw);
+      animationFrameRequest = window.requestAnimationFrame(draw);
     };
 
     refresh().catch(console.error);
 
     return () => {
+      cancelled = true;
       window.removeEventListener("resize", updateSize);
-      window.cancelAnimationFrame(animationFrameRequestRef.current);
+      window.cancelAnimationFrame(animationFrameRequest);
     };
   }, [props.telop, props.isRomaji]);
 
