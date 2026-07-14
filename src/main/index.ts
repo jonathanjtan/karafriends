@@ -81,6 +81,10 @@ function createWindow() {
     fullscreen: !isDev,
     webPreferences: {
       allowRunningInsecureContent: false,
+      // An occluded/hidden window freezes requestAnimationFrame, which
+      // strands BGM volume fades mid-flight (audio keeps playing at volume 0
+      // and the fade-aware watchdog waits on the frozen fade forever).
+      backgroundThrottling: false,
       contextIsolation: true,
       nodeIntegration: false,
       nodeIntegrationInSubFrames: false,

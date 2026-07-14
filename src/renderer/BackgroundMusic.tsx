@@ -203,31 +203,71 @@ export default function BackgroundMusic({
   // the swap) can strand the element paused — or playing but stuck at
   // volume 0 — while the intent says "playing". Converge on the intent
   // instead of trusting every path.
+  //
+  // It also has to handle loads that fail outright or hang: at launch the
+  // dev static server can 404 (or serve a half-copied file) for a beat while
+  // parcel watch's initial build re-copies static/bgm, leaving the element
+  // "playing" (paused === false, play fired) but errored or making no
+  // progress — permanently silent, because a MediaError makes every later
+  // play() reject until load() resets the element. Track currentTime across
+  // ticks and reload when it freezes or an error is set.
   useEffect(() => {
     if (!shouldPlay) return;
+    let lastTime = -1;
+    let frozenTicks = 0;
+    const reload = (audio: HTMLAudioElement) => {
+      frozenTicks = 0;
+      lastTime = -1;
+      audio.load();
+      audio.volume = 0;
+      audio.play().catch((e) => console.warn("BGM reload play failed", e));
+      fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+    };
     const watchdog = setInterval(() => {
       const audio = audioRef.current;
-      if (!audio || fadeRaf.current !== null) return;
+      if (!audio) return;
+      if (audio.error) {
+        // Leave a couple seconds between retries so a dev-server rebuild
+        // window isn't hammered.
+        frozenTicks += 1;
+        if (frozenTicks >= 2) reload(audio);
+        return;
+      }
+      if (fadeRaf.current !== null) return;
       if (audio.paused) {
+        frozenTicks = 0;
         audio.volume = 0;
         audio.play().catch((e) => console.warn("BGM watchdog play failed", e));
         fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
-      } else if (
-        volumeRef.current > 0 &&
-        audio.volume < volumeRef.current - 0.01 &&
-        !shuffleTransitionArmed.current
-      ) {
-        // Playing inaudibly with no fade in progress and not mid end-of-track
-        // shuffle fade — e.g. a fade-out to 0 that never got a matching
-        // fade back in. Restore the volume so BGM isn't silently "playing".
-        fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+      } else if (audio.currentTime === lastTime) {
+        // Not paused, no error, but no progress either — a fetch that never
+        // delivered data or stalled mid-stream. Reload after a few frozen
+        // ticks (a healthy element always advances between 1s ticks).
+        frozenTicks += 1;
+        if (frozenTicks >= 3) reload(audio);
+      } else {
+        frozenTicks = 0;
+        if (
+          volumeRef.current > 0 &&
+          audio.volume < volumeRef.current - 0.01 &&
+          !shuffleTransitionArmed.current
+        ) {
+          // Playing inaudibly with no fade in progress and not mid
+          // end-of-track shuffle fade — e.g. a fade-out to 0 that never got
+          // a matching fade back in. Restore the volume so BGM isn't
+          // silently "playing".
+          fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
+        }
       }
+      lastTime = audio.currentTime;
     }, 1000);
     return () => clearInterval(watchdog);
   }, [mountedFilename, shouldPlay]);
 
-  // "Now Playing" is driven by the element's real play/pause events, not by
+  // "Now Playing" is driven by the element's real playback events, not by
   // intent — if playback silently fails, the label must not claim otherwise.
+  // Note it keys off `playing` (data is actually being rendered), not `play`
+  // (which fires on the mere request, even for a src that 404s or stalls).
   const [isAudible, setIsAudible] = useState(false);
 
   // A remounted element starts paused, but the outgoing element never fires
@@ -256,8 +296,11 @@ export default function BackgroundMusic({
       ref={audioRef}
       src={`${BGM_DIR}${mountedFilename}`}
       loop={!isShuffling}
-      onPlay={() => setIsAudible(true)}
+      onPlaying={() => setIsAudible(true)}
       onPause={() => setIsAudible(false)}
+      onWaiting={() => setIsAudible(false)}
+      onEmptied={() => setIsAudible(false)}
+      onError={() => setIsAudible(false)}
       onTimeUpdate={isShuffling ? onShuffleTimeUpdate : undefined}
       onEnded={isShuffling ? onShuffleEnded : undefined}
     />

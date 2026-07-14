@@ -37,6 +37,12 @@ const CONTENT_TYPES = {
   ".otf": "font/otf",
   ".wasm": "application/wasm",
   ".bin": "application/octet-stream",
+  ".webm": "video/webm",
+  ".mp4": "video/mp4",
+  ".mp3": "audio/mpeg",
+  ".ogg": "audio/ogg",
+  ".opus": "audio/opus",
+  ".wav": "audio/wav",
 };
 
 function resolveWithinRoot(urlPath) {
