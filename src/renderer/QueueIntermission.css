@@ -183,6 +183,21 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
   font-weight: bold;
 }
 
+/* Miniature version of the Up Next portrait, sized to the row height. */
+.queueIntermissionUpcomingPortrait {
+  flex: none;
+  width: 4.6vh;
+  height: 4.6vh;
+  box-sizing: border-box;
+  border: 0.7vh solid transparent;
+  border-image: url("../common/images/pmd-frame.png") 8 stretch;
+  image-rendering: pixelated;
+}
+
+.queueIntermissionUpcomingPortraitFemale {
+  border-image-source: url("../common/images/pmd-frame-female.png");
+}
+
 .queueIntermissionUpcomingSong {
   /* Without this a flex item won't shrink below its (nowrap) content width,
      so a long song name overflows the row instead of eliding — pushing the

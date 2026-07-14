@@ -130,6 +130,17 @@ export default function QueueIntermission(props: {
               className="queueIntermissionUpcomingItem"
             >
               <span className="queueIntermissionUpcomingIndex">{i + 1}</span>
+              {item.userIdentity?.profilePictureUrl ? (
+                <img
+                  className={`queueIntermissionUpcomingPortrait${
+                    item.userIdentity?.profilePictureFrame === "female"
+                      ? " queueIntermissionUpcomingPortraitFemale"
+                      : ""
+                  }`}
+                  src={item.userIdentity.profilePictureUrl}
+                  alt=""
+                />
+              ) : null}
               <span className="queueIntermissionUpcomingSong">
                 {item.name} - {item.artistName}{" "}
                 {nicknameBadge(item.userIdentity?.nickname || "")}
