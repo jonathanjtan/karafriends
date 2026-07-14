@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import { HashRouter, Route, Routes } from "react-router";
 
 import ControlBar from "./components/ControlBar";
@@ -23,6 +23,24 @@ import * as styles from "./App.module.scss";
 import useQueueNotifications from "./hooks/useQueueNotifications";
 
 const App = () => {
+  // Captured before useUserIdentity's effect prompts for (and stores) a
+  // nickname, so it still reflects whether this device is joining fresh.
+  const isNewDevice = useRef(
+    (localStorage.getItem("nickname") || "").length === 0,
+  );
+
+  // Send first-time devices to the profile page so they can pick an avatar
+  // (the QR code lands them on the home page otherwise). Don't clobber deep
+  // links — only redirect when they're landing on the home page. Declared
+  // before useUserIdentity so the redirect isn't held up by its nickname
+  // prompt (effects flush in hook declaration order).
+  useEffect(() => {
+    const route = window.location.hash.slice(1);
+    if (isNewDevice.current && (route === "" || route === "/")) {
+      window.location.hash = "#/profile";
+    }
+  }, []);
+
   const { deviceId } = useUserIdentity(true);
   useQueueNotifications(deviceId);
 
