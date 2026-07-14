@@ -1,6 +1,9 @@
 .navBar {
   width: 100vw;
   height: 48px;
+  // The header is now a shrinkable flex column (to cap the settings panel
+  // above the footer) — the nav bar itself must never be squashed.
+  flex-shrink: 0;
   padding: 0 12px;
   background-color: #1cb3ff;
   // Equal-width side columns keep the app icon truly centered even though
