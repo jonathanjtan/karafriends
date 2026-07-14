@@ -51,6 +51,8 @@ import memoizeWithFailureEviction from "./memoizeWithFailureEviction";
 import {
   getDamRanking,
   getJoysoundRanking,
+  RankingCategory,
+  RankingPeriod,
   RankingSongEntry,
 } from "./rankings";
 
@@ -1404,10 +1406,14 @@ const resolvers = {
     },
     joysoundRanking: (
       _: any,
-      __: any,
+      args: { category: RankingCategory; period: RankingPeriod },
       { dataSources }: IDataSources,
-    ): Promise<RankingSongEntry[]> => getJoysoundRanking(dataSources.joysound),
-    damRanking: (): Promise<RankingSongEntry[]> => getDamRanking(),
+    ): Promise<RankingSongEntry[]> =>
+      getJoysoundRanking(dataSources.joysound, args.category, args.period),
+    damRanking: (
+      _: any,
+      args: { category: RankingCategory; period: RankingPeriod },
+    ): Promise<RankingSongEntry[]> => getDamRanking(args.category, args.period),
     joysoundSongDetail: (
       _: any,
       args: { id: string },

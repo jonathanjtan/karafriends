@@ -19,9 +19,61 @@ export interface RankingSongEntry {
   readonly artistName: string;
 }
 
-const JOYSOUND_RANKING_URL =
-  "https://www.joysound.com/web/karaoke/ranking/all/weekly";
-const DAM_RANKING_URL = "https://www.clubdam.com/ranking/";
+// Mirrors the RankingCategory / RankingPeriod GraphQL enums. Both services
+// publish 100-entry weekly and monthly charts for the same five categories
+// (neither archives past months — "monthly" is the current rolling month).
+export type RankingCategory =
+  | "OVERALL"
+  | "ANIME"
+  | "VOCALOID"
+  | "ENKA"
+  | "WESTERN";
+export type RankingPeriod = "WEEKLY" | "MONTHLY";
+
+const JOYSOUND_CATEGORY_PATHS: { [category in RankingCategory]: string } = {
+  OVERALL: "all",
+  ANIME: "anime",
+  VOCALOID: "vocaloid",
+  ENKA: "enka",
+  WESTERN: "foreign",
+};
+
+// DAM's overall chart lives on /ranking/ with differently-named section ids
+// than the per-genre pages (weekly-ranking vs ranking-weekly — really).
+const DAM_GENRE_PATHS: {
+  [category in Exclude<RankingCategory, "OVERALL">]: string;
+} = {
+  ANIME: "anison",
+  VOCALOID: "vocaloid",
+  ENKA: "enka",
+  WESTERN: "foreign",
+};
+
+function joysoundRankingUrl(
+  category: RankingCategory,
+  period: RankingPeriod,
+): string {
+  return `https://www.joysound.com/web/karaoke/ranking/${
+    JOYSOUND_CATEGORY_PATHS[category]
+  }/${period.toLowerCase()}`;
+}
+
+function damRankingSource(
+  category: RankingCategory,
+  period: RankingPeriod,
+): { url: string; sectionId: string } {
+  if (category === "OVERALL") {
+    return {
+      url: "https://www.clubdam.com/ranking/",
+      sectionId: period === "WEEKLY" ? "weekly-ranking" : "monthly-ranking",
+    };
+  }
+
+  return {
+    url: `https://www.clubdam.com/genre/${DAM_GENRE_PATHS[category]}/`,
+    sectionId: period === "WEEKLY" ? "ranking-weekly" : "ranking-monthly",
+  };
+}
 
 // Rankings only change weekly; an hour keeps repeat page visits free while
 // still picking up the weekly rollover within the same karaoke session.
@@ -130,22 +182,31 @@ function parseJoysoundRanking(html: string): JoysoundChartEntry[] {
   return entries;
 }
 
-// clubdam.com/ranking/ carries daily/weekly/monthly top-100 sections in one
-// page; each weekly <li> holds a songleaf link (requestNo — the same id
-// dkwebsys search results use), an <h4 class="p-song__title"> and a
-// <div class="p-song__artist">.
-function parseDamRanking(html: string): RankingSongEntry[] {
-  const weeklySection = html
-    .split('id="weekly-ranking"')[1]
-    ?.split('id="ranking-monthly"')[0];
+// clubdam.com pages carry several top-100 sections in one page (the overall
+// /ranking/ page has daily/weekly/monthly, genre pages weekly/monthly with a
+// teaser + full-list copy of the same chart); each entry <li> holds a
+// songleaf link (requestNo — the same id dkwebsys search results use), an
+// <h4 class="p-song__title"> and a <div class="p-song__artist">. Slice from
+// the wanted section id to the next section container and dedupe repeats.
+function parseDamRanking(html: string, sectionId: string): RankingSongEntry[] {
+  const afterSection = html.split(`id="${sectionId}"`)[1];
+  if (!afterSection) return [];
 
-  if (!weeklySection) return [];
+  const nextSectionStart = afterSection.indexOf('class="c-section"');
+  const section =
+    nextSectionStart === -1
+      ? afterSection
+      : afterSection.slice(0, nextSectionStart);
 
   const entries: RankingSongEntry[] = [];
+  const seen = new Set<string>();
 
-  for (const li of weeklySection.matchAll(
+  for (const li of section.matchAll(
     /songleaf\.html\?requestNo=([0-9-]+)"[\s\S]*?p-song__title">([^<]*)<[\s\S]*?p-song__artist">([^<]*)</g,
   )) {
+    if (seen.has(li[1])) continue;
+    seen.add(li[1]);
+
     entries.push({
       rank: entries.length + 1,
       id: li[1],
@@ -262,36 +323,41 @@ async function resolveJoysoundEntry(
   }
 }
 
-// TTL-cached fetch with failure eviction: a successful scrape is reused for
-// the TTL, but a rejected one is dropped immediately so the next page visit
-// retries instead of serving a stuck error until relaunch.
-function cachedRanking<Args extends unknown[]>(
-  fetchRanking: (...args: Args) => Promise<RankingSongEntry[]>,
-): (...args: Args) => Promise<RankingSongEntry[]> {
-  let cached: {
-    fetchedAt: number;
-    promise: Promise<RankingSongEntry[]>;
-  } | null = null;
+// TTL-cached fetch per (service, category, period) with failure eviction: a
+// successful scrape is reused for the TTL, but a rejected one is dropped
+// immediately so the next page visit retries instead of serving a stuck
+// error until relaunch.
+const rankingCache = new Map<
+  string,
+  { fetchedAt: number; promise: Promise<RankingSongEntry[]> }
+>();
 
-  return (...args: Args) => {
-    if (cached && Date.now() - cached.fetchedAt < RANKING_CACHE_TTL_MS) {
-      return cached.promise;
-    }
+function withRankingCache(
+  key: string,
+  fetchRanking: () => Promise<RankingSongEntry[]>,
+): Promise<RankingSongEntry[]> {
+  const cached = rankingCache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < RANKING_CACHE_TTL_MS) {
+    return cached.promise;
+  }
 
-    const promise = fetchRanking(...args).catch((error) => {
-      cached = null;
-      throw error;
-    });
-    cached = { fetchedAt: Date.now(), promise };
+  const promise = fetchRanking().catch((error) => {
+    rankingCache.delete(key);
+    throw error;
+  });
+  rankingCache.set(key, { fetchedAt: Date.now(), promise });
 
-    return promise;
-  };
+  return promise;
 }
 
-export const getJoysoundRanking = cachedRanking(
-  async (joysoundApi: JoysoundAPI) => {
+export function getJoysoundRanking(
+  joysoundApi: JoysoundAPI,
+  category: RankingCategory,
+  period: RankingPeriod,
+): Promise<RankingSongEntry[]> {
+  return withRankingCache(`joysound:${category}:${period}`, async () => {
     const chart = parseJoysoundRanking(
-      await fetchPage(JOYSOUND_RANKING_URL),
+      await fetchPage(joysoundRankingUrl(category, period)),
     ).slice(0, 100);
 
     // An empty parse means the page layout changed, not an empty chart —
@@ -317,15 +383,21 @@ export const getJoysoundRanking = cachedRanking(
     }
 
     return entries.map(({ searchFailed, ...entry }) => entry);
-  },
-);
+  });
+}
 
-export const getDamRanking = cachedRanking(async () => {
-  const entries = parseDamRanking(await fetchPage(DAM_RANKING_URL));
+export function getDamRanking(
+  category: RankingCategory,
+  period: RankingPeriod,
+): Promise<RankingSongEntry[]> {
+  return withRankingCache(`dam:${category}:${period}`, async () => {
+    const { url, sectionId } = damRankingSource(category, period);
+    const entries = parseDamRanking(await fetchPage(url), sectionId);
 
-  if (entries.length === 0) {
-    throw new Error("Failed to parse any songs out of the DAM ranking");
-  }
+    if (entries.length === 0) {
+      throw new Error("Failed to parse any songs out of the DAM ranking");
+    }
 
-  return entries.slice(0, 100);
-});
+    return entries.slice(0, 100);
+  });
+}
