@@ -14,28 +14,38 @@
   background: linear-gradient(160deg, #101020 0%, #1a1a35 60%, #101020 100%);
   color: white;
   /* Keep durations in sync with QUEUE_INTERMISSION_FADE_MS in Player.tsx. */
-  animation: queueIntermissionFadeIn 500ms ease-out both;
+  animation: queueIntermissionFadeIn 3000ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .queueIntermissionHiding {
-  animation: queueIntermissionFadeOut 500ms ease-in both;
+  animation: queueIntermissionFadeOut 3000ms cubic-bezier(0.7, 0, 0.84, 0) both;
 }
 
+/* A slow, cinematic dissolve: the screen drifts in from a slight zoom with a
+   blur that resolves as it lands, and melts away the same way in reverse. */
 @keyframes queueIntermissionFadeIn {
   from {
     opacity: 0;
+    transform: scale(1.08);
+    filter: blur(2vh);
   }
   to {
     opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
   }
 }
 
 @keyframes queueIntermissionFadeOut {
   from {
     opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
   }
   to {
     opacity: 0;
+    transform: scale(1.08);
+    filter: blur(2vh);
   }
 }
 
