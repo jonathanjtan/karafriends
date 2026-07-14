@@ -48,6 +48,11 @@ import { DkwebsysAPI, MinseiAPI, MinseiCredentialsProvider } from "./damApi";
 import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
 import { getJoysoundScoringData } from "./joysoundMelody";
 import memoizeWithFailureEviction from "./memoizeWithFailureEviction";
+import {
+  getDamRanking,
+  getJoysoundRanking,
+  RankingSongEntry,
+} from "./rankings";
 
 import { memoize } from "lodash";
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
@@ -1243,6 +1248,13 @@ const resolvers = {
     ...nameYomiResolvers,
   },
 
+  // Ranking entries come off the public chart pages with no reading data, so
+  // yomi falls back to the reading cache / kuromoji guess like JOYSOUND
+  // search results do.
+  RankingSong: {
+    ...nameYomiResolvers,
+  },
+
   Song: {
     id(parent: SongParent) {
       return parent.id;
@@ -1390,6 +1402,12 @@ const resolvers = {
     adhocLyrics(_: any, args: { id: string }): string[] {
       return db.idToAdhocLyrics[args.id];
     },
+    joysoundRanking: (
+      _: any,
+      __: any,
+      { dataSources }: IDataSources,
+    ): Promise<RankingSongEntry[]> => getJoysoundRanking(dataSources.joysound),
+    damRanking: (): Promise<RankingSongEntry[]> => getDamRanking(),
     joysoundSongDetail: (
       _: any,
       args: { id: string },

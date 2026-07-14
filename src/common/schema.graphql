@@ -55,6 +55,11 @@ type Query {
   sidebarCollapsed: Boolean!
   songById(id: String!): Song!
   songsByName(name: String, first: Int, after: String): SongConnection!
+  # JOYSOUND's public weekly Top 100 karaoke chart (joysound.com), with ids
+  # mapped back to the catalog so entries open like search results.
+  joysoundRanking: [RankingSong!]!
+  # DAM's public weekly Top 100 karaoke chart (clubdam.com), same deal.
+  damRanking: [RankingSong!]!
   songHistory(first: Int, after: String): SongHistoryConnection!
   suggestedYoutubeVideos(songId: String!): SuggestedYoutubeVideosResult!
   videoDownloadProgress(
@@ -233,6 +238,20 @@ type JoysoundSong {
   artistNameYomi: String!
   lyricsPreview: String
   tieUp: String
+}
+
+# One entry of a service's public Top 100 karaoke chart. `id` is the
+# service's catalog id (JOYSOUND selSongNo / DAM requestNo), so it plugs
+# straight into the existing song pages and queue mutations. Null when the
+# charted song isn't in the singable catalog (JOYSOUND's public chart lists
+# songs sound-cafe.jp doesn't carry).
+type RankingSong {
+  rank: Int!
+  id: ID
+  name: String!
+  nameYomi: String!
+  artistName: String!
+  artistNameYomi: String!
 }
 
 type Emote {
