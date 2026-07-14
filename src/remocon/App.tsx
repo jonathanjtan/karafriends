@@ -84,8 +84,14 @@ const App = () => {
               path="/search/joysoundArtist/:query?"
               element={<JoysoundArtistSearchPage />}
             />
-            <Route path="/ranking/joysound" element={<JoysoundRankingPage />} />
-            <Route path="/ranking/dam" element={<DamRankingPage />} />
+            <Route
+              path="/ranking/joysound/:category?/:period?"
+              element={<JoysoundRankingPage />}
+            />
+            <Route
+              path="/ranking/dam/:category?/:period?"
+              element={<DamRankingPage />}
+            />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/" element={<HomePage />} />
