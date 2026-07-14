@@ -196,8 +196,11 @@ function createTextureFromImage(
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  // LINEAR, not NEAREST: lyrics quads are drawn below 1:1 scale when the
+  // piano roll compresses the rows, and NEAREST minification aliases the
+  // glyph outlines into crunchy stairsteps.
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
@@ -801,33 +804,40 @@ const LYRICS_BLOCK_DESCENT =
 // Keeps lyrics rows from hiding behind the piano roll: while the roll is on
 // screen, the whole set of rows is centered vertically in the space between
 // the roll's bottom edge and the bottom of the screen (so lyrics don't hug
-// the bottom of the screen as the roll grows), compressing their spacing
-// only when that space can't fit the original span. With no piano roll on
-// screen (clearance 0) this is an exact no-op.
+// the bottom of the screen as the roll grows). When that space can't fit the
+// original layout, the returned scale shrinks the row spacing AND the drawn
+// block size by the same factor — compressing spacing alone let a squeezed
+// row's furigana overlap the main text of the row above it at piano roll
+// sizes M/L. With no piano roll on screen (clearance 0) this is an exact
+// no-op.
 function remapLyricsYPos(
   yPos: number,
   minYPos: number,
   maxYPos: number,
   pianoRollClearance: number,
-): number {
+): { yPos: number; scale: number } {
   if (pianoRollClearance <= 0) {
-    return yPos;
+    return { yPos, scale: 1 };
   }
 
-  const minAllowedYPos = pianoRollClearance + LYRICS_BLOCK_ASCENT;
-  const maxAllowedYPos = SCREEN_HEIGHT - LYRICS_BLOCK_DESCENT;
+  // scale satisfies: scaled span + scaled ascent + scaled descent fits in
+  // the space below the roll, so blocks shrink in lockstep with spacing.
   const scale = Math.max(
-    maxYPos > minYPos
-      ? Math.min(1, (maxAllowedYPos - minAllowedYPos) / (maxYPos - minYPos))
-      : 1,
     0,
+    Math.min(
+      1,
+      (SCREEN_HEIGHT - pianoRollClearance) /
+        (maxYPos - minYPos + LYRICS_BLOCK_ASCENT + LYRICS_BLOCK_DESCENT),
+    ),
   );
+  const minAllowedYPos = pianoRollClearance + LYRICS_BLOCK_ASCENT * scale;
+  const maxAllowedYPos = SCREEN_HEIGHT - LYRICS_BLOCK_DESCENT * scale;
   const spanHeight = (maxYPos - minYPos) * scale;
   const centeredMinYPos =
     minAllowedYPos +
     Math.max(0, (maxAllowedYPos - minAllowedYPos - spanHeight) / 2);
 
-  return centeredMinYPos + (yPos - minYPos) * scale;
+  return { yPos: centeredMinYPos + (yPos - minYPos) * scale, scale };
 }
 
 function drawLyricsBlock(
@@ -838,12 +848,9 @@ function drawLyricsBlock(
   index: number,
   refreshTime: number,
   yPos: number,
+  scale: number,
 ) {
   const scrollXPos = Math.floor(getScrollXPos(lyricsBlock, refreshTime));
-
-  const scrollArray = new Float32Array(
-    Array(6).fill(scrollXPos * EXPAND_RATE_X),
-  );
 
   const currX = lyricsBlock.xPos;
   const currY = yPos - (RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2) - 8;
@@ -851,11 +858,21 @@ function drawLyricsBlock(
   const rectWidth = getLyricsBlockWidth(lyricsBlock);
   const rectHeight = getLyricsBlockHeight(lyricsBlock);
 
+  // Shrink the block around its own center-x / yPos when remapLyricsYPos
+  // compressed the rows, keeping the wipe boundary (scroll) in the same
+  // transformed space as the quad so highlight timing stays glyph-accurate.
+  const anchorX = currX + rectWidth / 2 - TEXT_PADDING;
+  const toScreenX = (x: number) =>
+    (anchorX + (x - anchorX) * scale) * EXPAND_RATE_X;
+  const toScreenY = (y: number) => (yPos + (y - yPos) * scale) * EXPAND_RATE_Y;
+
+  const scrollArray = new Float32Array(Array(6).fill(toScreenX(scrollXPos)));
+
   const positions = quadToTriangles(
-    (currX - TEXT_PADDING) * EXPAND_RATE_X,
-    (currY - TEXT_PADDING) * EXPAND_RATE_Y,
-    (currX + rectWidth - TEXT_PADDING) * EXPAND_RATE_X,
-    (currY + rectHeight - TEXT_PADDING) * EXPAND_RATE_Y,
+    toScreenX(currX - TEXT_PADDING),
+    toScreenY(currY - TEXT_PADDING),
+    toScreenX(currX + rectWidth - TEXT_PADDING),
+    toScreenY(currY + rectHeight - TEXT_PADDING),
   );
 
   if (scrollXPos <= currX + rectWidth) {
@@ -1099,6 +1116,13 @@ export default function JoysoundRenderer(props: {
             refreshTime >= lyricsBlock.fadeinTime &&
             refreshTime < lyricsBlock.fadeoutTime
           ) {
+            const { yPos: remappedYPos, scale: lyricsScale } = remapLyricsYPos(
+              lyricsBlock.yPos,
+              minLyricYPos,
+              maxLyricYPos,
+              pianoRollClearanceRef.current,
+            );
+
             drawLyricsBlock(
               gl,
               glBuffers,
@@ -1106,12 +1130,8 @@ export default function JoysoundRenderer(props: {
               lyricsBlockTextures,
               i,
               refreshTime,
-              remapLyricsYPos(
-                lyricsBlock.yPos,
-                minLyricYPos,
-                maxLyricYPos,
-                pianoRollClearanceRef.current,
-              ),
+              remappedYPos,
+              lyricsScale,
             );
           }
         }
