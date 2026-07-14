@@ -17,10 +17,7 @@ import {
   RUBY_FONT_STROKE,
 } from "../common/constants";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
-import {
-  adjustBreaksForLyrics,
-  InstrumentalBreak,
-} from "../common/scoringData";
+import { InstrumentalBreak } from "../common/scoringData";
 
 // XXX: These should be in their own file
 
@@ -94,8 +91,12 @@ const ROMAJI_FONT_STROKE = 2;
 
 const BREAK_FONT_SIZE = 32;
 const BREAK_FONT_STROKE = 3;
-// Bottom-of-screen subtitle position, matching where JOYSOUND itself shows
-// the "（間奏　約N秒）" notice.
+// Where the "（間奏　約N秒）" notice goes when the piano roll is hidden:
+// JOYSOUND's own bottom-of-screen subtitle position. With the roll visible
+// the notice is instead centered in the (ducked) roll's band, the one region
+// remapLyricsYPos guarantees lyrics never occupy — backing vocals can keep
+// singing through a guide-melody gap, and the bottom position collided with
+// their telop.
 const BREAK_Y_FRACTION = 0.82;
 // The notice pops in a beat after the break starts and doesn't need to
 // stay up for the whole break; the piano roll stays ducked regardless.
@@ -446,16 +447,11 @@ function createBreakTexture(
       EXPAND_RATE_X -
     BREAK_FONT_STROKE -
     TEXT_PADDING;
-  const yPos = SCREEN_HEIGHT * BREAK_Y_FRACTION;
 
-  drawTextToCanvas(
-    textCtx,
-    BREAK_FONT_SIZE,
-    BREAK_FONT_STROKE,
-    xPos,
-    yPos,
-    text,
-  );
+  // Baked at yPos 0; the draw call shifts the quad to the live vertical
+  // position (the piano roll band's center, which tracks the synced
+  // pianoRollSize mid-song, or the bottom fallback).
+  drawTextToCanvas(textCtx, BREAK_FONT_SIZE, BREAK_FONT_STROKE, xPos, 0, text);
 
   const result = createTextureFromImage(gl, textCtx.canvas);
 
@@ -739,18 +735,21 @@ function getScrollXPos(
   return lyricsBlock.xPos + xOff;
 }
 
+// yOffset (in canvas pixels) shifts the whole texture down, letting content
+// baked at yPos 0 be positioned at draw time (see createBreakTexture).
 function drawTitle(
   gl: WebGL2RenderingContext,
   glBuffers: JoysoundDisplayBuffers,
   titleTexture: WebGLTexture,
+  yOffset: number = 0,
 ): void {
   const scrollArray = new Float32Array(Array(6).fill(0));
 
   const positions = quadToTriangles(
     0,
-    0,
+    yOffset,
     SCREEN_WIDTH * EXPAND_RATE_X,
-    SCREEN_HEIGHT * EXPAND_RATE_Y,
+    SCREEN_HEIGHT * EXPAND_RATE_Y + yOffset,
   );
 
   drawLyricsTexture(gl, glBuffers, titleTexture, positions, scrollArray, false);
@@ -904,6 +903,19 @@ export default function JoysoundRenderer(props: {
       ? (PIANO_ROLL_TOP_FRACTION + pianoRollSize) * SCREEN_HEIGHT + 8
       : 0;
 
+  // Vertical position (telop coordinates, drawTextToCanvas semantics) for
+  // the break notice: centered in the ducked piano roll's band — the region
+  // lyrics are remapped to clear, so the notice can't overlap them — or the
+  // classic bottom-of-screen spot when there's no roll on screen.
+  const breakNoticeYPosRef = useRef(SCREEN_HEIGHT * BREAK_Y_FRACTION);
+  breakNoticeYPosRef.current =
+    props.pianoRollVisible && pianoRollSize > 0
+      ? (PIANO_ROLL_TOP_FRACTION + pianoRollSize / 2) * SCREEN_HEIGHT -
+        BREAK_FONT_SIZE / 2 -
+        BREAK_FONT_STROKE -
+        TEXT_PADDING
+      : SCREEN_HEIGHT * BREAK_Y_FRACTION;
+
   const updateSize = () => {
     const canvasElement = canvasRef.current;
     invariant(canvasElement);
@@ -976,26 +988,13 @@ export default function JoysoundRenderer(props: {
       // instance left it ducked.
       let isPianoRollDucked: boolean | null = null;
 
-      // Guide-melody gaps trimmed against the telop: backing-vocal lyrics
-      // can sing through a gap, and the break should only start once the
-      // screen is clear of them.
-      const breaks = adjustBreaksForLyrics(
-        props.breaks,
-        lyricsData
-          .filter((block) => block.fadeinTime >= 0 && block.fadeoutTime >= 0)
-          .map((block) => ({
-            startTime: block.fadeinTime / 1000,
-            endTime: block.fadeoutTime / 1000,
-          })),
-      );
-
       const titleTexture = createTitleTexture(gl, metadata, props.isRomaji);
       const lyricsBlockTextures = createLyricsBlockTextures(
         gl,
         lyricsData,
         props.isRomaji,
       );
-      const breakTextures = breaks.map((b) =>
+      const breakTextures = props.breaks.map((b) =>
         createBreakTexture(gl, b.approxDurationSecs),
       );
 
@@ -1117,20 +1116,26 @@ export default function JoysoundRenderer(props: {
           }
         }
 
-        const activeBreakIndex = breaks.findIndex(
+        const activeBreakIndex = props.breaks.findIndex(
           (b) =>
             refreshTime >= b.startTime * 1000 && refreshTime < b.endTime * 1000,
         );
 
         if (activeBreakIndex >= 0) {
           const noticeStart =
-            breaks[activeBreakIndex].startTime * 1000 + BREAK_TEXT_DELAY_MS;
+            props.breaks[activeBreakIndex].startTime * 1000 +
+            BREAK_TEXT_DELAY_MS;
 
           if (
             refreshTime >= noticeStart &&
             refreshTime < noticeStart + BREAK_TEXT_DURATION_MS
           ) {
-            drawTitle(gl, glBuffers, breakTextures[activeBreakIndex]);
+            drawTitle(
+              gl,
+              glBuffers,
+              breakTextures[activeBreakIndex],
+              breakNoticeYPosRef.current * EXPAND_RATE_Y,
+            );
           }
         }
 
@@ -1138,7 +1143,7 @@ export default function JoysoundRenderer(props: {
         // start scrolling into the piano roll's visible window
         // PIANO_ROLL_LOOKAHEAD_SECS ahead of when they're actually due, so
         // the roll should already be back by then, not still fading in.
-        const duckedBreakIndex = breaks.findIndex(
+        const duckedBreakIndex = props.breaks.findIndex(
           (b) =>
             refreshTime >= b.startTime * 1000 &&
             refreshTime < b.endTime * 1000 - PIANO_ROLL_LOOKAHEAD_SECS * 1000,
