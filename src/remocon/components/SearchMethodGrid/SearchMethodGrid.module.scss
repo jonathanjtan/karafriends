@@ -7,25 +7,41 @@ $search-method-colors: (
   niconico: #ababab,
 );
 
+// Sampled from the services' own logo assets.
+$joysound-red: #d70e18;
+$dam-red: #b80009;
+
+$banner-width: 26px;
+
 .grid {
   margin-top: 4px;
+  // Keeps the squares phone-button-sized instead of ballooning on
+  // tablet/desktop widths.
+  max-width: 560px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
 .gridItem {
-  flex-basis: calc(100%);
+  flex-basis: calc(50% - 4px);
   flex-grow: 1;
+  aspect-ratio: 1;
 
   a {
     text-decoration: none;
+    display: block;
+    height: 100%;
   }
 }
 
+.fullWidthItem {
+  flex-basis: 100%;
+  aspect-ratio: auto;
+}
+
 .button {
-  min-width: 120px;
-  height: 80px;
+  height: 100%;
   padding: 0 6px;
   border-radius: 4px;
   display: flex;
@@ -40,6 +56,94 @@ $search-method-colors: (
       color: $color;
     }
   }
+
+  // Clear the brand banner so the label doesn't slide under it.
+  &.joysoundSong,
+  &.joysoundArtist {
+    padding-left: $banner-width + 8px;
+  }
+
+  &.song,
+  &.artist {
+    padding-right: $banner-width + 8px;
+  }
+}
+
+// Thin vertical service-branding strip along one edge of the square
+// buttons, with the wordmark running along it like a book spine. Sits above
+// the watermark icon (which just crops beneath it) but below nothing else.
+.brandBanner {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: $banner-width;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+
+  img {
+    display: block;
+    width: 110px;
+    // The flex strip is far narrower than the pre-rotation logo box; don't
+    // let it shrink the image before the rotation swaps its axes.
+    min-width: 110px;
+  }
+
+  &.joysound {
+    background: $joysound-red;
+  }
+
+  &.dam {
+    background: $dam-red;
+  }
+}
+
+.brandBannerLeft {
+  left: 0;
+
+  img {
+    transform: rotate(-90deg);
+  }
+}
+
+.brandBannerRight {
+  right: 0;
+
+  img {
+    transform: rotate(90deg);
+  }
+}
+
+// Full-width service-colored "TOP 100" chart buttons.
+.rankingButton {
+  height: 64px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  box-shadow: 0 0 4px #ccc;
+
+  &.joysound {
+    background: $joysound-red;
+  }
+
+  &.dam {
+    background: $dam-red;
+  }
+}
+
+.rankingLogo {
+  display: block;
+  height: 22px;
+}
+
+.rankingText {
+  color: #fff;
+  font-size: 24px;
+  font-weight: bold;
+  letter-spacing: 1px;
 }
 
 .icon {
@@ -51,7 +155,7 @@ $search-method-colors: (
 
 .text {
   color: #333;
-  font-size: 36px;
+  font-size: 32px;
   font-weight: bold;
   z-index: 1;
   mix-blend-mode: difference;
