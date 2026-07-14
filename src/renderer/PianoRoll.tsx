@@ -458,10 +458,33 @@ export default function PianoRoll(props: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
 
+  // Fades the roll out once the guide melody is over (the outro), so the
+  // background video can be enjoyed unobstructed. Seeking back un-fades.
+  const [melodyEnded, setMelodyEnded] = useState(false);
+
   // Applied as plain CSS below; changes re-render the canvas element but
   // don't re-run the GL effect (its deps only cover props identity).
   const { pianoRollOpacity } = usePianoRollOpacity();
   const { pianoRollSize } = usePianoRollSize();
+
+  useEffect(() => {
+    const video = props.videoRef.current;
+    if (!video) return;
+
+    const { notes } = parseScoringData(props.scoringData);
+    if (notes.length === 0) return;
+
+    // Fade once the final note has scrolled fully past the left edge:
+    // a note exits the visible window CURSOR_FRACTION * TIME_WIDTH_SECS
+    // after its endTime crosses the "now" cursor.
+    const fadeOutTime =
+      notes[notes.length - 1].endTime + CURSOR_FRACTION * TIME_WIDTH_SECS;
+
+    const onTimeUpdate = () => setMelodyEnded(video.currentTime >= fadeOutTime);
+    onTimeUpdate();
+    video.addEventListener("timeupdate", onTimeUpdate);
+    return () => video.removeEventListener("timeupdate", onTimeUpdate);
+  }, [props]);
 
   useEffect(() => {
     if (!canvasRef.current || !props.videoRef.current) return;
@@ -632,11 +655,12 @@ export default function PianoRoll(props: {
       style={{
         top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
         height: `${pianoRollSize * 100}%`,
-        opacity: !props.visible
-          ? 0
-          : props.ducked
-            ? pianoRollOpacity * PIANO_ROLL_DUCK_FACTOR
-            : pianoRollOpacity,
+        opacity:
+          !props.visible || melodyEnded
+            ? 0
+            : props.ducked
+              ? pianoRollOpacity * PIANO_ROLL_DUCK_FACTOR
+              : pianoRollOpacity,
         display: pianoRollSize <= 0 ? "none" : undefined,
       }}
       ref={canvasRef}
