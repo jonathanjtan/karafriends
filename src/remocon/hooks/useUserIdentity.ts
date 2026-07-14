@@ -55,10 +55,10 @@ const useUserIdentity = (shouldPrompt?: boolean) => {
 
     if (shouldPrompt) {
       while ((localStorage.getItem(NICKNAME_STORAGE_KEY) || "").length === 0) {
-        localStorage.setItem(
-          NICKNAME_STORAGE_KEY,
-          prompt("Please set your nickname:") || "",
-        );
+        // setNickname (not a bare setItem) so already-mounted hook instances
+        // (e.g. the profile page a first-time device was redirected to, whose
+        // effects ran before this parent effect) pick up the new name.
+        setNickname(prompt("Please set your nickname:") || "");
       }
     }
 
