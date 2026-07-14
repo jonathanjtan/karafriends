@@ -11,22 +11,27 @@ $search-method-colors: (
 $joysound-red: #d70e18;
 $dam-red: #b80009;
 
-$banner-width: 26px;
+$banner-width: 30px;
 
 .grid {
-  margin-top: 4px;
-  // Keeps the squares phone-button-sized instead of ballooning on
-  // tablet/desktop widths.
+  // Keeps the squares phone-button-sized and centered instead of ballooning
+  // on tablet/desktop widths.
   max-width: 560px;
+  margin: 4px auto 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
 }
 
-.gridItem {
-  flex-basis: calc(50% - 4px);
-  flex-grow: 1;
-  aspect-ratio: 1;
+// One service's block: a thin vertical brand banner down the left spanning
+// both rows, Title/Artist squares in row 1, the TOP 100 rectangle (same
+// height as the squares) across row 2. The invisible rankingRowSizer square
+// is what stretches row 2 to the squares' height — the TOP 100 button
+// itself has no intrinsic height.
+.serviceSection {
+  display: grid;
+  grid-template-columns: $banner-width 1fr 1fr;
+  gap: 8px;
 
   a {
     text-decoration: none;
@@ -35,9 +40,51 @@ $banner-width: 26px;
   }
 }
 
-.fullWidthItem {
-  flex-basis: 100%;
-  aspect-ratio: auto;
+.serviceBanner {
+  grid-row: 1 / 3;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 0 4px #ccc;
+
+  img {
+    display: block;
+    width: 150px;
+    // The flex strip is far narrower than the pre-rotation logo box; don't
+    // let it shrink the image before the rotation swaps its axes.
+    min-width: 150px;
+    transform: rotate(-90deg);
+  }
+
+  &.joysound {
+    background: $joysound-red;
+  }
+
+  &.dam {
+    background: $dam-red;
+
+    img {
+      width: 126px;
+      min-width: 126px;
+    }
+  }
+}
+
+.gridItem {
+  aspect-ratio: 1;
+}
+
+.rankingRowSizer {
+  grid-column: 2;
+  grid-row: 2;
+  aspect-ratio: 1;
+}
+
+.rankingItem {
+  grid-column: 2 / 4;
+  grid-row: 2;
 }
 
 .button {
@@ -56,70 +103,14 @@ $banner-width: 26px;
       color: $color;
     }
   }
-
-  // Clear the brand banner so the label doesn't slide under it.
-  &.joysoundSong,
-  &.joysoundArtist {
-    padding-left: $banner-width + 8px;
-  }
-
-  &.song,
-  &.artist {
-    padding-right: $banner-width + 8px;
-  }
 }
 
-// Thin vertical service-branding strip along one edge of the square
-// buttons, with the wordmark running along it like a book spine. Sits above
-// the watermark icon (which just crops beneath it) but below nothing else.
-.brandBanner {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: $banner-width;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-
-  img {
-    display: block;
-    width: 110px;
-    // The flex strip is far narrower than the pre-rotation logo box; don't
-    // let it shrink the image before the rotation swaps its axes.
-    min-width: 110px;
-  }
-
-  &.joysound {
-    background: $joysound-red;
-  }
-
-  &.dam {
-    background: $dam-red;
-  }
-}
-
-.brandBannerLeft {
-  left: 0;
-
-  img {
-    transform: rotate(-90deg);
-  }
-}
-
-.brandBannerRight {
-  right: 0;
-
-  img {
-    transform: rotate(90deg);
-  }
-}
-
-// Full-width service-colored "TOP 100" chart buttons.
+// Big brand-red TOP 100 tile: wordmark stacked over the label, centered.
 .rankingButton {
-  height: 64px;
+  height: 100%;
   border-radius: 4px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 12px;
@@ -136,14 +127,14 @@ $banner-width: 26px;
 
 .rankingLogo {
   display: block;
-  height: 22px;
+  height: 30px;
 }
 
 .rankingText {
   color: #fff;
-  font-size: 24px;
+  font-size: 28px;
   font-weight: bold;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
 }
 
 .icon {

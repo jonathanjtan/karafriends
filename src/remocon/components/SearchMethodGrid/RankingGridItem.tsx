@@ -18,7 +18,7 @@ interface Props {
 }
 
 const RankingGridItem = ({ service }: Props) => (
-  <div className={classnames(styles.gridItem, styles.fullWidthItem)}>
+  <div className={styles.rankingItem}>
     <Link to={`/ranking/${service}`}>
       <div className={classnames(styles.rankingButton, styles[service])}>
         <img

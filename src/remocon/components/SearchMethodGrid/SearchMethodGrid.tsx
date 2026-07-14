@@ -1,21 +1,45 @@
+import classnames from "classnames";
 import React from "react";
 
+// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
+import damLogo from "url:../../images/dam-logo.png";
+// tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
+import joysoundLogo from "url:../../images/joysound-logo.svg";
 import RankingGridItem from "./RankingGridItem";
 import * as styles from "./SearchMethodGrid.module.scss";
 import SearchMethodGridItem from "./SearchMethodGridItem";
 
+// Each service gets a thin vertical brand banner running down the left of
+// its section, spanning both the Title/Artist row and the TOP 100 row. The
+// YouTube/Niconico section has no banner — an empty spacer keeps its squares
+// on the same columns.
 const SearchMethodGrid = () => (
   <div>
     <h2>Find a song</h2>
     <div className={styles.grid}>
-      <SearchMethodGridItem method="joysoundSong" text="Title" />
-      <SearchMethodGridItem method="joysoundArtist" text="Artist" />
-      <RankingGridItem service="joysound" />
-      <SearchMethodGridItem method="song" text="Title" />
-      <SearchMethodGridItem method="artist" text="Artist" />
-      <RankingGridItem service="dam" />
-      <SearchMethodGridItem method="youtube" text="YouTube" />
-      <SearchMethodGridItem method="niconico" text="Niconico" />
+      <div className={styles.serviceSection}>
+        <div className={classnames(styles.serviceBanner, styles.joysound)}>
+          <img src={joysoundLogo} alt="JOYSOUND" />
+        </div>
+        <SearchMethodGridItem method="joysoundSong" text="Title" />
+        <SearchMethodGridItem method="joysoundArtist" text="Artist" />
+        <div className={styles.rankingRowSizer} aria-hidden="true" />
+        <RankingGridItem service="joysound" />
+      </div>
+      <div className={styles.serviceSection}>
+        <div className={classnames(styles.serviceBanner, styles.dam)}>
+          <img src={damLogo} alt="DAM" />
+        </div>
+        <SearchMethodGridItem method="song" text="Title" />
+        <SearchMethodGridItem method="artist" text="Artist" />
+        <div className={styles.rankingRowSizer} aria-hidden="true" />
+        <RankingGridItem service="dam" />
+      </div>
+      <div className={styles.serviceSection}>
+        <div aria-hidden="true" />
+        <SearchMethodGridItem method="youtube" text="YouTube" />
+        <SearchMethodGridItem method="niconico" text="Niconico" />
+      </div>
     </div>
   </div>
 );
