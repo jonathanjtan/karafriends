@@ -1,7 +1,6 @@
 .panel {
   background-color: #fff;
   color: #1cb3ff;
-  animation: slideDown 0.15s ease-out;
   // The panel is a flex child of the app header, which shrinks it to fit
   // above the footer (see App.module.scss); the body scrolls the overflow.
   // The bottom margin keeps a visible sliver of gap above the queue bar.
@@ -180,15 +179,4 @@
 .disabled {
   pointer-events: none;
   opacity: 0.5;
-}
-
-@keyframes slideDown {
-  from {
-    transform: translateY(-8px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
 }

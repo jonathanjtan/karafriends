@@ -1,8 +1,6 @@
 .navBar {
   width: 100vw;
   height: 48px;
-  // The header is now a shrinkable flex column (to cap the settings panel
-  // above the footer) — the nav bar itself must never be squashed.
   flex-shrink: 0;
   padding: 0 12px;
   background-color: #1cb3ff;
@@ -52,6 +50,19 @@
 
 .avatarFemale {
   border-image-source: url("../../../common/images/pmd-frame-female.png");
+}
+
+// The settings panel is an overlay drawer sliding down from under the nav
+// bar — fixed positioning keeps it from pushing the page content, and the
+// max-height caps it above the collapsed queue bar (48px + a small gap); the
+// panel body scrolls the overflow.
+.settingsDrawer {
+  position: fixed;
+  top: 48px;
+  right: 0;
+  left: 0;
+  z-index: 20;
+  max-height: calc(100% - 48px - 56px);
 }
 
 .iconButton {

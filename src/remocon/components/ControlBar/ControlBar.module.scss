@@ -30,8 +30,27 @@
   text-align: center;
 }
 
-.toggle {
+// The expanded queue/controls are an overlay drawer sliding up from behind
+// the always-at-the-bottom expander bar — fixed positioning keeps the drawer
+// from pushing the page content or the bar itself around.
+.drawer {
   position: fixed;
+  right: 0;
+  bottom: 48px;
+  left: 0;
+  z-index: 10;
+}
+
+.drawerContent {
+  position: relative;
+  background-color: #1cb3ff;
+  // The queue's white background would otherwise blend invisibly into the
+  // page it overlays — same shadow as the app header/footer.
+  box-shadow: 0 0 4px #aaa;
+}
+
+.toggle {
+  position: absolute;
   align-items: center;
   left: 8px;
   bottom: 8px;

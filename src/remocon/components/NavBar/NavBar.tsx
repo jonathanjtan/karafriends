@@ -14,6 +14,7 @@ import { Link } from "react-router";
 import icon from "url:../../images/icon.png";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
+import Collapse from "../Collapse";
 import VolumeControls from "../VolumeControls";
 import * as styles from "./NavBar.module.scss";
 
@@ -98,7 +99,13 @@ const NavBar = () => {
           </Link>
         </div>
       </div>
-      {showSettings && <VolumeControls />}
+      <Collapse
+        open={showSettings}
+        direction="down"
+        className={styles.settingsDrawer}
+      >
+        <VolumeControls />
+      </Collapse>
     </>
   );
 };

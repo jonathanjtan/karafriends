@@ -1,0 +1,33 @@
+// Drawer-style reveal: the wrapper is a clipping window (positioned by the
+// consumer, out of normal flow) and the content slides in via transform, so
+// opening never reflows/pushes the page content around it. pointer-events
+// pass through the wrapper's empty area so it can span more than the content.
+.collapse {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 100%;
+  pointer-events: auto;
+  // 350ms with Material's standard curve (fast start, gentle settle) — the
+  // conventional range for full-width drawers/sheets on mobile.
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.down > .inner {
+  transform: translateY(-100%);
+}
+
+.up > .inner {
+  transform: translateY(100%);
+}
+
+.open > .inner {
+  transform: translateY(0);
+}

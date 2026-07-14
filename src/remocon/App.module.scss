@@ -19,15 +19,10 @@ footer {
   box-shadow: 0 0 4px #aaa;
 }
 
-// The settings panel lives inside the header; letting the header shrink
-// (min-height: 0 overrides the content-sized flex minimum) is what caps the
-// panel at the footer's top edge — including an expanded queue — instead of
-// letting it leak underneath. The panel body scrolls to absorb the overflow.
+// The settings panel inside the header is a fixed-position overlay drawer
+// (see NavBar.module.scss), so the header itself only sizes to the nav bar.
 header {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex-shrink: 1;
+  flex-shrink: 0;
 }
 
 // Global dark mode: invert the whole app rather than re-theming every

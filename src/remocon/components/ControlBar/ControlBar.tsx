@@ -4,6 +4,7 @@ import { BsMusicPlayerFill } from "react-icons/bs";
 // tslint:disable-next-line:no-submodule-imports
 import { FaAngleDown, FaAngleUp, FaSmile } from "react-icons/fa";
 
+import Collapse from "../Collapse";
 import EmoteButtons from "../EmoteButtons";
 import PlaybackControls from "../PlaybackControls";
 import SongQueue from "../SongQueue";
@@ -12,10 +13,10 @@ import NowPlaying from "./NowPlaying";
 
 const ControlBar = () => {
   const [expanded, _setExpanded] = useState(
-    localStorage.getItem("expanded") === "true" || false
+    localStorage.getItem("expanded") === "true" || false,
   );
   const [showEmotes, _setShowEmotes] = useState(
-    localStorage.getItem("showEmotes") === "true" || false
+    localStorage.getItem("showEmotes") === "true" || false,
   );
 
   const setExpanded = (value: boolean) => {
@@ -36,8 +37,8 @@ const ControlBar = () => {
           {expanded ? <FaAngleDown /> : <FaAngleUp />}
         </div>
       </div>
-      {expanded && (
-        <>
+      <Collapse open={expanded} direction="up" className={styles.drawer}>
+        <div className={styles.drawerContent}>
           <div className={styles.queue}>
             <SongQueue />
           </div>
@@ -50,8 +51,8 @@ const ControlBar = () => {
           <div className={styles.controls}>
             {showEmotes ? <EmoteButtons /> : <PlaybackControls />}
           </div>
-        </>
-      )}
+        </div>
+      </Collapse>
     </div>
   );
 };
