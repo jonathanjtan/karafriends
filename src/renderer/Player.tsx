@@ -80,7 +80,7 @@ const NON_DAM_GAIN = 0.8;
 const MAX_HLS_FATAL_ERROR_RETRIES = 2;
 // How long the between-songs queue screen stays up before the next song
 // starts (when queueIntermissionEnabled is on).
-const QUEUE_INTERMISSION_MS = 10 * 1000;
+const QUEUE_INTERMISSION_MS = 8 * 1000;
 // Fade duration for the intermission screen; keep in sync with the
 // animation durations in QueueIntermission.css.
 const QUEUE_INTERMISSION_FADE_MS = 3000;
