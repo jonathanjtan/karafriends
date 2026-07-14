@@ -129,6 +129,14 @@ function Player(props: {
   const [intermissionMounted, setIntermissionMounted] = useState(false);
   const intermissionEnabledRef = useRef(queueIntermissionEnabled);
   const queueLengthRef = useRef(queue.length);
+  const queueRef = useRef(queue);
+  // Snapshot of the queue taken just before a pop, rendered from that moment
+  // through the intermission's fade-out so the popped song doesn't visibly
+  // vanish from "Up Next" (e.g. flashing "Nothing..." on the last song)
+  // mid-dissolve. popPending covers the window where the queue subscription
+  // update outraces the pop mutation's response.
+  const frozenQueueRef = useRef(queue);
+  const [popPending, setPopPending] = useState(false);
   const intermissionTimerRef = useRef<NodeJS.Timeout | null>(null);
   // The intermission's own minimum hold deadline (epoch ms); the effective
   // hold is the max of this and any active break.
@@ -170,6 +178,7 @@ function Player(props: {
 
   useEffect(() => {
     queueLengthRef.current = queue.length;
+    queueRef.current = queue;
   }, [queue]);
 
   // Fade in/out: mount immediately when shown; on hide, keep the component
@@ -244,10 +253,16 @@ function Player(props: {
         pollTimeoutRef.current = setTimeout(pollQueue, 1000);
         return;
       }
+      // Snapshot before the pop mutates the server-side queue, so the
+      // fade-out renders the pre-pop state no matter when the queue
+      // subscription update lands.
+      frozenQueueRef.current = queueRef.current;
+      setPopPending(true);
       commitMutation<PlayerPopSongMutation>(environment, {
         mutation: popSongMutation,
         variables: {},
         onCompleted: ({ popSong }) => {
+          setPopPending(false);
           if (!videoRef.current) return;
 
           if (!popSong) {
@@ -482,6 +497,7 @@ function Player(props: {
           setPlaybackState("PLAYING");
         },
         onError: (error) => {
+          setPopPending(false);
           // Without this, any unexpected popSong failure (GraphQL error,
           // dropped connection, etc.) would kill the poll loop for good —
           // nothing else re-schedules it.
@@ -668,7 +684,9 @@ function Player(props: {
       {shouldShowAdhocLyrics ? <AdhocLyrics /> : null}
       {intermissionMounted ? (
         <QueueIntermission
-          queue={queue}
+          queue={
+            intermissionVisible && !popPending ? queue : frozenQueueRef.current
+          }
           hostname={props.hostname}
           hiding={!intermissionVisible}
           breakEndsAt={breakEndsAt}
