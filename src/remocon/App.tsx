@@ -7,10 +7,12 @@ import useUserIdentity from "./hooks/useUserIdentity";
 import AdhocLyricsPage from "./pages/AdhocLyricsPage";
 import ArtistPage from "./pages/ArtistPage";
 import ArtistSearchPage from "./pages/ArtistSearchPage";
+import DamRankingPage from "./pages/DamRankingPage";
 import HistoryPage from "./pages/HistoryPage";
 import HomePage from "./pages/HomePage";
 import JoysoundArtistPage from "./pages/JoysoundArtistPage";
 import JoysoundArtistSearchPage from "./pages/JoysoundArtistSearchPage";
+import JoysoundRankingPage from "./pages/JoysoundRankingPage";
 import JoysoundSongPage from "./pages/JoysoundSongPage";
 import JoysoundSongSearchPage from "./pages/JoysoundSongSearchPage";
 import NiconicoPage from "./pages/NiconicoPage";
@@ -82,6 +84,8 @@ const App = () => {
               path="/search/joysoundArtist/:query?"
               element={<JoysoundArtistSearchPage />}
             />
+            <Route path="/ranking/joysound" element={<JoysoundRankingPage />} />
+            <Route path="/ranking/dam" element={<DamRankingPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/" element={<HomePage />} />
