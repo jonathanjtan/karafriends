@@ -267,6 +267,55 @@ function primeDamReadings(
   return promise;
 }
 
+// Top 100 chart rows arrive off the public ranking pages with no reading
+// data (JOYSOUND's JSON-LD and DAM's HTML both carry name/artist only), so
+// their romaji would fall back to a kuromoji guess — unlike search rows, which
+// mirror the user's keyword to DAM and pick up DAM's curated readings. There's
+// no per-visit keyword to mirror here, so instead prime canonical readings for
+// the chart itself: issue one DAM keyword search per charted title (deduped by
+// normalized name, and skipped when the name already has a canonical reading),
+// folding DAM's titleYomi/artistYomi into the persistent reading cache. Run in
+// the background off the launch prefetch (and on-demand chart visits), so the
+// ~hundreds of cold-start lookups are paid once — then only new chart entrants
+// cost anything, since canonical readings never expire or downgrade. Throttled
+// and best-effort: primeDamReadings already swallows its own failures, but the
+// outer sweep is guarded too — an unhandled rejection in main takes down the
+// whole app.
+const RANKING_READING_CONCURRENCY = 4;
+
+function primeRankingReadings(
+  entries: RankingSongEntry[],
+  dkwebsys: DkwebsysAPI,
+): void {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const entry of entries) {
+    const key = normalizeForYomiMatch(entry.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // Already have DAM's curated reading for this title — don't spend a search.
+    if (readingCache.get(key)?.canonical) continue;
+    names.push(entry.name);
+  }
+
+  if (names.length === 0) return;
+
+  void (async () => {
+    let next = 0;
+    const worker = async () => {
+      while (next < names.length) {
+        await primeDamReadings("song", names[next++], dkwebsys);
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(RANKING_READING_CONCURRENCY, names.length) },
+        worker,
+      ),
+    );
+  })().catch((e) => console.error("[yomi] ranking reading prime failed", e));
+}
+
 // The DAM lookup is a best-effort enrichment layered on top of JOYSOUND's
 // own results — never let a slow/unreachable DAM stall the search response
 // the user is waiting on. Cap how long we'll wait, then fall back.
@@ -1413,11 +1462,24 @@ const resolvers = {
       args: { category: RankingCategory; period: RankingPeriod },
       { dataSources }: IDataSources,
     ): Promise<RankingSongEntry[]> =>
-      getJoysoundRanking(dataSources.joysound, args.category, args.period),
+      getJoysoundRanking(dataSources.joysound, args.category, args.period).then(
+        (entries) => {
+          // Enrich the chart's rows with DAM's canonical readings (background,
+          // best-effort) so a visit that missed the launch prefetch still gets
+          // them cached for the per-row nameYomi resolvers on the next render.
+          primeRankingReadings(entries, dataSources.dkwebsys);
+          return entries;
+        },
+      ),
     damRanking: (
       _: any,
       args: { category: RankingCategory; period: RankingPeriod },
-    ): Promise<RankingSongEntry[]> => getDamRanking(args.category, args.period),
+      { dataSources }: IDataSources,
+    ): Promise<RankingSongEntry[]> =>
+      getDamRanking(args.category, args.period).then((entries) => {
+        primeRankingReadings(entries, dataSources.dkwebsys);
+        return entries;
+      }),
     joysoundSongDetail: (
       _: any,
       args: { id: string },
@@ -2812,12 +2874,19 @@ export function applyGraphQLMiddleware(app: Application) {
     });
 
     // Warm the Top 100 charts in the background so they're ready (and, after
-    // the first run, persisted) before anyone opens the ranking pages.
+    // the first run, persisted) before anyone opens the ranking pages. Prime
+    // DAM's canonical readings for each resolved chart's rows too, so the
+    // romaji is cached before anyone opens a page rather than on first visit.
+    const rankingDkwebsys = new DkwebsysAPI({
+      cache: server.cache,
+      fetch: fetcher,
+    });
     primeRankings(
       new JoysoundAPI(joysoundCredentialsProvider, {
         cache: server.cache,
         fetch: fetcher,
       }),
+      (entries) => primeRankingReadings(entries, rankingDkwebsys),
     );
   });
 }

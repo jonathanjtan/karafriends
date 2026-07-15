@@ -504,21 +504,33 @@ const ALL_PERIODS: RankingPeriod[] = ["WEEKLY", "MONTHLY"];
 // fresh entries (so a warm launch does almost nothing), and each fetch is
 // guarded so one failure neither stops the sweep nor — critically — escapes
 // as an unhandled rejection (which would take the whole app down).
-export function primeRankings(joysoundApi: JoysoundAPI): void {
+//
+// `onEntries` (if given) is handed each resolved chart's entries so the caller
+// can enrich them out-of-band — used to prime DAM's canonical readings for the
+// chart rows, which the scrapes themselves don't carry. It must not throw; it
+// runs inside the guarded sweep but is otherwise fire-and-forget.
+export function primeRankings(
+  joysoundApi: JoysoundAPI,
+  onEntries?: (entries: RankingSongEntry[]) => void,
+): void {
   loadRankingCache();
 
   void (async () => {
     for (const period of ALL_PERIODS) {
       for (const category of ALL_CATEGORIES) {
-        await getDamRanking(category, period).catch((error) =>
-          console.warn(`Prefetch dam ${category} ${period} failed:`, error),
-        );
-        await getJoysoundRanking(joysoundApi, category, period).catch((error) =>
-          console.warn(
-            `Prefetch joysound ${category} ${period} failed:`,
-            error,
-          ),
-        );
+        await getDamRanking(category, period)
+          .then((entries) => onEntries?.(entries))
+          .catch((error) =>
+            console.warn(`Prefetch dam ${category} ${period} failed:`, error),
+          );
+        await getJoysoundRanking(joysoundApi, category, period)
+          .then((entries) => onEntries?.(entries))
+          .catch((error) =>
+            console.warn(
+              `Prefetch joysound ${category} ${period} failed:`,
+              error,
+            ),
+          );
       }
     }
   })();
