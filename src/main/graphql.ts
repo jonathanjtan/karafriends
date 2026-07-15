@@ -49,10 +49,15 @@ import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
 import { getJoysoundScoringData } from "./joysoundMelody";
 import memoizeWithFailureEviction from "./memoizeWithFailureEviction";
 import {
+  getDamArtistRanking,
   getDamRanking,
+  getJoysoundArtistRanking,
   getJoysoundRanking,
+  getJoysoundRankingMonths,
   primeRankings,
+  RankingArtistEntry,
   RankingCategory,
+  RankingMonth,
   RankingPeriod,
   RankingSongEntry,
 } from "./rankings";
@@ -314,6 +319,42 @@ function primeRankingReadings(
       ),
     );
   })().catch((e) => console.error("[yomi] ranking reading prime failed", e));
+}
+
+// Artist-chart counterpart: the rows carry only an artist name, so prime DAM's
+// curated artist readings the same throttled, best-effort way.
+function primeRankingArtistReadings(
+  entries: RankingArtistEntry[],
+  dkwebsys: DkwebsysAPI,
+): void {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const entry of entries) {
+    const key = normalizeForYomiMatch(entry.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (readingCache.get(key)?.canonical) continue;
+    names.push(entry.name);
+  }
+
+  if (names.length === 0) return;
+
+  void (async () => {
+    let next = 0;
+    const worker = async () => {
+      while (next < names.length) {
+        await primeDamReadings("artist", names[next++], dkwebsys);
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(RANKING_READING_CONCURRENCY, names.length) },
+        worker,
+      ),
+    );
+  })().catch((e) =>
+    console.error("[yomi] ranking artist reading prime failed", e),
+  );
 }
 
 // The DAM lookup is a best-effort enrichment layered on top of JOYSOUND's
@@ -1310,6 +1351,18 @@ const resolvers = {
     ...nameYomiResolvers,
   },
 
+  RankingArtist: {
+    artistId(parent: RankingArtistEntry) {
+      return parent.id;
+    },
+    // Only nameYomi here — RankingArtist has no artistName(Yomi), so it can't
+    // reuse the full nameYomiResolvers spread (schema-building rejects a
+    // resolver for a field the type doesn't declare).
+    nameYomi(parent: RankingArtistEntry) {
+      return toYomi(parent.name);
+    },
+  },
+
   Song: {
     id(parent: SongParent) {
       return parent.id;
@@ -1459,18 +1512,25 @@ const resolvers = {
     },
     joysoundRanking: (
       _: any,
-      args: { category: RankingCategory; period: RankingPeriod },
+      args: {
+        category: RankingCategory;
+        period: RankingPeriod;
+        month: string | null;
+      },
       { dataSources }: IDataSources,
     ): Promise<RankingSongEntry[]> =>
-      getJoysoundRanking(dataSources.joysound, args.category, args.period).then(
-        (entries) => {
-          // Enrich the chart's rows with DAM's canonical readings (background,
-          // best-effort) so a visit that missed the launch prefetch still gets
-          // them cached for the per-row nameYomi resolvers on the next render.
-          primeRankingReadings(entries, dataSources.dkwebsys);
-          return entries;
-        },
-      ),
+      getJoysoundRanking(
+        dataSources.joysound,
+        args.category,
+        args.period,
+        args.month,
+      ).then((entries) => {
+        // Enrich the chart's rows with DAM's canonical readings (background,
+        // best-effort) so a visit that missed the launch prefetch still gets
+        // them cached for the per-row nameYomi resolvers on the next render.
+        primeRankingReadings(entries, dataSources.dkwebsys);
+        return entries;
+      }),
     damRanking: (
       _: any,
       args: { category: RankingCategory; period: RankingPeriod },
@@ -1480,6 +1540,26 @@ const resolvers = {
         primeRankingReadings(entries, dataSources.dkwebsys);
         return entries;
       }),
+    joysoundArtistRanking: (
+      _: any,
+      args: { period: RankingPeriod; month: string | null },
+      { dataSources }: IDataSources,
+    ): Promise<RankingArtistEntry[]> =>
+      getJoysoundArtistRanking(args.period, args.month).then((entries) => {
+        primeRankingArtistReadings(entries, dataSources.dkwebsys);
+        return entries;
+      }),
+    damArtistRanking: (
+      _: any,
+      args: { period: RankingPeriod },
+      { dataSources }: IDataSources,
+    ): Promise<RankingArtistEntry[]> =>
+      getDamArtistRanking(args.period).then((entries) => {
+        primeRankingArtistReadings(entries, dataSources.dkwebsys);
+        return entries;
+      }),
+    joysoundRankingMonths: (): Promise<RankingMonth[]> =>
+      getJoysoundRankingMonths(),
     joysoundSongDetail: (
       _: any,
       args: { id: string },
@@ -2887,6 +2967,7 @@ export function applyGraphQLMiddleware(app: Application) {
         fetch: fetcher,
       }),
       (entries) => primeRankingReadings(entries, rankingDkwebsys),
+      (entries) => primeRankingArtistReadings(entries, rankingDkwebsys),
     );
   });
 }

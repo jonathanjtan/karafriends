@@ -22,6 +22,23 @@ export interface RankingSongEntry {
   readonly artistName: string;
 }
 
+export interface RankingArtistEntry {
+  readonly rank: number;
+  // The catalog artist id (JOYSOUND selArtistId / DAM artistCode). Unlike
+  // songs, both services' artist charts carry ids that map straight to the
+  // catalog artist routes, so this is effectively always present.
+  readonly id: string | null;
+  readonly name: string;
+}
+
+// One option in the JOYSOUND monthly month-picker. `value` is a YYYYMM archive
+// or null for the current (latest) month; `label` is the site's own button
+// text (e.g. "6月").
+export interface RankingMonth {
+  readonly value: string | null;
+  readonly label: string;
+}
+
 // Mirrors the RankingCategory / RankingPeriod GraphQL enums. Both services
 // publish 100-entry weekly and monthly charts for the same five categories
 // (neither archives past months — "monthly" is the current rolling month).
@@ -52,13 +69,25 @@ const DAM_GENRE_PATHS: {
   WESTERN: "foreign",
 };
 
+// A YYYYMM string selects a past monthly archive (JOYSOUND keeps ~5); null or
+// a non-monthly period uses the current chart.
 function joysoundRankingUrl(
   category: RankingCategory,
   period: RankingPeriod,
+  month?: string | null,
 ): string {
-  return `https://www.joysound.com/web/karaoke/ranking/${
+  const base = `https://www.joysound.com/web/karaoke/ranking/${
     JOYSOUND_CATEGORY_PATHS[category]
   }/${period.toLowerCase()}`;
+  return period === "MONTHLY" && month ? `${base}/${month}` : base;
+}
+
+function joysoundArtistRankingUrl(
+  period: RankingPeriod,
+  month?: string | null,
+): string {
+  const base = `https://www.joysound.com/web/karaoke/ranking/artist/${period.toLowerCase()}`;
+  return period === "MONTHLY" && month ? `${base}/${month}` : base;
 }
 
 function damRankingSource(
@@ -217,6 +246,103 @@ function parseDamRanking(html: string, sectionId: string): RankingSongEntry[] {
   return entries;
 }
 
+// JOYSOUND's artist ranking is the same JSON-LD ItemList shape as the song
+// charts, but the items are MusicGroup nodes whose url is
+// /web/search/artist/<id>. That id — unlike the song web ids — IS the
+// sound-cafe artist id the app's artist pages use, so it's taken directly.
+function parseJoysoundArtistRanking(html: string): RankingArtistEntry[] {
+  const entries: RankingArtistEntry[] = [];
+
+  for (const scriptMatch of html.matchAll(
+    /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g,
+  )) {
+    let data: any;
+    try {
+      data = JSON.parse(scriptMatch[1]);
+    } catch {
+      continue;
+    }
+
+    const graphs: any[] = data["@graph"] || [data];
+    for (const node of graphs) {
+      const items = node?.mainEntity?.itemListElement;
+      if (!Array.isArray(items)) continue;
+
+      for (const listItem of items) {
+        const name = listItem?.item?.name;
+        const idMatch = String(listItem?.item?.url || "").match(
+          /\/web\/search\/artist\/(\d+)/,
+        );
+        if (name && idMatch) {
+          entries.push({
+            rank: listItem.position || entries.length + 1,
+            id: idMatch[1],
+            name,
+          });
+        }
+      }
+    }
+  }
+
+  return entries;
+}
+
+// DAM's artist chart (/ranking/artist/) reuses the song-list markup, but each
+// <li> links to artistleaf?artistCode=<id> (the dkwebsys artist id the app's
+// DAM artist pages use) and carries only <h4 class="p-song__title"> — no
+// artist sub-line, since the title *is* the artist.
+function parseDamArtistRanking(
+  html: string,
+  sectionId: string,
+): RankingArtistEntry[] {
+  const afterSection = html.split(`id="${sectionId}"`)[1];
+  if (!afterSection) return [];
+
+  const nextSectionStart = afterSection.indexOf('class="c-section"');
+  const section =
+    nextSectionStart === -1
+      ? afterSection
+      : afterSection.slice(0, nextSectionStart);
+
+  const entries: RankingArtistEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const li of section.matchAll(
+    /artistleaf\.html\?artistCode=(\d+)"[\s\S]*?p-song__title">([^<]*)</g,
+  )) {
+    if (seen.has(li[1])) continue;
+    seen.add(li[1]);
+
+    entries.push({
+      rank: entries.length + 1,
+      id: li[1],
+      name: decodeHtmlEntities(li[2].trim()),
+    });
+  }
+
+  return entries;
+}
+
+// The JOYSOUND monthly month-picker: each <a href=".../monthly[/YYYYMM]">M月</a>
+// in the archive selector, newest first. The suffix-less link is the current
+// month (value null); the rest are past archives.
+function parseJoysoundRankingMonths(html: string): RankingMonth[] {
+  const months: RankingMonth[] = [];
+  const seen = new Set<string>();
+
+  for (const m of html.matchAll(
+    /href="\/web\/karaoke\/ranking\/[a-z]+\/monthly(?:\/(\d{6}))?"[^>]*>\s*(\d{1,2}月)\s*</g,
+  )) {
+    const value = m[1] || null;
+    const dedupeKey = value || "current";
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    months.push({ value, label: m[2] });
+  }
+
+  return months;
+}
+
 // Loose-equality normalization for chart↔catalog title/artist matching:
 // joysound.com and sound-cafe.jp disagree on width ("滅!" vs "滅！"), casing
 // and spacing for the same song.
@@ -329,15 +455,18 @@ async function resolveJoysoundEntry(
 // monthly chart until the month does), matching how often the sources
 // actually change; a stale chart is refetched but served from cache in the
 // meantime if the refetch fails.
+// Entries are one of the ranking shapes (songs, artists) or the month list;
+// the cache is generic and the on-disk JSON is shape-agnostic, so all of them
+// share one persisted file keyed by service:kind:params.
 interface CachedRanking {
   fetchedAt: number;
-  entries: RankingSongEntry[];
+  entries: unknown[];
 }
 
 const rankingCache = new Map<string, CachedRanking>();
 // In-flight scrape per key, so concurrent page visits (and the launch
 // prefetch) don't kick off duplicate work.
-const inflightRankings = new Map<string, Promise<RankingSongEntry[]>>();
+const inflightRankings = new Map<string, Promise<unknown[]>>();
 
 const RANKING_CACHE_PATH = path.resolve(TEMP_FOLDER, "rankings-cache.json");
 
@@ -402,18 +531,18 @@ function isFresh(cached: CachedRanking, period: RankingPeriod): boolean {
 // persist, and return — but if a stale refresh fails, fall back to the stale
 // entries rather than erroring (an old chart beats none). Only a cold-cache
 // failure propagates so the remocon can show a retry.
-function withRankingCache(
+function withRankingCache<T>(
   key: string,
   period: RankingPeriod,
-  fetchRanking: () => Promise<RankingSongEntry[]>,
-): Promise<RankingSongEntry[]> {
+  fetchRanking: () => Promise<T[]>,
+): Promise<T[]> {
   const cached = rankingCache.get(key);
   if (cached && isFresh(cached, period)) {
-    return Promise.resolve(cached.entries);
+    return Promise.resolve(cached.entries as T[]);
   }
 
   const inflight = inflightRankings.get(key);
-  if (inflight) return inflight;
+  if (inflight) return inflight as Promise<T[]>;
 
   const promise = fetchRanking()
     .then((entries) => {
@@ -424,7 +553,7 @@ function withRankingCache(
     .catch((error) => {
       if (cached) {
         console.warn(`Refreshing ranking ${key} failed; serving stale:`, error);
-        return cached.entries;
+        return cached.entries as T[];
       }
       throw error;
     })
@@ -438,13 +567,15 @@ export function getJoysoundRanking(
   joysoundApi: JoysoundAPI,
   category: RankingCategory,
   period: RankingPeriod,
+  month?: string | null,
 ): Promise<RankingSongEntry[]> {
-  return withRankingCache(
-    `joysound:${category}:${period}`,
+  const monthKey = period === "MONTHLY" && month ? month : "current";
+  return withRankingCache<RankingSongEntry>(
+    `joysound:${category}:${period}:${monthKey}`,
     period,
     async () => {
       const chart = parseJoysoundRanking(
-        await fetchPage(joysoundRankingUrl(category, period)),
+        await fetchPage(joysoundRankingUrl(category, period, month)),
       ).slice(0, 100);
 
       // An empty parse means the page layout changed, not an empty chart —
@@ -477,16 +608,90 @@ export function getDamRanking(
   category: RankingCategory,
   period: RankingPeriod,
 ): Promise<RankingSongEntry[]> {
-  return withRankingCache(`dam:${category}:${period}`, period, async () => {
-    const { url, sectionId } = damRankingSource(category, period);
-    const entries = parseDamRanking(await fetchPage(url), sectionId);
+  return withRankingCache<RankingSongEntry>(
+    `dam:${category}:${period}`,
+    period,
+    async () => {
+      const { url, sectionId } = damRankingSource(category, period);
+      const entries = parseDamRanking(await fetchPage(url), sectionId);
 
-    if (entries.length === 0) {
-      throw new Error("Failed to parse any songs out of the DAM ranking");
-    }
+      if (entries.length === 0) {
+        throw new Error("Failed to parse any songs out of the DAM ranking");
+      }
 
-    return entries.slice(0, 100);
-  });
+      return entries.slice(0, 100);
+    },
+  );
+}
+
+export function getJoysoundArtistRanking(
+  period: RankingPeriod,
+  month?: string | null,
+): Promise<RankingArtistEntry[]> {
+  const monthKey = period === "MONTHLY" && month ? month : "current";
+  return withRankingCache<RankingArtistEntry>(
+    `joysound:ARTIST:${period}:${monthKey}`,
+    period,
+    async () => {
+      const entries = parseJoysoundArtistRanking(
+        await fetchPage(joysoundArtistRankingUrl(period, month)),
+      ).slice(0, 100);
+
+      if (entries.length === 0) {
+        throw new Error(
+          "Failed to parse any artists out of the JOYSOUND artist ranking",
+        );
+      }
+
+      return entries;
+    },
+  );
+}
+
+export function getDamArtistRanking(
+  period: RankingPeriod,
+): Promise<RankingArtistEntry[]> {
+  return withRankingCache<RankingArtistEntry>(
+    `dam:ARTIST:${period}`,
+    period,
+    async () => {
+      const sectionId =
+        period === "WEEKLY" ? "weekly-ranking" : "monthly-ranking";
+      const entries = parseDamArtistRanking(
+        await fetchPage("https://www.clubdam.com/ranking/artist/"),
+        sectionId,
+      );
+
+      if (entries.length === 0) {
+        throw new Error(
+          "Failed to parse any artists out of the DAM artist ranking",
+        );
+      }
+
+      return entries.slice(0, 100);
+    },
+  );
+}
+
+// The month-picker options are the same across all JOYSOUND monthly charts, so
+// scrape them once from the overall page. Cached with monthly freshness (the
+// archive set only grows when the month rolls over).
+export function getJoysoundRankingMonths(): Promise<RankingMonth[]> {
+  return withRankingCache<RankingMonth>(
+    "joysound:MONTHS",
+    "MONTHLY",
+    async () => {
+      const months = parseJoysoundRankingMonths(
+        await fetchPage(joysoundRankingUrl("OVERALL", "MONTHLY")),
+      );
+
+      if (months.length === 0) {
+        throw new Error("Failed to parse the JOYSOUND month picker");
+      }
+
+      return months;
+    },
+  );
 }
 
 const ALL_CATEGORIES: RankingCategory[] = [
@@ -512,10 +717,17 @@ const ALL_PERIODS: RankingPeriod[] = ["WEEKLY", "MONTHLY"];
 export function primeRankings(
   joysoundApi: JoysoundAPI,
   onEntries?: (entries: RankingSongEntry[]) => void,
+  onArtistEntries?: (entries: RankingArtistEntry[]) => void,
 ): void {
   loadRankingCache();
 
   void (async () => {
+    // The month list first, so the picker is populated before anyone opens a
+    // monthly chart. Past-month archives themselves stay on-demand.
+    await getJoysoundRankingMonths().catch((error) =>
+      console.warn("Prefetch joysound months failed:", error),
+    );
+
     for (const period of ALL_PERIODS) {
       for (const category of ALL_CATEGORIES) {
         await getDamRanking(category, period)
@@ -532,6 +744,18 @@ export function primeRankings(
             ),
           );
       }
+
+      // Artist charts (current month only — past-month archives on demand).
+      await getDamArtistRanking(period)
+        .then((entries) => onArtistEntries?.(entries))
+        .catch((error) =>
+          console.warn(`Prefetch dam artists ${period} failed:`, error),
+        );
+      await getJoysoundArtistRanking(period)
+        .then((entries) => onArtistEntries?.(entries))
+        .catch((error) =>
+          console.warn(`Prefetch joysound artists ${period} failed:`, error),
+        );
     }
   })();
 }

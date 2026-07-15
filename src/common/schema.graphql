@@ -56,16 +56,28 @@ type Query {
   songById(id: String!): Song!
   songsByName(name: String, first: Int, after: String): SongConnection!
   # JOYSOUND's public Top 100 karaoke charts (joysound.com), with ids mapped
-  # back to the catalog so entries open like search results.
+  # back to the catalog so entries open like search results. `month` (YYYYMM)
+  # selects a past monthly archive; null uses the current chart.
   joysoundRanking(
     category: RankingCategory!
     period: RankingPeriod!
+    month: String
   ): [RankingSong!]!
-  # DAM's public Top 100 karaoke charts (clubdam.com), same deal.
+  # DAM's public Top 100 karaoke charts (clubdam.com), same deal. DAM keeps no
+  # past-month archives, so there is no month argument.
   damRanking(
     category: RankingCategory!
     period: RankingPeriod!
   ): [RankingSong!]!
+  # Top-artist charts; entries link to the services' artist pages.
+  joysoundArtistRanking(
+    period: RankingPeriod!
+    month: String
+  ): [RankingArtist!]!
+  damArtistRanking(period: RankingPeriod!): [RankingArtist!]!
+  # Months JOYSOUND offers for its monthly charts (current + ~5 archives),
+  # newest first, for the remocon's month picker.
+  joysoundRankingMonths: [RankingMonth!]!
   songHistory(first: Int, after: String): SongHistoryConnection!
   suggestedYoutubeVideos(songId: String!): SuggestedYoutubeVideosResult!
   videoDownloadProgress(
@@ -282,6 +294,25 @@ type RankingSong {
   nameYomi: String!
   artistName: String!
   artistNameYomi: String!
+}
+
+# One entry of a top-artist chart. `artistId` is the catalog artist id
+# (JOYSOUND / DAM both expose one that maps straight to the artist pages);
+# named `artistId` rather than `id` for the same Relay-normalization reason as
+# RankingSong.songId.
+type RankingArtist {
+  rank: Int!
+  artistId: ID
+  name: String!
+  nameYomi: String!
+}
+
+# One option in JOYSOUND's monthly month-picker. `value` is a YYYYMM archive,
+# or null for the current (latest) month; `label` is the site's button text
+# (e.g. "6月").
+type RankingMonth {
+  value: String
+  label: String!
 }
 
 type Emote {
