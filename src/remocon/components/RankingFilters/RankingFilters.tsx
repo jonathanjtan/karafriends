@@ -12,12 +12,18 @@ export type RankingCategory =
   | "WESTERN";
 export type RankingPeriod = "WEEKLY" | "MONTHLY";
 
-const CATEGORIES: ReadonlyArray<{ value: RankingCategory; label: string }> = [
+// The category row also offers "ARTIST", which isn't a genre — it swaps the
+// list to the top-artist chart. Kept as a frontend-only selection since the
+// artist ranking is a separate query with a different result type.
+export type RankingSelection = RankingCategory | "ARTIST";
+
+const SELECTIONS: ReadonlyArray<{ value: RankingSelection; label: string }> = [
   { value: "OVERALL", label: "Overall" },
   { value: "ANIME", label: "Anime" },
   { value: "VOCALOID", label: "Vocaloid" },
   { value: "ENKA", label: "Enka" },
   { value: "WESTERN", label: "Western" },
+  { value: "ARTIST", label: "Artists" },
 ];
 
 const PERIODS: ReadonlyArray<{ value: RankingPeriod; label: string }> = [
@@ -25,10 +31,12 @@ const PERIODS: ReadonlyArray<{ value: RankingPeriod; label: string }> = [
   { value: "MONTHLY", label: "Monthly" },
 ];
 
-export function parseRankingCategory(raw: string | undefined): RankingCategory {
+export function parseRankingSelection(
+  raw: string | undefined,
+): RankingSelection {
   const candidate = (raw || "").toUpperCase();
   return (
-    CATEGORIES.find(({ value }) => value === candidate)?.value ?? "OVERALL"
+    SELECTIONS.find(({ value }) => value === candidate)?.value ?? "OVERALL"
   );
 }
 
@@ -38,19 +46,19 @@ export function parseRankingPeriod(raw: string | undefined): RankingPeriod {
 }
 
 interface Props {
-  category: RankingCategory;
+  selection: RankingSelection;
   period: RankingPeriod;
-  onChange: (category: RankingCategory, period: RankingPeriod) => void;
+  onChange: (selection: RankingSelection, period: RankingPeriod) => void;
 }
 
-const RankingFilters = ({ category, period, onChange }: Props) => (
+const RankingFilters = ({ selection, period, onChange }: Props) => (
   <div className={styles.filters}>
     <div className={styles.row}>
-      {CATEGORIES.map(({ value, label }) => (
+      {SELECTIONS.map(({ value, label }) => (
         <button
           key={value}
           className={classnames(styles.chip, {
-            [styles.selected]: category === value,
+            [styles.selected]: selection === value,
           })}
           onClick={() => onChange(value, period)}
         >
@@ -65,7 +73,7 @@ const RankingFilters = ({ category, period, onChange }: Props) => (
           className={classnames(styles.chip, {
             [styles.selected]: period === value,
           })}
-          onClick={() => onChange(category, value)}
+          onClick={() => onChange(selection, value)}
         >
           {label}
         </button>

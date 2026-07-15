@@ -90,7 +90,7 @@ const App = () => {
                 element={<JoysoundArtistSearchPage />}
               />
               <Route
-                path="/ranking/joysound/:category?/:period?"
+                path="/ranking/joysound/:category?/:period?/:month?"
                 element={<JoysoundRankingPage />}
               />
               <Route
