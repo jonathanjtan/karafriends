@@ -281,8 +281,20 @@ hook, relay-compile. Persistence is automatic via the `...db` spread.
   RMS envelopes of several 20s windows sampled from inside the karaoke track
   against the whole MV audio, takes the consensus offset. Positive → `-ss`
   trim; negative (karaoke has extra head material, e.g. a count-off) →
-  frozen-first-frame front-pad; null → legacy end-together heuristic. The
-  intro-sync's audio fetch is a **separate yt-dlp `-f ba` download** — it logs
+  frozen-first-frame front-pad. When cross-correlation is inconclusive (the
+  common case — a karaoke re-recording rarely envelope-correlates with the
+  original master) it falls back to **onset alignment**
+  (`estimateOnsetOffsetMs`): detect where the music starts in each track and
+  align those points (already-aligned songs → ≈0, so it's self-limiting). Only
+  when onset also can't locate both starts do we give up (null) and leave the
+  heads at t=0. There is **no end-together pad** anymore — the old "assume the
+  video and song end together" fallback blindly shoved the whole video several
+  seconds late, desyncing songs whose heads were already aligned (this was the
+  Senbonzakura/Dry-Flower bug). With any measured offset the video plays once
+  and **holds its last frame** for the uncovered tail (so the MV's outro plays
+  in full); only the null case still loops (a possibly-short default video
+  shouldn't freeze). The intro-sync's audio fetch is a **separate yt-dlp `-f
+ba` download** — it logs
   to `yt-<id>-introsync.log`, retries once, and runs after the video download
   to avoid a concurrent double-hit. Optional per-queue via
   `youtubeVideoSyncEnabled` (a default-on remocon checkbox; null = enabled for

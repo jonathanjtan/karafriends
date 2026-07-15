@@ -526,6 +526,16 @@ const INTRO_SYNC_ANCHOR_STEP_SEC = 15;
 const INTRO_SYNC_LAST_ANCHOR_SEC = 120;
 const INTRO_SYNC_ENVELOPE_WINDOW_MS = 100;
 const INTRO_SYNC_SAMPLE_RATE_HZ = 8000;
+// Onset-alignment fallback (used when the interior-window cross-correlation
+// can't reach a confident consensus - which is the common case, because a
+// JOYSOUND karaoke re-recording rarely envelope-correlates with the original
+// master). We detect where the music actually starts in each track and align
+// those points. ONSET_HEAD_SEC bounds the region used to establish the loud
+// reference level; ONSET_THRESHOLD_FRAC of that level marks "music has
+// started"; ONSET_SMOOTH_MS smooths out transient clicks before the crossing.
+const INTRO_SYNC_ONSET_HEAD_SEC = 90;
+const INTRO_SYNC_ONSET_THRESHOLD_FRAC = 0.15;
+const INTRO_SYNC_ONSET_SMOOTH_MS = 300;
 
 function downloadYoutubeAudioAttempt(youtubeVideoId: string): Promise<string> {
   if (!fs.existsSync(TEMP_FOLDER)) {
@@ -810,6 +820,61 @@ function estimateVideoOffsetMs(
   return headMostMatch.offsetMs;
 }
 
+// First window whose trailing smoothed RMS crosses a fraction of the
+// head-region peak - i.e. where the music actually starts. Null if the track
+// never rises above the floor (effectively silent). Robust across differing
+// arrangements/mixes because it keys off "sound started", not waveform shape.
+function detectMusicOnsetWindows(envelope: number[]): number | null {
+  if (envelope.length === 0) return null;
+
+  const windowMs = INTRO_SYNC_ENVELOPE_WINDOW_MS;
+  const headWindows = Math.min(
+    envelope.length,
+    (INTRO_SYNC_ONSET_HEAD_SEC * 1000) / windowMs,
+  );
+
+  let peak = 0;
+  for (let i = 0; i < headWindows; i++) {
+    if (envelope[i] > peak) peak = envelope[i];
+  }
+  if (peak <= 0) return null;
+
+  const threshold = peak * INTRO_SYNC_ONSET_THRESHOLD_FRAC;
+  const smoothWindows = Math.max(
+    1,
+    Math.round(INTRO_SYNC_ONSET_SMOOTH_MS / windowMs),
+  );
+
+  let sum = 0;
+  for (let i = 0; i < envelope.length; i++) {
+    sum += envelope[i];
+    if (i >= smoothWindows) sum -= envelope[i - smoothWindows];
+    const avg = sum / Math.min(i + 1, smoothWindows);
+    if (avg >= threshold) return Math.max(0, i - smoothWindows + 1);
+  }
+
+  return null;
+}
+
+// Fallback for when cross-correlation is inconclusive: align the two tracks by
+// where each one's music starts. Returns the signed offset in ms with the same
+// convention as estimateVideoOffsetMs (positive: video has extra head material
+// to trim; negative: karaoke does, so delay the video), or null if either
+// onset can't be located or the gap exceeds the sane maximum.
+function estimateOnsetOffsetMs(
+  karaokeEnvelope: number[],
+  videoEnvelope: number[],
+): number | null {
+  const karaokeOnset = detectMusicOnsetWindows(karaokeEnvelope);
+  const videoOnset = detectMusicOnsetWindows(videoEnvelope);
+  if (karaokeOnset === null || videoOnset === null) return null;
+
+  const offsetMs = (videoOnset - karaokeOnset) * INTRO_SYNC_ENVELOPE_WINDOW_MS;
+  if (Math.abs(offsetMs) > INTRO_SYNC_MAX_OFFSET_MS) return null;
+
+  return offsetMs;
+}
+
 // Estimates the signed offset (ms) between a YouTube video's audio and the
 // Joysound karaoke track. Positive: the video has extra head material that
 // should be trimmed. Negative: the karaoke track has extra head material,
@@ -828,13 +893,29 @@ export async function computeYoutubeIntroOffsetMs(
       decodeToPcm(oggBuffer, INTRO_SYNC_MAX_DECODE_SEC),
     ]);
 
-    const offsetMs = estimateVideoOffsetMs(
-      computeRmsEnvelope(karaokePcm, INTRO_SYNC_ENVELOPE_WINDOW_MS),
-      computeRmsEnvelope(videoPcm, INTRO_SYNC_ENVELOPE_WINDOW_MS),
+    const karaokeEnvelope = computeRmsEnvelope(
+      karaokePcm,
+      INTRO_SYNC_ENVELOPE_WINDOW_MS,
+    );
+    const videoEnvelope = computeRmsEnvelope(
+      videoPcm,
+      INTRO_SYNC_ENVELOPE_WINDOW_MS,
     );
 
+    // Cross-correlation is the primary method: it can see through a loud
+    // non-musical intro (spoken bit, ambient) that would fool onset
+    // detection. But it's often inconclusive on karaoke re-recordings, and
+    // when it is, aligning where the music starts is far more reliable than
+    // the old end-together guess (which desynced already-aligned songs).
+    let offsetMs = estimateVideoOffsetMs(karaokeEnvelope, videoEnvelope);
+    let method = "correlation";
+    if (offsetMs === null) {
+      offsetMs = estimateOnsetOffsetMs(karaokeEnvelope, videoEnvelope);
+      method = "onset";
+    }
+
     console.info(
-      `computeYoutubeIntroOffsetMs: video=${youtubeVideoId} offsetMs=${offsetMs === null ? "no confident estimate" : offsetMs}`,
+      `computeYoutubeIntroOffsetMs: video=${youtubeVideoId} method=${method} offsetMs=${offsetMs === null ? "no confident estimate" : offsetMs}`,
     );
 
     return offsetMs;
@@ -859,20 +940,29 @@ function composeJoysoundVideoPromise(
   ffmpegLogFilename: string,
   // Signed video-vs-karaoke offset (only meaningful when tempFilename is a
   // downloaded YouTube video). Positive: the video has that much extra head
-  // material - trim it off here so the visuals aren't out of sync with the
-  // karaoke audio track. Negative: the karaoke track has extra head
+  // material - trim it off here with -ss so the visuals aren't out of sync
+  // with the karaoke audio track. Negative: the karaoke track has extra head
   // material instead; the caller delays the video afterwards via
-  // padJoysoundVideoPromise, so here we just avoid looping the video (the
-  // pad would shift the loop point into view) and let it end early - the
-  // player holds the last frame. Null/0: no adjustment.
+  // padJoysoundVideoPromise, so here we just play from the top. Null: no
+  // confident measurement (JOYSOUND default video, or all detection failed).
   introOffsetMs: number | null = null,
 ): Promise<JoysoundVideoData> {
   return new Promise((resolve, reject) => {
     let videoPlaytime = 0;
 
+    // With a measured offset we align the heads and play the video through
+    // exactly once, capped at the song length: the MV runs its full course -
+    // including its outro - and the player holds the last frame for whatever
+    // karaoke tail it doesn't cover. Looping instead would jarringly restart
+    // the MV over the final seconds. Without a measurement we can't trust the
+    // head alignment, so we keep the legacy loop-to-fill (a possibly-short
+    // default video shouldn't freeze on one frame for the whole song).
     const ffmpegArgs =
-      introOffsetMs !== null && introOffsetMs < 0
+      introOffsetMs !== null
         ? [
+            ...(introOffsetMs > 0
+              ? ["-ss", (introOffsetMs / 1000).toFixed(2)]
+              : []),
             "-i",
             tempFilename,
             "-i",
@@ -890,9 +980,6 @@ function composeJoysoundVideoPromise(
         : [
             "-stream_loop",
             "-1",
-            ...(introOffsetMs !== null && introOffsetMs > 0
-              ? ["-ss", (introOffsetMs / 1000).toFixed(2)]
-              : []),
             "-i",
             tempFilename,
             "-i",
@@ -1389,24 +1476,23 @@ export function downloadJoysoundData(
         measuredIntroOffsetMs !== null &&
         measuredIntroOffsetMs < 0
       ) {
-        // The karaoke track has extra head material (e.g. a count-off):
-        // delay the video by the measured amount.
+        // The karaoke track has extra head material (e.g. a count-off, or a
+        // longer intro than the original recording): delay the video by the
+        // measured amount so its music lands with the karaoke's.
         return padJoysoundVideoPromise(
           data,
           videoFilename,
           ffmpegLogFilename,
           -measuredIntroOffsetMs,
         );
-      } else if (
-        queueItem.youtubeVideoId &&
-        syncEnabled &&
-        measuredIntroOffsetMs === null &&
-        Math.abs(data.songDuration - data.videoPlaytime) < 10000
-      ) {
-        // No confident waveform measurement - fall back to the legacy
-        // heuristic of assuming the video and song should end together.
-        return padJoysoundVideoPromise(data, videoFilename, ffmpegLogFilename);
       }
+
+      // Positive / null offsets need no post-compose step: compose already
+      // trimmed the video head (-ss) or left the heads aligned, and holds the
+      // last frame for any uncovered tail. The old "assume video and song end
+      // together" pad used to fire here on a null measurement, but it blindly
+      // shoved the whole video several seconds late (desyncing songs whose
+      // heads were already aligned), so it's gone.
     })
     .then(() => {
       // The download-queue entry lives until the song actually lands in the
