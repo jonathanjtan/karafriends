@@ -1,3 +1,12 @@
+// Sampled from the services' own logo assets.
+$joysound-red: #d70e18;
+$dam-red: #b80009;
+
+// Ranking-tile colors: gold/platinum reads as "award" rather than doubling
+// up on the brand-red banner right next to it.
+$ranking-gold: #d4af37;
+$ranking-platinum: #a8aab4;
+
 $search-method-colors: (
   song: #a5b6ef,
   artist: #9ce7bb,
@@ -5,11 +14,9 @@ $search-method-colors: (
   joysoundArtist: #f77403,
   youtube: #e79ca1,
   niconico: #ababab,
+  joysound: $ranking-gold,
+  dam: $ranking-platinum,
 );
-
-// Sampled from the services' own logo assets.
-$joysound-red: #d70e18;
-$dam-red: #b80009;
 
 $banner-width: 30px;
 
@@ -25,9 +32,10 @@ $banner-width: 30px;
 
 // One service's block: a thin vertical brand banner down the left spanning
 // both rows, Title/Artist squares in row 1, the TOP 100 rectangle (same
-// height as the squares) across row 2. The invisible rankingRowSizer square
-// is what stretches row 2 to the squares' height — the TOP 100 button
-// itself has no intrinsic height.
+// height as the squares, same gradient/label/icon treatment as the Title
+// and Artist buttons) across row 2. The invisible rankingRowSizer square is
+// what stretches row 2 to the squares' height — the TOP 100 button itself
+// has no intrinsic height.
 .serviceSection {
   display: grid;
   grid-template-columns: $banner-width 1fr 1fr;
@@ -103,38 +111,6 @@ $banner-width: 30px;
       color: $color;
     }
   }
-}
-
-// Big brand-red TOP 100 tile: wordmark stacked over the label, centered.
-.rankingButton {
-  height: 100%;
-  border-radius: 4px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  box-shadow: 0 0 4px #ccc;
-
-  &.joysound {
-    background: $joysound-red;
-  }
-
-  &.dam {
-    background: $dam-red;
-  }
-}
-
-.rankingLogo {
-  display: block;
-  height: 30px;
-}
-
-.rankingText {
-  color: #fff;
-  font-size: 28px;
-  font-weight: bold;
-  letter-spacing: 2px;
 }
 
 .icon {
