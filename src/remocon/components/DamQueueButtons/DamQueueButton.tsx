@@ -4,6 +4,8 @@ import { graphql, useMutation } from "react-relay";
 
 import { SongPageQuery$data } from "../../pages/__generated__/SongPageQuery.graphql";
 import Button from "../Button";
+import * as buttonStyles from "../Button/Button.module.scss";
+import useProcessingLabel from "../Button/useProcessingLabel";
 import { useToast } from "../Toast/ToastContext";
 import {
   DamQueueButtonMutation,
@@ -61,7 +63,11 @@ const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
     return () => clearTimeout(timeout);
   });
 
+  const { processing, displayText } = useProcessingLabel(text, defaultText);
+
   const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    setText("Queueing");
+
     console.log(`tryHeadOfQueue=${e.shiftKey}`);
     commit({
       variables: {
@@ -103,8 +109,12 @@ const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
   };
 
   return (
-    <Button disabled={text !== defaultText} onClick={onClick}>
-      {text}
+    <Button
+      className={processing ? buttonStyles.processing : undefined}
+      disabled={text !== defaultText}
+      onClick={onClick}
+    >
+      {displayText}
     </Button>
   );
 };

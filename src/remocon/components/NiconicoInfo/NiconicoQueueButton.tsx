@@ -5,6 +5,8 @@ import { invariant } from "ts-invariant";
 
 import environment from "../../../common/graphqlEnvironment";
 import Button from "../Button";
+import * as buttonStyles from "../Button/Button.module.scss";
+import useProcessingLabel from "../Button/useProcessingLabel";
 import { useToast } from "../Toast/ToastContext";
 
 import { NiconicoInfoVideoInfoQuery$data } from "./__generated__/NiconicoInfoVideoInfoQuery.graphql";
@@ -73,7 +75,7 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
 
     if (text === "Finished Downloading" || text.includes("Error")) {
       timeoutId = window.setTimeout(() => setText(defaultText), 2500);
-    } else if (text !== defaultText && text !== "Waiting for server...") {
+    } else if (text !== defaultText && text !== "Queueing") {
       intervalId = window.setInterval(() => {
         subscription =
           fetchQuery<NiconicoQueueButtonGetVideoDownloadProgressQuery>(
@@ -121,8 +123,10 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
     };
   }, [text]);
 
+  const { processing, displayText } = useProcessingLabel(text, defaultText);
+
   const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    setText("Waiting for server...");
+    setText("Queueing");
 
     console.log(`tryHeadOfQueue=${e.shiftKey}`);
     commit({
@@ -165,8 +169,12 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
   };
 
   return (
-    <Button disabled={text !== defaultText} onClick={onClick}>
-      {text}
+    <Button
+      className={processing ? buttonStyles.processing : undefined}
+      disabled={text !== defaultText}
+      onClick={onClick}
+    >
+      {displayText}
     </Button>
   );
 };

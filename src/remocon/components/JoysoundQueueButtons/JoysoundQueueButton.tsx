@@ -5,6 +5,8 @@ import { invariant } from "ts-invariant";
 
 import environment from "../../../common/graphqlEnvironment";
 import Button from "../Button";
+import * as buttonStyles from "../Button/Button.module.scss";
+import useProcessingLabel from "../Button/useProcessingLabel";
 import { useToast } from "../Toast/ToastContext";
 
 import { JoysoundSongPageQuery$data } from "../../pages/__generated__/JoysoundSongPageQuery.graphql";
@@ -88,7 +90,7 @@ const JoysoundQueueButton = ({
         setText(defaultText);
         setDisabled(false);
       }, 2500);
-    } else if (text !== defaultText && text !== "Waiting for server...") {
+    } else if (text !== defaultText && text !== "Queueing") {
       intervalId = window.setInterval(() => {
         subscription =
           fetchQuery<JoysoundQueueButtonGetVideoDownloadProgressQuery>(
@@ -110,7 +112,7 @@ const JoysoundQueueButton = ({
               if (data.videoDownloadProgress.progress === -1.0) {
                 setText("Finished Downloading");
               } else if (data.videoDownloadProgress.progress === 1.0) {
-                setText("Processing video...");
+                setText("Processing video");
               } else {
                 setText(
                   `Downloading -- ${(
@@ -138,9 +140,11 @@ const JoysoundQueueButton = ({
     };
   }, [text]);
 
+  const { processing, displayText } = useProcessingLabel(text, defaultText);
+
   const onClick = (e: React.MouseEvent<HTMLButtonElement>) => {
     setDisabled(true);
-    setText("Waiting for server...");
+    setText("Queueing");
 
     console.log(`tryHeadOfQueue=${e.shiftKey}`);
     commit({
@@ -188,8 +192,12 @@ const JoysoundQueueButton = ({
   };
 
   return (
-    <Button disabled={isDisabled} onClick={onClick}>
-      {text}
+    <Button
+      className={processing ? buttonStyles.processing : undefined}
+      disabled={isDisabled}
+      onClick={onClick}
+    >
+      {displayText}
     </Button>
   );
 };
