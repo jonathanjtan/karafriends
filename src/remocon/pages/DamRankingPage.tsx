@@ -19,7 +19,7 @@ const damRankingPageQuery = graphql`
   ) {
     damRanking(category: $category, period: $period) {
       rank
-      id
+      songId
       name
       nameYomi
       artistName

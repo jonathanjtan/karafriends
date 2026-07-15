@@ -9,7 +9,7 @@ export interface RankingSongData {
   readonly rank: number;
   // Null when the charted song isn't in the service's singable catalog;
   // those rows render unlinked so the chart still reads as a full Top 100.
-  readonly id: string | null | undefined;
+  readonly songId: string | null | undefined;
   readonly name: string;
   readonly nameYomi: string;
   readonly artistName: string;
@@ -49,8 +49,8 @@ const RankingListItem = ({ song }: { song: RankingSongData }) => (
 const RankingList = ({ songs, linkBase }: Props) => (
   <List>
     {songs.map((song) =>
-      song.id ? (
-        <Link key={song.rank} to={`${linkBase}/${song.id}`}>
+      song.songId ? (
+        <Link key={song.rank} to={`${linkBase}/${song.songId}`}>
           <RankingListItem song={song} />
         </Link>
       ) : (

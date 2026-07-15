@@ -263,14 +263,21 @@ enum RankingPeriod {
   MONTHLY
 }
 
-# One entry of a service's public Top 100 karaoke chart. `id` is the
+# One entry of a service's public Top 100 karaoke chart. `songId` is the
 # service's catalog id (JOYSOUND selSongNo / DAM requestNo), so it plugs
 # straight into the existing song pages and queue mutations. Null when the
 # charted song isn't in the singable catalog (JOYSOUND's public chart lists
 # songs sound-cafe.jp doesn't carry).
+#
+# Deliberately NOT named `id`: the same song charts in multiple categories,
+# so a field literally called `id` would make Relay normalize every chart's
+# entry for that song to one shared record — and its `rank` (which differs
+# per chart) would get clobbered by whichever category query resolved last,
+# scrambling the visible ranking. A non-`id` field keeps each chart's rows
+# scoped to their own query.
 type RankingSong {
   rank: Int!
-  id: ID
+  songId: ID
   name: String!
   nameYomi: String!
   artistName: String!

@@ -19,7 +19,7 @@ const joysoundRankingPageQuery = graphql`
   ) {
     joysoundRanking(category: $category, period: $period) {
       rank
-      id
+      songId
       name
       nameYomi
       artistName
