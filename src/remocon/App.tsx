@@ -3,6 +3,7 @@ import { HashRouter, Route, Routes } from "react-router";
 
 import ControlBar from "./components/ControlBar";
 import NavBar from "./components/NavBar";
+import { ToastProvider } from "./components/Toast/ToastContext";
 import useUserIdentity from "./hooks/useUserIdentity";
 import AdhocLyricsPage from "./pages/AdhocLyricsPage";
 import ArtistPage from "./pages/ArtistPage";
@@ -49,57 +50,62 @@ const App = () => {
   return (
     <HashRouter>
       <div className={styles.app}>
-        <header>
-          <NavBar />
-        </header>
-        <main>
-          <Routes>
-            <Route path="/song/:id" element={<SongPage />} />
-            <Route path="/artist/:id" element={<ArtistPage />} />
-            <Route path="/adhocLyrics/:id" element={<AdhocLyricsPage />} />
-            <Route path="/joysoundSong/:id" element={<JoysoundSongPage />} />
-            <Route
-              path="/joysoundSong/:id/:youtubeVideoId"
-              element={<JoysoundSongPage />}
-            />
-            <Route
-              path="/joysoundArtist/:id"
-              element={<JoysoundArtistPage />}
-            />
-            <Route path="/search/song/:query?" element={<SongSearchPage />} />
-            <Route
-              path="/search/artist/:query?"
-              element={<ArtistSearchPage />}
-            />
-            <Route path="/search/youtube/:videoId?" element={<YouTubePage />} />
-            <Route
-              path="/search/niconico/:videoId?"
-              element={<NiconicoPage />}
-            />
-            <Route
-              path="/search/joysoundSong/:query?"
-              element={<JoysoundSongSearchPage />}
-            />
-            <Route
-              path="/search/joysoundArtist/:query?"
-              element={<JoysoundArtistSearchPage />}
-            />
-            <Route
-              path="/ranking/joysound/:category?/:period?"
-              element={<JoysoundRankingPage />}
-            />
-            <Route
-              path="/ranking/dam/:category?/:period?"
-              element={<DamRankingPage />}
-            />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
-            <Route path="/" element={<HomePage />} />
-          </Routes>
-        </main>
-        <footer>
-          <ControlBar />
-        </footer>
+        <ToastProvider>
+          <header>
+            <NavBar />
+          </header>
+          <main>
+            <Routes>
+              <Route path="/song/:id" element={<SongPage />} />
+              <Route path="/artist/:id" element={<ArtistPage />} />
+              <Route path="/adhocLyrics/:id" element={<AdhocLyricsPage />} />
+              <Route path="/joysoundSong/:id" element={<JoysoundSongPage />} />
+              <Route
+                path="/joysoundSong/:id/:youtubeVideoId"
+                element={<JoysoundSongPage />}
+              />
+              <Route
+                path="/joysoundArtist/:id"
+                element={<JoysoundArtistPage />}
+              />
+              <Route path="/search/song/:query?" element={<SongSearchPage />} />
+              <Route
+                path="/search/artist/:query?"
+                element={<ArtistSearchPage />}
+              />
+              <Route
+                path="/search/youtube/:videoId?"
+                element={<YouTubePage />}
+              />
+              <Route
+                path="/search/niconico/:videoId?"
+                element={<NiconicoPage />}
+              />
+              <Route
+                path="/search/joysoundSong/:query?"
+                element={<JoysoundSongSearchPage />}
+              />
+              <Route
+                path="/search/joysoundArtist/:query?"
+                element={<JoysoundArtistSearchPage />}
+              />
+              <Route
+                path="/ranking/joysound/:category?/:period?"
+                element={<JoysoundRankingPage />}
+              />
+              <Route
+                path="/ranking/dam/:category?/:period?"
+                element={<DamRankingPage />}
+              />
+              <Route path="/history" element={<HistoryPage />} />
+              <Route path="/profile" element={<ProfilePage />} />
+              <Route path="/" element={<HomePage />} />
+            </Routes>
+          </main>
+          <footer>
+            <ControlBar />
+          </footer>
+        </ToastProvider>
       </div>
     </HashRouter>
   );

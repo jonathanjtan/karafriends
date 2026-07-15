@@ -5,6 +5,7 @@ import { invariant } from "ts-invariant";
 
 import environment from "../../../common/graphqlEnvironment";
 import Button from "../Button";
+import { useToast } from "../Toast/ToastContext";
 
 import { NiconicoInfoVideoInfoQuery$data } from "./__generated__/NiconicoInfoVideoInfoQuery.graphql";
 import { NiconicoQueueButtonGetVideoDownloadProgressQuery } from "./__generated__/NiconicoQueueButtonGetVideoDownloadProgressQuery.graphql";
@@ -61,6 +62,7 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
   const [commit] = useMutation<NiconicoQueueButtonMutation>(
     niconicoQueueButtonMutation,
   );
+  const { showToast } = useToast();
 
   useEffect(() => {
     invariant(window);
@@ -142,6 +144,7 @@ const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
         switch (queueNicoSong?.__typename) {
           case "QueueSongInfo":
             setText("Downloading");
+            showToast(`${videoInfo.title} added to queue!`);
             break;
           case "QueueSongError":
             setText(`Error: ${queueNicoSong.reason}`);

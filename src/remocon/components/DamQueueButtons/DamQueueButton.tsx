@@ -4,6 +4,7 @@ import { graphql, useMutation } from "react-relay";
 
 import { SongPageQuery$data } from "../../pages/__generated__/SongPageQuery.graphql";
 import Button from "../Button";
+import { useToast } from "../Toast/ToastContext";
 import {
   DamQueueButtonMutation,
   DamQueueButtonMutation$variables,
@@ -53,6 +54,7 @@ const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
   const defaultText = getDefaultText(song.vocalTypes[streamingUrlIndex]);
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<DamQueueButtonMutation>(damQueueButtonMutation);
+  const { showToast } = useToast();
 
   useEffect(() => {
     const timeout = setTimeout(() => setText(defaultText), 2500);
@@ -83,6 +85,7 @@ const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
             setText(
               `Estimated wait: T-${formatDuration(queueDamSong.eta * 1000)}`,
             );
+            showToast(`${song.name} added to queue!`);
             break;
           case "QueueSongError":
             setText(`Error: ${queueDamSong.reason}`);

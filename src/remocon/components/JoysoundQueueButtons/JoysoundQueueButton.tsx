@@ -5,6 +5,7 @@ import { invariant } from "ts-invariant";
 
 import environment from "../../../common/graphqlEnvironment";
 import Button from "../Button";
+import { useToast } from "../Toast/ToastContext";
 
 import { JoysoundSongPageQuery$data } from "../../pages/__generated__/JoysoundSongPageQuery.graphql";
 import { JoysoundQueueButtonGetVideoDownloadProgressQuery } from "./__generated__/JoysoundQueueButtonGetVideoDownloadProgressQuery.graphql";
@@ -73,6 +74,7 @@ const JoysoundQueueButton = ({
   const [commit] = useMutation<JoysoundQueueButtonMutation>(
     joysoundQueueButtonMutation,
   );
+  const { showToast } = useToast();
 
   useEffect(() => {
     invariant(window);
@@ -163,6 +165,7 @@ const JoysoundQueueButton = ({
         switch (queueJoysoundSong?.__typename) {
           case "QueueSongInfo":
             setText("Downloading");
+            showToast(`${song.name} added to queue!`);
             break;
           case "QueueSongError":
             setText(`Error: ${queueJoysoundSong.reason}`);

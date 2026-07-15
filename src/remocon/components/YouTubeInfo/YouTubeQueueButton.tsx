@@ -5,6 +5,7 @@ import { invariant } from "ts-invariant";
 
 import environment from "../../../common/graphqlEnvironment";
 import Button from "../Button";
+import { useToast } from "../Toast/ToastContext";
 
 import { YouTubeInfoVideoInfoQuery$data } from "./__generated__/YouTubeInfoVideoInfoQuery.graphql";
 import { YouTubeQueueButtonGetVideoDownloadProgressQuery } from "./__generated__/YouTubeQueueButtonGetVideoDownloadProgressQuery.graphql";
@@ -69,6 +70,7 @@ const YouTubeQueueButton = ({
   const [commit] = useMutation<YouTubeQueueButtonMutation>(
     youTubeQueueButtonMutation,
   );
+  const { showToast } = useToast();
 
   useEffect(() => {
     invariant(window);
@@ -153,6 +155,7 @@ const YouTubeQueueButton = ({
         switch (queueYoutubeSong?.__typename) {
           case "QueueSongInfo":
             setText("Downloading");
+            showToast(`${videoInfo.title} added to queue!`);
             break;
           case "QueueSongError":
             setText(`Error: ${queueYoutubeSong.reason}`);
