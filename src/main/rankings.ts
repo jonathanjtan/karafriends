@@ -3,10 +3,13 @@
 // ids directly in the ranking markup (JOYSOUND as /web/search/song/<id>
 // links in a schema.org JSON-LD ItemList, DAM as songleaf requestNo query
 // params), so entries map straight onto the same ids the search flows use.
+import fs from "fs";
 import nodeFetch from "node-fetch";
+import path from "path";
 import tunnel from "tunnel";
 
 import karafriendsConfig from "../common/config";
+import { TEMP_FOLDER } from "../common/videoDownloader";
 import { JoysoundAPI } from "./joysoundApi";
 
 export interface RankingSongEntry {
@@ -74,10 +77,6 @@ function damRankingSource(
     sectionId: period === "WEEKLY" ? "ranking-weekly" : "ranking-monthly",
   };
 }
-
-// Rankings only change weekly; an hour keeps repeat page visits free while
-// still picking up the weekly rollover within the same karaoke session.
-const RANKING_CACHE_TTL_MS = 60 * 60 * 1000;
 
 // Plain-browser UA — both sites serve the scraped markup to regular
 // browsers; no reason to advertise a headless client instead.
@@ -323,30 +322,115 @@ async function resolveJoysoundEntry(
   }
 }
 
-// TTL-cached fetch per (service, category, period) with failure eviction: a
-// successful scrape is reused for the TTL, but a rejected one is dropped
-// immediately so the next page visit retries instead of serving a stuck
-// error until relaunch.
-const rankingCache = new Map<
-  string,
-  { fetchedAt: number; promise: Promise<RankingSongEntry[]> }
->();
+// Charts are cached to disk (like reading-cache.json) so the expensive first
+// fetch — JOYSOUND resolves ~100 songs against the search API — is paid once
+// and survives relaunches. A cached chart stays fresh for the whole period
+// window it belongs to (a weekly chart until the calendar week rolls over, a
+// monthly chart until the month does), matching how often the sources
+// actually change; a stale chart is refetched but served from cache in the
+// meantime if the refetch fails.
+interface CachedRanking {
+  fetchedAt: number;
+  entries: RankingSongEntry[];
+}
 
+const rankingCache = new Map<string, CachedRanking>();
+// In-flight scrape per key, so concurrent page visits (and the launch
+// prefetch) don't kick off duplicate work.
+const inflightRankings = new Map<string, Promise<RankingSongEntry[]>>();
+
+const RANKING_CACHE_PATH = path.resolve(TEMP_FOLDER, "rankings-cache.json");
+
+function loadRankingCache(): void {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(RANKING_CACHE_PATH, "utf-8")) as {
+      [key: string]: CachedRanking;
+    };
+
+    for (const [key, value] of Object.entries(parsed)) {
+      if (
+        value &&
+        typeof value.fetchedAt === "number" &&
+        Array.isArray(value.entries)
+      ) {
+        rankingCache.set(key, value);
+      }
+    }
+  } catch {
+    // No cache yet (or corrupt / unreadable) — start empty.
+  }
+}
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function saveRankingCache(): void {
+  // Debounce so a burst of prefetches writes the file once.
+  if (saveTimer) return;
+
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    const obj: { [key: string]: CachedRanking } = {};
+    for (const [key, value] of rankingCache) obj[key] = value;
+
+    fs.writeFile(RANKING_CACHE_PATH, JSON.stringify(obj), (err) => {
+      if (err) console.warn("Failed to persist rankings cache:", err);
+    });
+  }, 1000);
+
+  saveTimer.unref?.();
+}
+
+// Monday-anchored week key (local time) — two dates in the same week share
+// it, sidestepping ISO week-number/year-boundary edge cases.
+function periodBucket(date: Date, period: RankingPeriod): string {
+  if (period === "MONTHLY") {
+    return `${date.getFullYear()}-${date.getMonth()}`;
+  }
+
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return `${monday.getFullYear()}-${monday.getMonth()}-${monday.getDate()}`;
+}
+
+function isFresh(cached: CachedRanking, period: RankingPeriod): boolean {
+  return (
+    periodBucket(new Date(cached.fetchedAt), period) ===
+    periodBucket(new Date(), period)
+  );
+}
+
+// Serve from disk cache while the period window holds; otherwise scrape,
+// persist, and return — but if a stale refresh fails, fall back to the stale
+// entries rather than erroring (an old chart beats none). Only a cold-cache
+// failure propagates so the remocon can show a retry.
 function withRankingCache(
   key: string,
+  period: RankingPeriod,
   fetchRanking: () => Promise<RankingSongEntry[]>,
 ): Promise<RankingSongEntry[]> {
   const cached = rankingCache.get(key);
-  if (cached && Date.now() - cached.fetchedAt < RANKING_CACHE_TTL_MS) {
-    return cached.promise;
+  if (cached && isFresh(cached, period)) {
+    return Promise.resolve(cached.entries);
   }
 
-  const promise = fetchRanking().catch((error) => {
-    rankingCache.delete(key);
-    throw error;
-  });
-  rankingCache.set(key, { fetchedAt: Date.now(), promise });
+  const inflight = inflightRankings.get(key);
+  if (inflight) return inflight;
 
+  const promise = fetchRanking()
+    .then((entries) => {
+      rankingCache.set(key, { fetchedAt: Date.now(), entries });
+      saveRankingCache();
+      return entries;
+    })
+    .catch((error) => {
+      if (cached) {
+        console.warn(`Refreshing ranking ${key} failed; serving stale:`, error);
+        return cached.entries;
+      }
+      throw error;
+    })
+    .finally(() => inflightRankings.delete(key));
+
+  inflightRankings.set(key, promise);
   return promise;
 }
 
@@ -355,42 +439,45 @@ export function getJoysoundRanking(
   category: RankingCategory,
   period: RankingPeriod,
 ): Promise<RankingSongEntry[]> {
-  return withRankingCache(`joysound:${category}:${period}`, async () => {
-    const chart = parseJoysoundRanking(
-      await fetchPage(joysoundRankingUrl(category, period)),
-    ).slice(0, 100);
+  return withRankingCache(
+    `joysound:${category}:${period}`,
+    period,
+    async () => {
+      const chart = parseJoysoundRanking(
+        await fetchPage(joysoundRankingUrl(category, period)),
+      ).slice(0, 100);
 
-    // An empty parse means the page layout changed, not an empty chart —
-    // surface it as an error so the remocon shows a retry instead of a
-    // blank-but-successful page.
-    if (chart.length === 0) {
-      throw new Error("Failed to parse any songs out of the JOYSOUND ranking");
-    }
+      // An empty parse means the page layout changed, not an empty chart —
+      // surface it as an error so the remocon shows a retry instead of a
+      // blank-but-successful page.
+      if (chart.length === 0) {
+        throw new Error(
+          "Failed to parse any songs out of the JOYSOUND ranking",
+        );
+      }
 
-    const entries = await mapWithConcurrency(chart, 6, (entry) =>
-      resolveJoysoundEntry(joysoundApi, entry),
-    );
+      const entries = await mapWithConcurrency(chart, 6, (entry) =>
+        resolveJoysoundEntry(joysoundApi, entry),
+      );
 
-    // No-match entries are expected (catalog gaps) and cacheable, but if
-    // every catalog lookup errored the whole result is garbage — throw so
-    // the failure eviction retries next visit instead of pinning a fully
-    // unclickable chart for the TTL.
-    if (
-      entries.every((entry) => entry.searchFailed) &&
-      entries.some((entry) => entry.searchFailed)
-    ) {
-      throw new Error("All JOYSOUND ranking catalog lookups failed");
-    }
+      // No-match entries are expected (catalog gaps) and cacheable, but if
+      // every catalog lookup errored the whole result is garbage — throw so it
+      // isn't persisted and the next visit retries instead of pinning a fully
+      // unclickable chart for the period.
+      if (entries.every((entry) => entry.searchFailed)) {
+        throw new Error("All JOYSOUND ranking catalog lookups failed");
+      }
 
-    return entries.map(({ searchFailed, ...entry }) => entry);
-  });
+      return entries.map(({ searchFailed, ...entry }) => entry);
+    },
+  );
 }
 
 export function getDamRanking(
   category: RankingCategory,
   period: RankingPeriod,
 ): Promise<RankingSongEntry[]> {
-  return withRankingCache(`dam:${category}:${period}`, async () => {
+  return withRankingCache(`dam:${category}:${period}`, period, async () => {
     const { url, sectionId } = damRankingSource(category, period);
     const entries = parseDamRanking(await fetchPage(url), sectionId);
 
@@ -400,4 +487,39 @@ export function getDamRanking(
 
     return entries.slice(0, 100);
   });
+}
+
+const ALL_CATEGORIES: RankingCategory[] = [
+  "OVERALL",
+  "ANIME",
+  "VOCALOID",
+  "ENKA",
+  "WESTERN",
+];
+const ALL_PERIODS: RankingPeriod[] = ["WEEKLY", "MONTHLY"];
+
+// Load any persisted charts and warm every (service, category, period) in the
+// background so a chart is already resolved by the time someone opens the
+// page. Runs sequentially and best-effort: withRankingCache short-circuits
+// fresh entries (so a warm launch does almost nothing), and each fetch is
+// guarded so one failure neither stops the sweep nor — critically — escapes
+// as an unhandled rejection (which would take the whole app down).
+export function primeRankings(joysoundApi: JoysoundAPI): void {
+  loadRankingCache();
+
+  void (async () => {
+    for (const period of ALL_PERIODS) {
+      for (const category of ALL_CATEGORIES) {
+        await getDamRanking(category, period).catch((error) =>
+          console.warn(`Prefetch dam ${category} ${period} failed:`, error),
+        );
+        await getJoysoundRanking(joysoundApi, category, period).catch((error) =>
+          console.warn(
+            `Prefetch joysound ${category} ${period} failed:`,
+            error,
+          ),
+        );
+      }
+    }
+  })();
 }

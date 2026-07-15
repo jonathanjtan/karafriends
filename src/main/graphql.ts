@@ -51,6 +51,7 @@ import memoizeWithFailureEviction from "./memoizeWithFailureEviction";
 import {
   getDamRanking,
   getJoysoundRanking,
+  primeRankings,
   RankingCategory,
   RankingPeriod,
   RankingSongEntry,
@@ -1254,6 +1255,9 @@ const resolvers = {
   // yomi falls back to the reading cache / kuromoji guess like JOYSOUND
   // search results do.
   RankingSong: {
+    songId(parent: RankingSongEntry) {
+      return parent.id;
+    },
     ...nameYomiResolvers,
   },
 
@@ -2806,5 +2810,14 @@ export function applyGraphQLMiddleware(app: Application) {
         `Server is now running on http://localhost:${karafriendsConfig.remoconPort}`,
       );
     });
+
+    // Warm the Top 100 charts in the background so they're ready (and, after
+    // the first run, persisted) before anyone opens the ranking pages.
+    primeRankings(
+      new JoysoundAPI(joysoundCredentialsProvider, {
+        cache: server.cache,
+        fetch: fetcher,
+      }),
+    );
   });
 }
