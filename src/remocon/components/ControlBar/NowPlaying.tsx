@@ -12,12 +12,20 @@ const NowPlaying = () => {
   return (
     <div className={styles.nowPlaying}>
       {currentSong && (
-        <SongQueueItem
-          item={currentSong}
-          eta={0}
-          myNickname={nickname}
-          isCurrent={true}
-        />
+        <>
+          <div className={styles.nowPlayingPrefix}>
+            <span className={styles.nowPlayingPrefixEn}>Now Playing: </span>
+            <span className={styles.nowPlayingPrefixJa}>演奏中の曲: </span>
+          </div>
+          <div className={styles.nowPlayingSong}>
+            <SongQueueItem
+              item={currentSong}
+              eta={0}
+              myNickname={nickname}
+              isCurrent={true}
+            />
+          </div>
+        </>
       )}
     </div>
   );
