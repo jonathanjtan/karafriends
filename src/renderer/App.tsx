@@ -192,9 +192,15 @@ function App(props: {
   const [breakMinutes, setBreakMinutes] = useState(5);
   const breakActive = breakEndsAt !== null;
   // Tick while a break is active so the End Break countdown stays live.
+  // breakNow only refreshes here, so a stale value can otherwise sit around
+  // between one break ending and the next starting; without the immediate
+  // refresh below, a newly-started break's remaining time would briefly be
+  // computed against that stale timestamp (jumping to an inflated value
+  // before the first 1s tick corrects it).
   const [breakNow, setBreakNow] = useState(() => Date.now());
   useEffect(() => {
     if (!breakActive) return;
+    setBreakNow(Date.now());
     const timer = setInterval(() => setBreakNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [breakActive]);
@@ -550,33 +556,43 @@ function App(props: {
                 <div className="pianoRollSizeButtons breakButtons settingControlWide">
                   <button
                     className="btn-small grey"
-                    disabled={breakActive}
                     onClick={() =>
-                      setBreakMinutes(Math.max(breakMinutes - 1, 1))
+                      breakActive
+                        ? setBreakEndsAt(
+                            Math.max(breakEndsAt! - 60 * 1000, Date.now()),
+                          )
+                        : setBreakMinutes(Math.max(breakMinutes - 1, 1))
                     }
                   >
                     −
                   </button>
                   <button
-                    className="btn-small breakActionButton"
-                    onClick={() =>
-                      setBreakEndsAt(
-                        breakActive
-                          ? null
-                          : Date.now() + breakMinutes * 60 * 1000,
-                      )
+                    className={
+                      breakActive
+                        ? "btn-small breakActionButton breakActionButtonActive"
+                        : "btn-small breakActionButton"
                     }
+                    onClick={() => {
+                      const now = Date.now();
+                      setBreakNow(now);
+                      setBreakEndsAt(
+                        breakActive ? null : now + breakMinutes * 60 * 1000,
+                      );
+                    }}
                   >
                     {breakActive
-                      ? `End break (${Math.floor(
-                          breakRemainingSecs / 60,
-                        )}:${String(breakRemainingSecs % 60).padStart(2, "0")})`
+                      ? `${Math.floor(breakRemainingSecs / 60)}:${String(
+                          breakRemainingSecs % 60,
+                        ).padStart(2, "0")}`
                       : `${breakMinutes}:00 break`}
                   </button>
                   <button
                     className="btn-small grey"
-                    disabled={breakActive}
-                    onClick={() => setBreakMinutes(breakMinutes + 1)}
+                    onClick={() =>
+                      breakActive
+                        ? setBreakEndsAt(breakEndsAt! + 60 * 1000)
+                        : setBreakMinutes(breakMinutes + 1)
+                    }
                   >
                     +
                   </button>

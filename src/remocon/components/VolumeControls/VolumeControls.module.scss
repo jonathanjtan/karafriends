@@ -151,6 +151,12 @@
   white-space: nowrap;
 }
 
+.breakActionButtonActive {
+  border-color: #ffc107;
+  background-color: #ffc107;
+  color: #3e2723;
+}
+
 .sizeButtons {
   display: flex;
   gap: 6px;

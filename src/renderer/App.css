@@ -308,6 +308,13 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   white-space: nowrap;
 }
 
+/* Amber rather than Materialize's plain yellow: bright yellow reads jarring
+   as an "active" color, and needs the darkened text below for contrast. */
+.breakButtons .breakActionButtonActive {
+  background-color: #ffc107 !important;
+  color: #3e2723 !important;
+}
+
 /* Compact the service health table to match the settings grid's density:
    Materialize's default 15px row padding and full-size cells read oversized
    next to the packed rows above it. */

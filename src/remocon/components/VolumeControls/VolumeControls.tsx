@@ -54,6 +54,7 @@ const VolumeControls = () => {
   const breakActive = breakEndsAt !== null;
   useEffect(() => {
     if (!breakActive) return;
+    setBreakNow(Date.now());
     const timer = setInterval(() => setBreakNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [breakActive]);
@@ -186,29 +187,39 @@ const VolumeControls = () => {
         <div className={styles.breakRow}>
           <button
             className={styles.sizeButton}
-            disabled={breakActive}
-            onClick={() => setBreakMinutes(Math.max(breakMinutes - 1, 1))}
+            onClick={() =>
+              breakActive
+                ? setBreakEndsAt(Math.max(breakEndsAt! - 60 * 1000, Date.now()))
+                : setBreakMinutes(Math.max(breakMinutes - 1, 1))
+            }
           >
             −
           </button>
           <button
-            className={styles.breakActionButton}
-            onClick={() =>
+            className={classnames(styles.breakActionButton, {
+              [styles.breakActionButtonActive]: breakActive,
+            })}
+            onClick={() => {
+              const now = Date.now();
+              setBreakNow(now);
               setBreakEndsAt(
-                breakActive ? null : Date.now() + breakMinutes * 60 * 1000,
-              )
-            }
+                breakActive ? null : now + breakMinutes * 60 * 1000,
+              );
+            }}
           >
             {breakActive
-              ? `End break (${Math.floor(breakRemainingSecs / 60)}:${String(
+              ? `${Math.floor(breakRemainingSecs / 60)}:${String(
                   breakRemainingSecs % 60,
-                ).padStart(2, "0")})`
+                ).padStart(2, "0")}`
               : `${breakMinutes}:00 break`}
           </button>
           <button
             className={styles.sizeButton}
-            disabled={breakActive}
-            onClick={() => setBreakMinutes(breakMinutes + 1)}
+            onClick={() =>
+              breakActive
+                ? setBreakEndsAt(breakEndsAt! + 60 * 1000)
+                : setBreakMinutes(breakMinutes + 1)
+            }
           >
             +
           </button>
