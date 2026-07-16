@@ -322,6 +322,15 @@ ba` download** — it logs
     canvas without `preserveDrawingBuffer` returns blank after compositing —
     pixel assertions must run synchronously right after draw. `readPixels`
     y-origin is bottom-left.
+- **Queue advance is callback-chained with no self-healing**: songs advance
+  only via media events → `pollQueue` → mutation callbacks in
+  `renderer/Player.tsx`. One broken link (e.g. a song-start path that never
+  reaches `play()` and so never fires `ended`/`error` — the uncaught JOYSOUND
+  telop fetch used to be one) wedges the whole app: `playbackState` stuck on
+  PLAYING, stale "Now Playing", no BGM, silent room until relaunch. Every
+  song-start path must terminate in `play()` or `pollQueue()` (`.catch`
+  included), and a poll watchdog in Player (PLAYING + video never started +
+  no pop/hold in flight → resume the queue) backstops anything missed.
 - **Service health** (`serviceHealth` / `recheckServiceHealth`): live
   DAM/JOYSOUND reachability check (periodic + per-song-transition + manual
   "Check now"). Gate the per-song trigger on a **real** song transition — the

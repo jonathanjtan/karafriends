@@ -49,8 +49,12 @@ export default function BackgroundMusic({
 
   // Set once per shuffle playthrough when the end-of-track transition has
   // been decided (fade started or seamless loop armed), so timeupdate/ended
-  // don't double-trigger it.
+  // don't double-trigger it. armedAt lets the watchdog expire a flag that
+  // somehow outlived the ended event it was armed for (arming only happens
+  // in a track's final seconds, so a stale flag would otherwise mute the
+  // volume-restore rescue for a whole track).
   const shuffleTransitionArmed = useRef(false);
+  const shuffleTransitionArmedAt = useRef(0);
 
   const targetFilename = isShuffling ? shuffledFilename : trackFilename;
   const shouldPlay = targetFilename !== null && playbackState === "WAITING";
@@ -66,12 +70,22 @@ export default function BackgroundMusic({
   // mid-fade still land on the latest volume.
   const volumeRef = useRef(volume);
   const fadeRaf = useRef<number | null>(null);
+  // What the in-flight fade is trying to do, so the watchdog can force it to
+  // completion if its rAF loop stops getting frames (rAF is compositor
+  // driven; a sleeping display or a wedged GPU process freezes it while
+  // timers keep running, stranding the volume mid-fade forever).
+  const fadeInFlight = useRef<{
+    getTarget: () => number;
+    onDone?: () => void;
+    deadline: number;
+  } | null>(null);
 
   const cancelFade = () => {
     if (fadeRaf.current !== null) {
       cancelAnimationFrame(fadeRaf.current);
       fadeRaf.current = null;
     }
+    fadeInFlight.current = null;
   };
 
   const fadeTo = (
@@ -83,6 +97,11 @@ export default function BackgroundMusic({
     cancelFade();
     const startVolume = audio.volume;
     const startTime = performance.now();
+    fadeInFlight.current = {
+      getTarget,
+      onDone,
+      deadline: startTime + durationMs,
+    };
     const step = (now: number) => {
       const progress = Math.min((now - startTime) / durationMs, 1);
       audio.volume = startVolume + (getTarget() - startVolume) * progress;
@@ -90,6 +109,7 @@ export default function BackgroundMusic({
         fadeRaf.current = requestAnimationFrame(step);
       } else {
         fadeRaf.current = null;
+        fadeInFlight.current = null;
         if (onDone) onDone();
       }
     };
@@ -138,6 +158,7 @@ export default function BackgroundMusic({
     if (!isFinite(remainingMs) || remainingMs > SHUFFLE_END_FADE_OUT_MS) return;
     const next = pickRandomTrack();
     shuffleTransitionArmed.current = true;
+    shuffleTransitionArmedAt.current = performance.now();
     nextShufflePick.current = next;
     if (next === mountedFilename && isLoopable(next)) return;
     fadeTo(audio, () => 0, Math.max(remainingMs, 1));
@@ -233,7 +254,30 @@ export default function BackgroundMusic({
         if (frozenTicks >= 2) reload(audio);
         return;
       }
-      if (fadeRaf.current !== null) return;
+      if (fadeRaf.current !== null) {
+        // An in-flight fade normally finishes within its duration; if its
+        // rAF loop stopped getting frames, force it to its end state rather
+        // than trusting it forever.
+        const fade = fadeInFlight.current;
+        if (fade && performance.now() > fade.deadline + 2000) {
+          console.warn("BGM watchdog: stuck fade, forcing it to completion");
+          cancelFade();
+          audio.volume = fade.getTarget();
+          if (fade.onDone) fade.onDone();
+        }
+        return;
+      }
+      if (
+        shuffleTransitionArmed.current &&
+        performance.now() - shuffleTransitionArmedAt.current > 15000
+      ) {
+        // Arming happens at most SHUFFLE_END_FADE_OUT_MS before the track
+        // ends, and every legitimate exit resets the flag — one this old is
+        // stale and would suppress the volume-restore rescue below.
+        console.warn("BGM watchdog: clearing stale shuffle transition flag");
+        shuffleTransitionArmed.current = false;
+        nextShufflePick.current = null;
+      }
       if (audio.paused) {
         frozenTicks = 0;
         audio.volume = 0;
@@ -256,6 +300,9 @@ export default function BackgroundMusic({
           // end-of-track shuffle fade — e.g. a fade-out to 0 that never got
           // a matching fade back in. Restore the volume so BGM isn't
           // silently "playing".
+          console.warn(
+            `BGM watchdog: playing inaudibly (volume ${audio.volume.toFixed(2)} vs ${volumeRef.current.toFixed(2)}), restoring`,
+          );
           fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
         }
       }

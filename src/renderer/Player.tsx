@@ -137,6 +137,7 @@ function Player(props: {
   // update outraces the pop mutation's response.
   const frozenQueueRef = useRef(queue);
   const [popPending, setPopPending] = useState(false);
+  const popPendingRef = useRef(false);
   const intermissionTimerRef = useRef<NodeJS.Timeout | null>(null);
   // The intermission's own minimum hold deadline (epoch ms); the effective
   // hold is the max of this and any active break.
@@ -157,6 +158,10 @@ function Player(props: {
   useEffect(() => {
     playbackStateRef.current = playbackState;
   }, [playbackState]);
+
+  useEffect(() => {
+    popPendingRef.current = popPending;
+  }, [popPending]);
 
   // The renderer is the single authority for expiring a break: clear it
   // server-side the moment it runs out, so every remocon's button flips back
@@ -448,6 +453,20 @@ function Player(props: {
 
                   invariant(videoRef.current);
                   videoRef.current.play();
+                })
+                .catch((error) => {
+                  // Without this, a missing/corrupt telop file means play()
+                  // is never called and no media event ever fires — the poll
+                  // loop dies with playbackState stuck on PLAYING (silent
+                  // room, stale "Now Playing", no BGM) until relaunch.
+                  console.error(
+                    `Failed to load telop for joysound song ${popSong.songId}, skipping`,
+                    error,
+                  );
+                  M.toast({
+                    html: `<span>Skipped "${popSong.name}" — lyrics data unavailable</span>`,
+                  });
+                  pollQueue();
                 });
 
               break;
@@ -575,7 +594,46 @@ function Player(props: {
       pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
     }
 
+    // Watchdog: the queue only advances through this chain of callbacks
+    // (media events -> pollQueue -> commitMutation callbacks), and nothing
+    // re-arms it if a link dies — the bootstrap above runs once at mount. A
+    // song that never reaches play() (and so never fires ended/error) leaves
+    // playbackState wedged on PLAYING with a silent room, a stale
+    // "Now Playing", and no BGM until relaunch. Detect that state — PLAYING
+    // but the <video> never started (or already ended) with no pop, poll, or
+    // intermission hold in flight — and restart the loop.
+    //
+    // currentTime === 0 / ended distinguishes a wedge from someone pausing
+    // mid-song with the on-screen video controls (which doesn't go through
+    // playbackState and must not trigger a skip).
+    let wedgedTicks = 0;
+    const pollWatchdog = setInterval(() => {
+      const video = videoRef.current;
+      const maybeWedged =
+        video !== null &&
+        playbackStateRef.current === "PLAYING" &&
+        !popPendingRef.current &&
+        pollTimeoutRef.current === null &&
+        intermissionTimerRef.current === null &&
+        video.paused &&
+        !video.seeking &&
+        (video.currentTime === 0 || video.ended);
+      if (!maybeWedged) {
+        wedgedTicks = 0;
+        return;
+      }
+      wedgedTicks += 1;
+      if (wedgedTicks < 2) return;
+      wedgedTicks = 0;
+      console.error(
+        "Player watchdog: playbackState is PLAYING but nothing is playing and no pop is in flight; resuming the queue",
+      );
+      pollQueue();
+    }, POLL_INTERVAL_MS);
+
     return () => {
+      clearInterval(pollWatchdog);
+
       if (pollTimeoutRef.current) {
         clearTimeout(pollTimeoutRef.current);
 
