@@ -86,6 +86,9 @@ const JoysoundQueueButton = ({
     let subscription: Subscription | null = null;
 
     if (text === "Finished Downloading" || text.includes("Error")) {
+      if (text === "Finished Downloading") {
+        showToast(`${song.name} added to queue!`);
+      }
       timeoutId = window.setTimeout(() => {
         setText(defaultText);
         setDisabled(false);
@@ -169,7 +172,6 @@ const JoysoundQueueButton = ({
         switch (queueJoysoundSong?.__typename) {
           case "QueueSongInfo":
             setText("Downloading");
-            showToast(`${song.name} added to queue!`);
             break;
           case "QueueSongError":
             setText(`Error: ${queueJoysoundSong.reason}`);

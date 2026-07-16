@@ -82,6 +82,9 @@ const YouTubeQueueButton = ({
     let subscription: Subscription | null = null;
 
     if (text === "Finished Downloading" || text.includes("Error")) {
+      if (text === "Finished Downloading") {
+        showToast(`${videoInfo.title} added to queue!`);
+      }
       timeoutId = window.setTimeout(() => setText(defaultText), 2500);
     } else if (text !== defaultText && text !== "Queueing") {
       intervalId = window.setInterval(() => {
@@ -159,7 +162,6 @@ const YouTubeQueueButton = ({
         switch (queueYoutubeSong?.__typename) {
           case "QueueSongInfo":
             setText("Downloading");
-            showToast(`${videoInfo.title} added to queue!`);
             break;
           case "QueueSongError":
             setText(`Error: ${queueYoutubeSong.reason}`);
