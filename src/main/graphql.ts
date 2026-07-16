@@ -563,6 +563,33 @@ async function searchWithRomajiFallback<T>(
 // good pick for a background video.
 const TOPIC_CHANNEL_SUFFIX = " - Topic";
 
+// When an artist has an Official Artist Channel (OAC), YouTube's search API
+// misattributes their auto-generated Topic-channel tracks to the OAC's own
+// identity - author.name comes back as the plain artist name (e.g. "Green
+// Day", not "Green Day - Topic") with is_verified_artist: true, so
+// TOPIC_CHANNEL_SUFFIX never sees the "- Topic" suffix and the audio-only
+// track can win tier 0 outright. oEmbed hits the video's real watch-page
+// metadata instead, which still reports the true uploader. It's a public,
+// unauthenticated JSON endpoint - no player JS / signature work - so unlike
+// yt-dlp/Innertube extraction it doesn't carry meaningful bot-wall risk, but
+// it's still a network round trip, so only call it on the few candidates
+// that actually make the final cut, not the whole raw search result set.
+async function isTopicChannelVideo(videoId: string): Promise<boolean> {
+  try {
+    const res = await nodeFetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(
+        `https://www.youtube.com/watch?v=${videoId}`,
+      )}&format=json`,
+    );
+    if (!res.ok) return false;
+    const data = (await res.json()) as { author_name?: string };
+    return (data.author_name ?? "").endsWith(TOPIC_CHANNEL_SUFFIX);
+  } catch (e) {
+    console.warn(`Failed to verify uploader for video ${videoId}: ${e}`);
+    return false;
+  }
+}
+
 // Titles containing any of these are essentially never the official/full
 // music video we want as a background video, even when duration happens to
 // line up.
@@ -616,7 +643,7 @@ interface YoutubeSearchVideoItem {
   readonly id?: string;
   readonly is_live?: boolean;
   readonly title?: { text?: string };
-  readonly author?: { name?: string };
+  readonly author?: { name?: string; is_verified_artist?: boolean };
   readonly duration?: { seconds?: number };
   readonly view_count?: { text?: string };
 }
@@ -651,6 +678,16 @@ function parseViewCountText(text: string | undefined): number {
 // succeed.
 const OFFICIAL_VIDEO_TAG_PATTERN = /[([【（［]\s*official\b/i;
 
+// Fan-made anime music videos are a deliberate, well-produced pairing of the
+// song with edited footage - a reasonable background-video pick when no
+// official/artist-channel upload is available, but still a fan work, so it
+// should never outrank one. "AMV" isn't an English word, so a bare
+// word-boundary match is safe; "MAD" (the Japanese-fandom term for the same
+// thing) collides with the ordinary English word, so it's only trusted in
+// its conventional bracketed-tag or suffixed ("MAD動画"/"MAD video") forms.
+const MAD_AMV_TAG_PATTERN =
+  /\bamv\b|[([【（［]\s*mad\b|\bmad動画|\bmad\s*(?:video|movie)\b/i;
+
 // Joysound stores artist names in Japanese script (宇多田ヒカル) while many
 // artists' official channels use a romanized name, usually in Western name
 // order ("Hikaru Utada") - a plain substring comparison can never match, so
@@ -670,7 +707,11 @@ function romajiTokenKey(text: string): string {
 }
 
 function musicVideoCandidateTier(
-  candidate: { readonly author: string; readonly title: string },
+  candidate: {
+    readonly author: string;
+    readonly title: string;
+    readonly isVerifiedArtist?: boolean;
+  },
   artistNameVariants: string[],
 ): number {
   const lowerAuthor = candidate.author.toLowerCase().trim();
@@ -705,11 +746,21 @@ function musicVideoCandidateTier(
   );
   const isOfficialTitle = titleWithoutArtistName.includes("official");
   const hasOfficialVideoTag = OFFICIAL_VIDEO_TAG_PATTERN.test(candidate.title);
+  // YouTube's own "Official Artist Channel" badge is a stronger, independent
+  // trust signal than name matching - it can't be spoofed by a plainly-named
+  // reupload/bootleg channel the way a bare exact-string match can (e.g. an
+  // unofficial "米津玄師"-named tour-footage channel exact-matching the
+  // literal artist name while the real official channel, bilingually named
+  // "Kenshi Yonezu 米津玄師", only exact-matches after stripping either
+  // half). It also survives cases where our own romanization of the artist
+  // name is wrong (kuromoji has no proper-noun dictionary, so e.g. 米津玄師
+  // round-trips as "yonetsu gen shi" instead of "Yonezu Kenshi").
+  const isVerifiedArtistChannel = candidate.isVerifiedArtist === true;
 
   if (
     isExactArtistChannel ||
     hasOfficialVideoTag ||
-    (isRelatedArtistChannel && isOfficialTitle)
+    (isRelatedArtistChannel && (isOfficialTitle || isVerifiedArtistChannel))
   ) {
     return 0;
   }
@@ -718,16 +769,20 @@ function musicVideoCandidateTier(
     return 1;
   }
 
-  return 2;
+  if (MAD_AMV_TAG_PATTERN.test(candidate.title)) {
+    return 2;
+  }
+
+  return 3;
 }
 
-function pickMusicVideoCandidates(
+async function pickMusicVideoCandidates(
   videos: YoutubeSearchVideoItem[],
   artistNameVariants: string[],
   songName: string,
   expectedDurationSec: number,
   maxCandidates: number,
-): SuggestedYoutubeVideo[] {
+): Promise<SuggestedYoutubeVideo[]> {
   const candidates = videos
     .filter((v) => v.type === "Video" && !v.is_live && v.id)
     .map((v) => ({
@@ -736,6 +791,7 @@ function pickMusicVideoCandidates(
       author: v.author?.name ?? "",
       lengthSeconds: v.duration?.seconds ?? 0,
       viewCount: parseViewCountText(v.view_count?.text),
+      isVerifiedArtist: v.author?.is_verified_artist === true,
     }))
     .filter((v) => v.lengthSeconds > 0)
     .filter((v) => !v.author.endsWith(TOPIC_CHANNEL_SUFFIX))
@@ -793,7 +849,17 @@ function pickMusicVideoCandidates(
     );
   });
 
-  return candidates.slice(0, maxCandidates).map((candidate) => ({
+  // Verify only as many candidates as needed to fill maxCandidates, stopping
+  // as soon as we have enough - most songs' top picks are real videos, so
+  // this rarely runs past the first one or two.
+  const verifiedCandidates: typeof candidates = [];
+  for (const candidate of candidates) {
+    if (verifiedCandidates.length >= maxCandidates) break;
+    if (await isTopicChannelVideo(candidate.videoId)) continue;
+    verifiedCandidates.push(candidate);
+  }
+
+  return verifiedCandidates.map((candidate) => ({
     ...candidate,
     isLikelyOfficial:
       musicVideoCandidateTier(candidate, artistNameVariants) === 0,
@@ -2109,7 +2175,7 @@ const resolvers = {
         console.warn(`Failed to romanize artist name for MV suggestion: ${e}`);
       }
 
-      const candidates = pickMusicVideoCandidates(
+      const candidates = await pickMusicVideoCandidates(
         videos,
         artistNameVariants,
         songDetail.name,
