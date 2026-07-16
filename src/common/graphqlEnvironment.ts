@@ -57,6 +57,18 @@ const subscriptionClient = createClient({
   url: getSubscriptionUrl(),
   retryAttempts: Infinity,
   shouldRetry: () => true,
+  // graphql-ws's default retry wait is uncapped exponential backoff, so a
+  // server that takes a while to come up (kuromoji dictionary load at
+  // launch, a dev rebuild) could strand clients in a minutes-long gap
+  // between attempts — subscriptions (and the WS_RECONNECTED refetch that
+  // rescues stale settings) stayed dead the whole time. Cap the wait so
+  // clients reconnect within seconds of the server being ready.
+  retryWait: async (retries) => {
+    const delayMs = Math.min(1000 * 2 ** retries, 10000);
+    await new Promise((resolve) =>
+      setTimeout(resolve, delayMs + Math.random() * 500),
+    );
+  },
   on: {
     connected: () => window.dispatchEvent(new Event(WS_RECONNECTED_EVENT)),
   },

@@ -62,7 +62,6 @@ import {
   RankingSongEntry,
 } from "./rankings";
 
-import { memoize } from "lodash";
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
 import { isRomaji, toHiragana, toKana, toKatakana } from "wanakana";
 
@@ -71,7 +70,12 @@ export interface IDataSources {
     minsei: MinseiAPI;
     joysound: JoysoundAPI;
     dkwebsys: DkwebsysAPI;
-    youtube: Innertube;
+    // Lazy: Innertube.create() hits youtube.com, and awaiting it in the
+    // per-request context factory made EVERY GraphQL request (including
+    // trivial local reads like bgmTrack right after launch) hang on YouTube
+    // being reachable. Only the resolvers that actually talk to YouTube
+    // await this.
+    youtube: () => Promise<Innertube>;
   };
 }
 
@@ -1980,45 +1984,49 @@ const resolvers = {
       args: { videoId: string },
       { dataSources }: IDataSources,
     ): Promise<YoutubeVideoInfoResult> => {
-      return dataSources.youtube.getBasicInfo(args.videoId).then((rawData) => {
-        // youtubei.js types most basic_info fields as optionally undefined,
-        // but getBasicInfo() reliably populates the ones we read; assert the
-        // narrower shape we depend on (see YTVideoInfo above).
-        const data = rawData as unknown as YTVideoInfo;
-        if (data.playability_status.status !== "OK") {
+      return dataSources
+        .youtube()
+        .then((youtube) => youtube.getBasicInfo(args.videoId))
+        .then((rawData) => {
+          // youtubei.js types most basic_info fields as optionally undefined,
+          // but getBasicInfo() reliably populates the ones we read; assert the
+          // narrower shape we depend on (see YTVideoInfo above).
+          const data = rawData as unknown as YTVideoInfo;
+          if (data.playability_status.status !== "OK") {
+            return {
+              __typename: "YoutubeVideoInfoError",
+              reason: data.playability_status.reason,
+            };
+          }
+
+          const captionTracks: YTCaptionTrackData[] =
+            data.captions?.caption_tracks || [];
+          const captionLanguages: CaptionLanguage[] = captionTracks
+            .filter(
+              (captionTrack: YTCaptionTrackData) =>
+                !captionTrack.vss_id.startsWith("a"),
+            )
+            .map((captionTrack: YTCaptionTrackData) => ({
+              code: captionTrack.language_code,
+              name: captionTrack.name.text,
+            }));
+
+          const loudnessDb =
+            data.player_config?.audio_config?.loudness_db || 0.0;
+
           return {
-            __typename: "YoutubeVideoInfoError",
-            reason: data.playability_status.reason,
+            __typename: "YoutubeVideoInfo",
+            author: data.basic_info.author,
+            captionLanguages,
+            channelId: data.basic_info.channel_id,
+            keywords: data.basic_info.keywords,
+            lengthSeconds: data.basic_info.duration,
+            description: data.basic_info.short_description,
+            title: data.basic_info.title,
+            viewCount: data.basic_info.view_count,
+            gainValue: 10 ** ((-1 * loudnessDb) / 20),
           };
-        }
-
-        const captionTracks: YTCaptionTrackData[] =
-          data.captions?.caption_tracks || [];
-        const captionLanguages: CaptionLanguage[] = captionTracks
-          .filter(
-            (captionTrack: YTCaptionTrackData) =>
-              !captionTrack.vss_id.startsWith("a"),
-          )
-          .map((captionTrack: YTCaptionTrackData) => ({
-            code: captionTrack.language_code,
-            name: captionTrack.name.text,
-          }));
-
-        const loudnessDb = data.player_config?.audio_config?.loudness_db || 0.0;
-
-        return {
-          __typename: "YoutubeVideoInfo",
-          author: data.basic_info.author,
-          captionLanguages,
-          channelId: data.basic_info.channel_id,
-          keywords: data.basic_info.keywords,
-          lengthSeconds: data.basic_info.duration,
-          description: data.basic_info.short_description,
-          title: data.basic_info.title,
-          viewCount: data.basic_info.view_count,
-          gainValue: 10 ** ((-1 * loudnessDb) / 20),
-        };
-      });
+        });
     },
     nicoVideoInfo: async (
       _: any,
@@ -2069,9 +2077,9 @@ const resolvers = {
       const songDetail = await dataSources.joysound.getSongDetail(args.songId);
 
       const query = `${songDetail.artistName} ${songDetail.name}`;
-      const searchResultsPromise = dataSources.youtube.search(query, {
-        type: "video",
-      });
+      const searchResultsPromise = dataSources
+        .youtube()
+        .then((youtube) => youtube.search(query, { type: "video" }));
 
       const [telopBuffer, searchResults] = await Promise.all([
         telopBufferPromise,
@@ -2734,7 +2742,9 @@ export const joysoundCredentialsProvider = memoizeWithFailureEviction(
   },
 );
 
-const innertubeApiProvider = memoize(async () => {
+// Failure eviction so one failed Innertube.create (e.g. launching offline or
+// mid-VPN-flap) doesn't poison YouTube search until relaunch.
+const innertubeApiProvider = memoizeWithFailureEviction(async () => {
   // Ask YouTube for Japanese-locale results: with the default en-US locale,
   // search results for JP songs come back with machine-romanized titles
   // (e.g. tuki.'s 晩餐歌 as "tuki.『Bansanka』Official Music Video"), which
@@ -3009,8 +3019,6 @@ export function applyGraphQLMiddleware(app: Application) {
       express.json(),
       expressMiddleware(server, {
         context: async () => {
-          const innertubeApiInstance = await innertubeApiProvider();
-
           return {
             dataSources: {
               minsei: new MinseiAPI(minseiCredentialsProvider, {
@@ -3025,7 +3033,7 @@ export function applyGraphQLMiddleware(app: Application) {
                 cache: server.cache,
                 fetch: fetcher,
               }),
-              youtube: innertubeApiInstance,
+              youtube: innertubeApiProvider,
             },
           };
         },
