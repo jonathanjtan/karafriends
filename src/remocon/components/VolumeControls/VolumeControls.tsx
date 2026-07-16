@@ -211,7 +211,7 @@ const VolumeControls = () => {
               ? `${Math.floor(breakRemainingSecs / 60)}:${String(
                   breakRemainingSecs % 60,
                 ).padStart(2, "0")}`
-              : `${breakMinutes}:00 break`}
+              : `${breakMinutes}:00`}
           </button>
           <button
             className={styles.sizeButton}

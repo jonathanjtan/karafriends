@@ -552,7 +552,7 @@ function App(props: {
                     <span className="lever"></span>
                   </label>
                 </div>
-                <span className="settingLabel">Break</span>
+                <span className="settingLabel">Request Break</span>
                 <div className="pianoRollSizeButtons breakButtons settingControlWide">
                   <button
                     className="btn-small grey"
@@ -584,7 +584,7 @@ function App(props: {
                       ? `${Math.floor(breakRemainingSecs / 60)}:${String(
                           breakRemainingSecs % 60,
                         ).padStart(2, "0")}`
-                      : `${breakMinutes}:00 break`}
+                      : `${breakMinutes}:00`}
                   </button>
                   <button
                     className="btn-small grey"
