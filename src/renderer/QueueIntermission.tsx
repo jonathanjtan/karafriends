@@ -1,11 +1,26 @@
 import formatDuration from "format-duration";
 import React, { useEffect, useRef, useState } from "react";
 
+/* tslint:disable:no-submodule-imports no-implicit-dependencies */
+import damIcon from "url:./images/sources/dam.jpg";
+import joysoundIcon from "url:./images/sources/joysound.jpg";
+import niconicoIcon from "url:./images/sources/niconico.jpg";
+import youtubeIcon from "url:./images/sources/youtube.jpg";
 import SourceBadge from "../common/components/SourceBadge";
 import { cyrb53 } from "../common/hash";
 import useQueue from "../common/hooks/useQueue";
+/* tslint:enable:no-submodule-imports no-implicit-dependencies */
 import QRCode from "./QRCode";
 import "./QueueIntermission.css";
+
+// Official app icons for the big Up Next slot; the smaller upcoming rows use
+// the text pills (SourceBadge) instead, which stay legible at row size.
+const SOURCE_ICONS: Record<string, string> = {
+  DamQueueItem: damIcon,
+  JoysoundQueueItem: joysoundIcon,
+  YoutubeQueueItem: youtubeIcon,
+  NicoQueueItem: niconicoIcon,
+};
 
 const MAX_VISIBLE_UPCOMING = 6;
 
@@ -170,19 +185,24 @@ export default function QueueIntermission(props: {
               alt=""
             />
           ) : null}
-          <div className="queueIntermissionNextUp">
-            <div className="queueIntermissionSongName">
-              {nextUp[0].name}{" "}
-              <SourceBadge
-                typename={nextUp[0].__typename}
-                youtubeVideoId={
-                  "youtubeVideoId" in nextUp[0]
-                    ? nextUp[0].youtubeVideoId
-                    : undefined
-                }
-                fontSize="2.2vh"
+          {nextUp[0].__typename && SOURCE_ICONS[nextUp[0].__typename] ? (
+            <div className="queueIntermissionNextUpSource">
+              <img
+                className="queueIntermissionNextUpSourceIcon"
+                src={SOURCE_ICONS[nextUp[0].__typename]}
+                alt=""
               />
+              {"youtubeVideoId" in nextUp[0] && nextUp[0].youtubeVideoId ? (
+                <img
+                  className="queueIntermissionNextUpSourceMv"
+                  src={youtubeIcon}
+                  alt=""
+                />
+              ) : null}
             </div>
+          ) : null}
+          <div className="queueIntermissionNextUp">
+            <div className="queueIntermissionSongName">{nextUp[0].name}</div>
             <div className="queueIntermissionArtistName">
               {nextUp[0].artistName}{" "}
               {nicknameBadge(nextUp[0].userIdentity?.nickname || "")}
