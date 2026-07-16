@@ -80,14 +80,20 @@ $banner-width: 30px;
   }
 }
 
+// Golden ratio width:height (both the single-column squares-turned-buttons
+// and the sizer that stretches row 2 to match their height — Top 100 itself
+// stays visually double-wide because it spans both columns, unaffected by
+// this ratio).
+$golden-ratio: 1.618;
+
 .gridItem {
-  aspect-ratio: 1;
+  aspect-ratio: $golden-ratio;
 }
 
 .rankingRowSizer {
   grid-column: 2;
   grid-row: 2;
-  aspect-ratio: 1;
+  aspect-ratio: $golden-ratio;
 }
 
 .rankingItem {
