@@ -200,7 +200,7 @@ the OS temp dir (`app.getPath("temp")`) — so **Windows**
   cached file instead of recompositing.
 - `joysound-<songId>-melody.bin` — extracted guide-melody scoring data.
 - `joysound-<songId>.joy_02` — telop (lyrics/timing) blob.
-- `yt-<ytid>.log`, `yt-<ytid>-introsync.log`, `joysound-<songId>.log` —
+- `yt-<ytid>.log`, `joysound-<songId>.log` —
   yt-dlp / ffmpeg logs. Read these first when a download or compose fails.
 - `<damId>-<idx>.mp4`, `dam-<damId>.log` — DAM predownloads.
 
@@ -293,10 +293,9 @@ hook, relay-compile. Persistence is automatic via the `...db` spread.
   Senbonzakura/Dry-Flower bug). With any measured offset the video plays once
   and **holds its last frame** for the uncovered tail (so the MV's outro plays
   in full); only the null case still loops (a possibly-short default video
-  shouldn't freeze). The intro-sync's audio fetch is a **separate yt-dlp `-f
-ba` download** — it logs
-  to `yt-<id>-introsync.log`, retries once, and runs after the video download
-  to avoid a concurrent double-hit. Optional per-queue via
+  shouldn't freeze). Intro-sync reads the MV's audio **out of the already
+  downloaded video file** (the `-f bv+ba/b` fetch) — it costs no extra YouTube
+  request; see "External tools" for why that matters. Optional per-queue via
   `youtubeVideoSyncEnabled` (a default-on remocon checkbox; null = enabled for
   old clients).
 - **Guide melody** (`common/guideMelody.ts`, `renderer/damGuideMelody.ts`):
@@ -362,9 +361,29 @@ start failing:
    platform from `github.com/yt-dlp/yt-dlp/releases/latest` into
    `extraResources/ytdlp/` **and** the packaged
    `dist/.../resources/extraResources/ytdlp/`.
-4. The **default** player client works with a current binary. A missing JS
-   runtime (Deno) only limits available formats, it doesn't block the default
-   client. Avoid `player_client=tv` — it hit DRM-protected formats here.
+4. Avoid `player_client=tv` — it hit DRM-protected formats here.
+5. **A stale binary is not the only cause — check for HTTP 429 first.** If the
+   log shows `HTTP Error 429` on "Downloading webpage" followed by the bot
+   message, the binary is fine and the **exit IP is rate-limited**; no yt-dlp
+   version will fix it. Cycle the VPN (or wait — it expires on its own).
+
+**We pass a JS runtime.** yt-dlp only enables `deno` by default, and with no
+runtime it can't run YouTube's player JS, so it falls back to clients YouTube
+bot-walls (`android_vr`) and warns that JS-less extraction is deprecated.
+`youtubeJsRuntimeArgs()` points it at **Electron's own binary running as Node**
+(`--js-runtimes node:${process.execPath}` plus `ELECTRON_RUN_AS_NODE=1` from
+`youtubeSpawnEnv()`, which the runtime inherits) — no extra runtime to ship.
+
+**Keep the per-song request count at one extraction.** The MV fetch uses
+`-f bv+ba/b` so the downloaded file carries its own audio, which
+`computeYoutubeIntroOffsetMs` reads off disk. It used to be `-f bv`
+(video-only) plus a _second_ `-f ba` extraction just for intro-sync — two full
+extractions per song, four on a failing song once both retried, which is how we
+started earning 429s. Because the MV file now has an audio track, the composite
+**must** map streams explicitly (`-map 0:v:0 -map 1:a:0`); default selection
+only picks the ogg by luck of channel count (3.0 vs stereo). Retries back off
+(`YOUTUBE_RETRY_BACKOFF_MS`) and are **skipped entirely on a 429/bot-wall**
+(`isYoutubeRateLimited`) — retrying a wall can't succeed, it just deepens it.
 
 Note the search path (youtubei.js) and the download path (yt-dlp) are
 **independent** — search can work perfectly while downloads are bot-walled.

@@ -89,6 +89,50 @@ function youtubeCookieArgs(): string[] {
   return [];
 }
 
+// yt-dlp only enables the "deno" JS runtime by default. With no runtime at all
+// it can't run YouTube's player JS, so it falls back to clients YouTube
+// bot-walls (android_vr) and warns that JS-less extraction is deprecated.
+// Electron's own binary runs as plain Node when ELECTRON_RUN_AS_NODE is set
+// (youtubeSpawnEnv does that for the runtime yt-dlp spawns), so we can point
+// yt-dlp at it instead of shipping a separate runtime. If it somehow isn't
+// usable yt-dlp just warns and carries on exactly as it does today.
+function youtubeJsRuntimeArgs(): string[] {
+  return ["--js-runtimes", `node:${process.execPath}`];
+}
+
+// Shared env for every yt-dlp spawn.
+function youtubeSpawnEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  // Don't need a proxy to download from YouTube
+  delete env.http_proxy;
+  // Makes process.execPath behave as plain Node for the JS runtime yt-dlp
+  // spawns as its own child (it inherits this env).
+  env.ELECTRON_RUN_AS_NODE = "1";
+
+  return env;
+}
+
+interface YoutubeDownloadFailure extends Error {
+  rateLimited?: boolean;
+}
+
+// Breathing room before retrying a failed (but not rate-limited) YouTube
+// download. The retry used to fire instantly, which meant a struggling
+// YouTube got hit again immediately.
+const YOUTUBE_RETRY_BACKOFF_MS = 5000;
+
+// YouTube answers a rate-limited/bot-walled extraction the same way no matter
+// how many times we ask, so an immediate retry can't succeed - it just spends
+// more of the quota that got us walled in the first place. Detect those and
+// skip the retry.
+function isYoutubeRateLimited(log: string): boolean {
+  return (
+    log.includes("Sign in to confirm you") ||
+    log.includes("HTTP Error 429") ||
+    log.includes("Too Many Requests")
+  );
+}
+
 function deleteTempFiles(prefix: string): void {
   for (const filename of fs.readdirSync(TEMP_FOLDER)) {
     if (!filename) {
@@ -424,18 +468,23 @@ function downloadJoysoundYoutubeVideoPromise(
       flags: "a",
     });
 
-    const env = { ...process.env };
-    // Don't need a proxy to download from YouTube
-    delete env.http_proxy;
+    let logText = "";
 
     const ytdlp = spawn(
       resourcePaths.ytdlp,
       [
         ...youtubeCookieArgs(),
+        ...youtubeJsRuntimeArgs(),
         "-S",
         "res:720,ext:mp4",
+        // Grab the audio alongside the video in this one extraction. The
+        // composite itself uses the JOYSOUND ogg, not this audio, but
+        // computeYoutubeIntroOffsetMs needs the MV's audio to measure the
+        // offset - and pulling it here means one yt-dlp extraction per song
+        // instead of two (a video-only "-f bv" fetch plus a separate "-f ba"
+        // one), which is what was burning through YouTube's rate limit.
         "-f",
-        "bv",
+        "bv+ba/b",
         "--recode",
         "mp4",
         "-N",
@@ -448,7 +497,7 @@ function downloadJoysoundYoutubeVideoPromise(
         youtubeVideoId!,
       ],
       {
-        env,
+        env: youtubeSpawnEnv(),
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -462,7 +511,11 @@ function downloadJoysoundYoutubeVideoPromise(
     ytdlp.stderr.pipe(ytdlpLogStream);
 
     ytdlp.stdout.on("data", (data) => {
+      logText += data.toString();
       handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
+    });
+    ytdlp.stderr.on("data", (data) => {
+      logText += data.toString();
     });
 
     ytdlp.on("error", (err) => {
@@ -482,7 +535,12 @@ function downloadJoysoundYoutubeVideoPromise(
         console.error(
           `Error downloading Youtube Video with ID ${youtubeVideoId}: code=${code}, signal=${signal}, log=${ytdlpLogFilename}`,
         );
-        reject(code);
+
+        const error: YoutubeDownloadFailure = new Error(
+          `yt-dlp exited with code ${code}, log=${ytdlpLogFilename}`,
+        );
+        error.rateLimited = isYoutubeRateLimited(logText);
+        reject(error);
       }
     });
   });
@@ -536,77 +594,6 @@ const INTRO_SYNC_SAMPLE_RATE_HZ = 8000;
 const INTRO_SYNC_ONSET_HEAD_SEC = 90;
 const INTRO_SYNC_ONSET_THRESHOLD_FRAC = 0.15;
 const INTRO_SYNC_ONSET_SMOOTH_MS = 300;
-
-function downloadYoutubeAudioAttempt(youtubeVideoId: string): Promise<string> {
-  if (!fs.existsSync(TEMP_FOLDER)) {
-    fs.mkdirSync(TEMP_FOLDER);
-  }
-
-  const outputFilename = `${TEMP_FOLDER}/introsync-${youtubeVideoId}.m4a`;
-
-  if (fs.existsSync(outputFilename)) {
-    fs.unlinkSync(outputFilename);
-  }
-
-  return new Promise((resolve, reject) => {
-    // A failure here silently costs the song its video sync, so unlike most
-    // spawns in this file the yt-dlp output is kept in a log file.
-    const logFilename = `${TEMP_FOLDER}/yt-${youtubeVideoId}-introsync.log`;
-    // Append for the same reason as the video download log: keep the failed
-    // first attempt's output around for diagnosis.
-    const logStream = fs.createWriteStream(logFilename, { flags: "a" });
-
-    const env = { ...process.env };
-    // Don't need a proxy to download from YouTube
-    delete env.http_proxy;
-
-    const ytdlp = spawn(
-      resourcePaths.ytdlp,
-      [
-        ...youtubeCookieArgs(),
-        "-f",
-        "ba",
-        "--ffmpeg-location",
-        resourcePaths.ffmpeg,
-        "-o",
-        outputFilename,
-        "--",
-        youtubeVideoId,
-      ],
-      { env, stdio: ["ignore", "pipe", "pipe"] },
-    );
-
-    invariant(ytdlp.stdout);
-    invariant(ytdlp.stderr);
-
-    ytdlp.stdout.pipe(logStream);
-    ytdlp.stderr.pipe(logStream);
-
-    ytdlp.on("error", reject);
-    ytdlp.on("exit", (code) => {
-      if (code === 0 && fs.existsSync(outputFilename)) {
-        resolve(outputFilename);
-      } else {
-        reject(
-          new Error(
-            `yt-dlp audio download exited with code ${code}, log=${logFilename}`,
-          ),
-        );
-      }
-    });
-  });
-}
-
-function downloadYoutubeAudio(youtubeVideoId: string): Promise<string> {
-  // YouTube intermittently rejects a format or throttles a request; one
-  // retry rescues most of those without meaningfully delaying the download.
-  return downloadYoutubeAudioAttempt(youtubeVideoId).catch((e) => {
-    console.error(
-      `Intro-sync audio download failed for ${youtubeVideoId}, retrying once: ${e}`,
-    );
-    return downloadYoutubeAudioAttempt(youtubeVideoId);
-  });
-}
 
 // Decodes an audio file or in-memory buffer to raw mono PCM at
 // INTRO_SYNC_SAMPLE_RATE_HZ, capped to maxDurationSec of output.
@@ -879,17 +866,19 @@ function estimateOnsetOffsetMs(
 // Joysound karaoke track. Positive: the video has extra head material that
 // should be trimmed. Negative: the karaoke track has extra head material,
 // so the video should be delayed. Null: no confident estimate.
+//
+// videoFilename is the MV yt-dlp already downloaded (audio included, see the
+// "-f bv+ba/b" fetch): reading its audio off disk keeps this to zero extra
+// YouTube requests. It used to re-download the same video's audio with a
+// second "-f ba" extraction, which doubled our request volume per song and
+// helped earn us HTTP 429s.
 export async function computeYoutubeIntroOffsetMs(
   oggBuffer: Buffer,
-  youtubeVideoId: string,
+  videoFilename: string,
 ): Promise<number | null> {
-  let audioFilename: string | null = null;
-
   try {
-    audioFilename = await downloadYoutubeAudio(youtubeVideoId);
-
     const [videoPcm, karaokePcm] = await Promise.all([
-      decodeToPcm(audioFilename, INTRO_SYNC_MAX_DECODE_SEC),
+      decodeToPcm(videoFilename, INTRO_SYNC_MAX_DECODE_SEC),
       decodeToPcm(oggBuffer, INTRO_SYNC_MAX_DECODE_SEC),
     ]);
 
@@ -915,19 +904,15 @@ export async function computeYoutubeIntroOffsetMs(
     }
 
     console.info(
-      `computeYoutubeIntroOffsetMs: video=${youtubeVideoId} method=${method} offsetMs=${offsetMs === null ? "no confident estimate" : offsetMs}`,
+      `computeYoutubeIntroOffsetMs: video=${videoFilename} method=${method} offsetMs=${offsetMs === null ? "no confident estimate" : offsetMs}`,
     );
 
     return offsetMs;
   } catch (e) {
     console.error(
-      `computeYoutubeIntroOffsetMs failed for video ${youtubeVideoId}: ${e}`,
+      `computeYoutubeIntroOffsetMs failed for video ${videoFilename}: ${e}`,
     );
     return null;
-  } finally {
-    if (audioFilename && fs.existsSync(audioFilename)) {
-      fs.unlinkSync(audioFilename);
-    }
   }
 }
 
@@ -950,6 +935,15 @@ function composeJoysoundVideoPromise(
   return new Promise((resolve, reject) => {
     let videoPlaytime = 0;
 
+    // The video comes from the MV (input 0) and the audio from the JOYSOUND
+    // ogg on stdin (input 1) - always map both explicitly. The MV now carries
+    // its own audio track (the "-f bv+ba/b" fetch that intro-sync reads), so
+    // ffmpeg's default stream selection would have two audio streams to
+    // choose between; it happens to prefer the ogg for having more channels
+    // (3.0 vs stereo), but silently depending on that would be one codec
+    // change away from compositing the MV's vocals over the karaoke.
+    const streamMapArgs = ["-map", "0:v:0", "-map", "1:a:0"];
+
     // With a measured offset we align the heads and play the video through
     // exactly once, capped at the song length: the MV runs its full course -
     // including its outro - and the player holds the last frame for whatever
@@ -967,6 +961,7 @@ function composeJoysoundVideoPromise(
             tempFilename,
             "-i",
             "-",
+            ...streamMapArgs,
             "-c",
             "copy",
             "-t",
@@ -984,6 +979,7 @@ function composeJoysoundVideoPromise(
             tempFilename,
             "-i",
             "-",
+            ...streamMapArgs,
             "-c",
             "copy",
             "-shortest",
@@ -1384,27 +1380,42 @@ export function downloadJoysoundData(
   let videoDataPromise;
 
   if (queueItem.youtubeVideoId) {
-    // YouTube intermittently rejects a format or throttles a request (same
-    // flakiness as the intro-sync audio fetch); one retry rescues most of
-    // those before the catch below gives up and silently falls back to the
-    // song's default video.
+    // YouTube intermittently rejects a format or throttles a request; one
+    // retry rescues most of those before the catch below gives up and
+    // silently falls back to the song's default video. But a rate-limit /
+    // bot-wall answers the same way however often we ask, so retrying it
+    // can't succeed - it just spends more of the quota that got us walled.
+    // Back off briefly first: the old retry fired instantly, which hammered
+    // YouTube hardest exactly when it was already pushing back.
     videoDataPromise = downloadJoysoundYoutubeVideoPromise(
       songId,
       queueItem.youtubeVideoId,
       downloadQueue,
       downloadQueueItem,
       tempFilename,
-    ).catch((e) => {
+    ).catch((e: YoutubeDownloadFailure) => {
+      if (e && e.rateLimited) {
+        console.error(
+          `Joysound YouTube video download for ${queueItem.youtubeVideoId} was rate-limited/bot-walled; not retrying: ${e}`,
+        );
+
+        throw e;
+      }
+
       console.error(
-        `Joysound YouTube video download failed for ${queueItem.youtubeVideoId}, retrying once: ${e}`,
+        `Joysound YouTube video download failed for ${queueItem.youtubeVideoId}, retrying once after ${YOUTUBE_RETRY_BACKOFF_MS}ms: ${e}`,
       );
 
-      return downloadJoysoundYoutubeVideoPromise(
-        songId,
-        queueItem.youtubeVideoId!,
-        downloadQueue,
-        downloadQueueItem,
-        tempFilename,
+      return new Promise((resolve) =>
+        setTimeout(resolve, YOUTUBE_RETRY_BACKOFF_MS),
+      ).then(() =>
+        downloadJoysoundYoutubeVideoPromise(
+          songId,
+          queueItem.youtubeVideoId!,
+          downloadQueue,
+          downloadQueueItem,
+          tempFilename,
+        ),
       );
     });
   } else {
@@ -1424,9 +1435,8 @@ export function downloadJoysoundData(
 
   // Signed video-vs-karaoke offset; null when no confident estimate (see
   // computeYoutubeIntroOffsetMs). Captured for the post-compose pad decision.
-  // Chained after the video download so we don't hit YouTube with two
-  // concurrent requests for the same video - that invites throttling, and a
-  // failed audio fetch silently costs the song its sync.
+  // Chained after the video download because it reads the MV's audio straight
+  // out of the file that download produced - no second trip to YouTube.
   let measuredIntroOffsetMs: number | null = null;
 
   const introOffsetPromise: Promise<number | null> =
@@ -1434,7 +1444,7 @@ export function downloadJoysoundData(
       ? Promise.all([videoDataPromise, songDataPromise]).then(([, raw]) =>
           computeYoutubeIntroOffsetMs(
             decodeJoysoundBase64Field(raw.ogg),
-            queueItem.youtubeVideoId!,
+            tempFilename,
           ),
         )
       : Promise.resolve(null);
@@ -1598,6 +1608,7 @@ export function downloadYoutubeVideo(
     resourcePaths.ytdlp,
     [
       ...youtubeCookieArgs(),
+      ...youtubeJsRuntimeArgs(),
       ...captionArgs,
       "-S",
       "res:720,ext:mp4:m4a",
@@ -1612,7 +1623,7 @@ export function downloadYoutubeVideo(
       "--",
       videoId,
     ],
-    { stdio: ["ignore", "pipe", "pipe"] },
+    { env: youtubeSpawnEnv(), stdio: ["ignore", "pipe", "pipe"] },
   );
 
   invariant(ytdlp.stdout);
