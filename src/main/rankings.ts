@@ -40,17 +40,24 @@ export interface RankingMonth {
 }
 
 // Mirrors the RankingCategory / RankingPeriod GraphQL enums. Both services
-// publish 100-entry weekly and monthly charts for the same five categories
-// (neither archives past months — "monthly" is the current rolling month).
+// publish 100-entry weekly and monthly charts for most categories (neither
+// archives past months — "monthly" is the current rolling month) — except
+// VTUBER and DUET, which clubdam.com charts but joysound.com doesn't publish
+// at all (confirmed 404 on both /ranking/vtuber/ and /ranking/duet/ style
+// paths), so those two are DAM-only.
 export type RankingCategory =
   | "OVERALL"
   | "ANIME"
   | "VOCALOID"
   | "ENKA"
-  | "WESTERN";
+  | "WESTERN"
+  | "VTUBER"
+  | "DUET";
 export type RankingPeriod = "WEEKLY" | "MONTHLY";
 
-const JOYSOUND_CATEGORY_PATHS: { [category in RankingCategory]: string } = {
+type JoysoundCategory = Exclude<RankingCategory, "VTUBER" | "DUET">;
+
+const JOYSOUND_CATEGORY_PATHS: { [category in JoysoundCategory]: string } = {
   OVERALL: "all",
   ANIME: "anime",
   VOCALOID: "vocaloid",
@@ -58,21 +65,30 @@ const JOYSOUND_CATEGORY_PATHS: { [category in RankingCategory]: string } = {
   WESTERN: "foreign",
 };
 
+function isJoysoundCategory(
+  category: RankingCategory,
+): category is JoysoundCategory {
+  return category in JOYSOUND_CATEGORY_PATHS;
+}
+
 // DAM's overall chart lives on /ranking/ with differently-named section ids
-// than the per-genre pages (weekly-ranking vs ranking-weekly — really).
+// than the per-genre pages (weekly-ranking vs ranking-weekly — really). DUET
+// is also rooted at /ranking/ (not /genre/) but its page happens to carry
+// both id spellings, so either works; VTUBER is a normal /genre/ page.
 const DAM_GENRE_PATHS: {
-  [category in Exclude<RankingCategory, "OVERALL">]: string;
+  [category in Exclude<RankingCategory, "OVERALL" | "DUET">]: string;
 } = {
   ANIME: "anison",
   VOCALOID: "vocaloid",
   ENKA: "enka",
   WESTERN: "foreign",
+  VTUBER: "vtuber",
 };
 
 // A YYYYMM string selects a past monthly archive (JOYSOUND keeps ~5); null or
 // a non-monthly period uses the current chart.
 function joysoundRankingUrl(
-  category: RankingCategory,
+  category: JoysoundCategory,
   period: RankingPeriod,
   month?: string | null,
 ): string {
@@ -94,9 +110,12 @@ function damRankingSource(
   category: RankingCategory,
   period: RankingPeriod,
 ): { url: string; sectionId: string } {
-  if (category === "OVERALL") {
+  if (category === "OVERALL" || category === "DUET") {
     return {
-      url: "https://www.clubdam.com/ranking/",
+      url:
+        category === "OVERALL"
+          ? "https://www.clubdam.com/ranking/"
+          : "https://www.clubdam.com/ranking/duet/",
       sectionId: period === "WEEKLY" ? "weekly-ranking" : "monthly-ranking",
     };
   }
@@ -569,6 +588,12 @@ export function getJoysoundRanking(
   period: RankingPeriod,
   month?: string | null,
 ): Promise<RankingSongEntry[]> {
+  if (!isJoysoundCategory(category)) {
+    return Promise.reject(
+      new Error(`JOYSOUND has no ${category} ranking (DAM-only category)`),
+    );
+  }
+
   const monthKey = period === "MONTHLY" && month ? month : "current";
   return withRankingCache<RankingSongEntry>(
     `joysound:${category}:${period}:${monthKey}`,
@@ -694,7 +719,16 @@ export function getJoysoundRankingMonths(): Promise<RankingMonth[]> {
   );
 }
 
-const ALL_CATEGORIES: RankingCategory[] = [
+const ALL_DAM_CATEGORIES: RankingCategory[] = [
+  "OVERALL",
+  "ANIME",
+  "VOCALOID",
+  "ENKA",
+  "WESTERN",
+  "VTUBER",
+  "DUET",
+];
+const ALL_JOYSOUND_CATEGORIES: JoysoundCategory[] = [
   "OVERALL",
   "ANIME",
   "VOCALOID",
@@ -729,12 +763,14 @@ export function primeRankings(
     );
 
     for (const period of ALL_PERIODS) {
-      for (const category of ALL_CATEGORIES) {
+      for (const category of ALL_DAM_CATEGORIES) {
         await getDamRanking(category, period)
           .then((entries) => onEntries?.(entries))
           .catch((error) =>
             console.warn(`Prefetch dam ${category} ${period} failed:`, error),
           );
+      }
+      for (const category of ALL_JOYSOUND_CATEGORIES) {
         await getJoysoundRanking(joysoundApi, category, period)
           .then((entries) => onEntries?.(entries))
           .catch((error) =>

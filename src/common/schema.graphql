@@ -260,13 +260,17 @@ type JoysoundSong {
 }
 
 # Chart categories both services publish (DAM calls ANIME "anison" and
-# WESTERN "foreign"; the resolvers translate).
+# WESTERN "foreign"; the resolvers translate). VTUBER and DUET are DAM-only —
+# clubdam.com charts them but joysound.com has no equivalent page — so
+# joysoundRanking rejects them; the remocon only offers them on the DAM page.
 enum RankingCategory {
   OVERALL
   ANIME
   VOCALOID
   ENKA
   WESTERN
+  VTUBER
+  DUET
 }
 
 # Chart windows both services publish. Neither archives past months —

@@ -101,6 +101,16 @@ const DamRankingPage = () => {
         selection={selection}
         period={period}
         onChange={onChange}
+        categories={[
+          "OVERALL",
+          "ANIME",
+          "VOCALOID",
+          "ENKA",
+          "WESTERN",
+          "VTUBER",
+          "DUET",
+          "ARTIST",
+        ]}
       />
       {selection === "ARTIST" ? (
         <DamArtistResults period={period} />
