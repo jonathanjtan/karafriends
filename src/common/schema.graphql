@@ -257,6 +257,12 @@ type JoysoundSong {
   artistNameYomi: String!
   lyricsPreview: String
   tieUp: String
+  # The YouTube video last queued with this song as its background MV (null
+  # if it was last queued without one), so the song page can default to the
+  # same video without another search. Persisted across app restarts.
+  lastYoutubeVideoId: String
+  # The sync-to-karaoke-track setting that accompanied that video.
+  lastYoutubeVideoSyncEnabled: Boolean
 }
 
 # Chart categories both services publish (DAM calls ANIME "anison" and
@@ -541,6 +547,12 @@ type YoutubeVideoInfo implements VideoInfo {
   title: String!
   viewCount: Int!
   gainValue: Float!
+  # False when YouTube's metadata region-locks the video out of the US —
+  # an embedded preview on a non-VPN phone would show "Video unavailable"
+  # (the download still works; it runs on the VPN'd host). Null = unknown.
+  availableInUs: Boolean
+  # Whether the uploader allows embedding at all; false also breaks previews.
+  embeddable: Boolean!
 }
 
 type YoutubeVideoInfoError {

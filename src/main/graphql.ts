@@ -953,7 +953,18 @@ interface YTVideoInfo {
   readonly playability_status: {
     readonly status: string;
     readonly reason: string;
+    readonly embeddable?: boolean;
   };
+  // The parsed /player response. basic_info doesn't surface the microformat's
+  // region-availability list, so we read it off the raw page instead.
+  readonly page?: readonly [
+    | {
+        readonly microformat?: {
+          readonly available_countries?: string[];
+        } | null;
+      }
+    | undefined,
+  ];
   readonly captions?: { readonly caption_tracks?: YTCaptionTrackData[] };
   readonly player_config?: {
     readonly audio_config?: { readonly loudness_db?: number };
@@ -982,6 +993,8 @@ interface YoutubeVideoInfo extends VideoInfo {
   readonly __typename: "YoutubeVideoInfo";
   readonly captionLanguages: CaptionLanguage[];
   readonly keywords: string[];
+  readonly availableInUs: boolean | null;
+  readonly embeddable: boolean;
 }
 
 interface YoutubeVideoInfoError {
@@ -1203,6 +1216,13 @@ type NotARealDb = {
   downloadQueue: DownloadQueueItem[];
   songHistory: SongHistoryItem[];
   lastKnownGoodDamSongId: string | null;
+  // The YouTube MV last queued with each JOYSOUND song (keyed by songId), so
+  // picking the song again defaults to the same background video. Queuing
+  // without a video is an explicit detach and clears the entry.
+  joysoundYoutubeVideos: Record<
+    string,
+    { videoId: string; syncEnabled: boolean }
+  >;
 };
 
 enum SubscriptionEvent {
@@ -1270,6 +1290,7 @@ let db: NotARealDb = {
   downloadQueue: [],
   songHistory: [],
   lastKnownGoodDamSongId: null,
+  joysoundYoutubeVideos: {},
 };
 
 type ServiceHealthState = {
@@ -1338,6 +1359,7 @@ function loadDb(): NotARealDb {
     downloadQueue: [],
     songHistory: [],
     lastKnownGoodDamSongId: null,
+    joysoundYoutubeVideos: {},
     ...(fs.existsSync(DB_PATH) &&
       JSON.parse(fs.readFileSync(DB_PATH, "utf-8"))),
   };
@@ -1483,6 +1505,12 @@ const resolvers = {
     },
     artistName(parent: JoysoundSongParent) {
       return parent.artistName;
+    },
+    lastYoutubeVideoId(parent: JoysoundSongParent) {
+      return db.joysoundYoutubeVideos[parent.id]?.videoId ?? null;
+    },
+    lastYoutubeVideoSyncEnabled(parent: JoysoundSongParent) {
+      return db.joysoundYoutubeVideos[parent.id]?.syncEnabled ?? null;
     },
     ...nameYomiResolvers,
   },
@@ -2080,8 +2108,21 @@ const resolvers = {
           const loudnessDb =
             data.player_config?.audio_config?.loudness_db || 0.0;
 
+          // The microformat lists every country a video is watchable in
+          // (~249 entries when unrestricted), so a missing "US" means the
+          // label region-locked it — an embed on a non-VPN US phone would
+          // show "Video unavailable". Downloads still work (they run on the
+          // VPN'd host), so this only gates the remocon preview.
+          const availableCountries =
+            data.page?.[0]?.microformat?.available_countries;
+
           return {
             __typename: "YoutubeVideoInfo",
+            availableInUs:
+              Array.isArray(availableCountries) && availableCountries.length > 0
+                ? availableCountries.includes("US")
+                : null,
+            embeddable: data.playability_status.embeddable !== false,
             author: data.basic_info.author,
             captionLanguages,
             channelId: data.basic_info.channel_id,
@@ -2252,6 +2293,16 @@ const resolvers = {
       const pushToHead =
         args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
       console.log(`queueJoysoundSong: pushToHead=${pushToHead}`);
+
+      if (queueItem.youtubeVideoId) {
+        db.joysoundYoutubeVideos[queueItem.songId] = {
+          videoId: queueItem.youtubeVideoId,
+          syncEnabled: queueItem.youtubeVideoSyncEnabled !== false,
+        };
+      } else {
+        delete db.joysoundYoutubeVideos[queueItem.songId];
+      }
+      saveDb();
 
       downloadJoysoundData(
         db.downloadQueue,

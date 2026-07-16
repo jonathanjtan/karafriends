@@ -26,6 +26,8 @@ const joysoundSongPageQuery = graphql`
       artistNameYomi
       lyricsPreview
       tieUp
+      lastYoutubeVideoId
+      lastYoutubeVideoSyncEnabled
     }
   }
 `;
@@ -78,12 +80,15 @@ const JoysoundSongPage = () => {
 
   const song = data.joysoundSongDetail;
 
+  // Default to the video this song was last queued with (if any), so picking
+  // the same song again doesn't require another YouTube search. An explicit
+  // URL param (e.g. from a rewritten hash) still wins.
   const [youtubeVideoId, setYoutubeVideoId] = useState<string>(
-    params.youtubeVideoId || "",
+    params.youtubeVideoId || song.lastYoutubeVideoId || "",
   );
   const [validatedYoutubeId, setValidatedYoutubeVideoId] = useState<string>("");
   const [youtubeVideoSyncEnabled, setYoutubeVideoSyncEnabled] =
-    useState<boolean>(true);
+    useState<boolean>(song.lastYoutubeVideoSyncEnabled ?? true);
   const [waitForVideoIdInput, setWaitForVideoIdInput] =
     useState<boolean>(false);
   const [luckyLoading, setLuckyLoading] = useState<boolean>(false);

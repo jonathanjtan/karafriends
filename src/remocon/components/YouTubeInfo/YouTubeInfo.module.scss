@@ -10,6 +10,25 @@
   }
 }
 
+.thumbnail {
+  display: block;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.stills {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+
+  img {
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+    height: auto;
+  }
+}
+
 .lyricsForm {
   margin: 8px 0;
 }
