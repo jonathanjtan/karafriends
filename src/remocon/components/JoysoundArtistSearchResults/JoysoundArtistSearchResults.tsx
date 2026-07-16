@@ -19,7 +19,7 @@ const joysoundArtistSearchResultsViewQuery = graphql`
 const joysoundArtistSearchResultsPaginationQuery = graphql`
   fragment JoysoundArtistSearchResults_joysoundArtistsByKeyword on Query
   @argumentDefinitions(
-    count: { type: "Int", defaultValue: 100 }
+    count: { type: "Int", defaultValue: 30 }
     cursor: { type: "String" }
     keyword: { type: "String" }
   )
@@ -33,6 +33,7 @@ const joysoundArtistSearchResultsPaginationQuery = graphql`
           id
           name
           nameYomi
+          songCount
         }
       }
     }
@@ -71,7 +72,7 @@ const JoysoundArtistSearchResults = ({ query }: Props) => {
         <Loader />
       ) : (
         hasNext && (
-          <Button full disabled={isLoadingNext} onClick={() => loadNext(100)}>
+          <Button full disabled={isLoadingNext} onClick={() => loadNext(30)}>
             More
           </Button>
         )
