@@ -219,82 +219,6 @@ async function toYomi(text: string): Promise<string> {
   return yomi;
 }
 
-// JOYSOUND's artist-search API returns no per-artist song count (unlike DAM's
-// holdMusicCount), so it's derived by fetching a capped page of the artist's
-// song list and counting results — an extra request per artist the first
-// time it's shown. Cached to disk (keyed by artist id) so repeat searches
-// are free; a count that hits the cap is an undercount for very prolific
-// artists, which we accept rather than paginating the whole catalog.
-const JOYSOUND_ARTIST_SONG_COUNT_CAP = 200;
-const joysoundArtistSongCountCache = new Map<string, number>();
-const JOYSOUND_ARTIST_SONG_COUNT_CACHE_PATH = path.resolve(
-  TEMP_FOLDER,
-  "joysound-artist-song-count-cache.json",
-);
-
-function loadJoysoundArtistSongCountCache(): void {
-  try {
-    if (!fs.existsSync(JOYSOUND_ARTIST_SONG_COUNT_CACHE_PATH)) return;
-    const parsed = JSON.parse(
-      fs.readFileSync(JOYSOUND_ARTIST_SONG_COUNT_CACHE_PATH, "utf-8"),
-    );
-    for (const [key, value] of Object.entries(parsed)) {
-      if (typeof value === "number") {
-        joysoundArtistSongCountCache.set(key, value);
-      }
-    }
-  } catch (e) {
-    console.error("[joysound] failed to load artist song count cache", e);
-  }
-}
-
-let joysoundArtistSongCountSaveTimer: ReturnType<typeof setTimeout> | null =
-  null;
-function scheduleJoysoundArtistSongCountCacheSave(): void {
-  if (joysoundArtistSongCountSaveTimer) return;
-  joysoundArtistSongCountSaveTimer = setTimeout(() => {
-    joysoundArtistSongCountSaveTimer = null;
-    try {
-      if (!fs.existsSync(TEMP_FOLDER)) fs.mkdirSync(TEMP_FOLDER);
-      fs.writeFileSync(
-        JOYSOUND_ARTIST_SONG_COUNT_CACHE_PATH,
-        JSON.stringify(Object.fromEntries(joysoundArtistSongCountCache)),
-        "utf-8",
-      );
-    } catch (e) {
-      console.error("[joysound] failed to save artist song count cache", e);
-    }
-  }, 2000);
-}
-
-const joysoundArtistSongCountInFlight = new Map<string, Promise<number>>();
-
-function getJoysoundArtistSongCount(
-  artistId: string,
-  joysound: JoysoundAPI,
-): Promise<number> {
-  const cached = joysoundArtistSongCountCache.get(artistId);
-  if (cached !== undefined) return Promise.resolve(cached);
-
-  const inFlight = joysoundArtistSongCountInFlight.get(artistId);
-  if (inFlight) return inFlight;
-
-  const promise = joysound
-    .getSongListByArtist(artistId, 1, JOYSOUND_ARTIST_SONG_COUNT_CAP)
-    .then((result) => {
-      const count = result.length;
-      joysoundArtistSongCountCache.set(artistId, count);
-      scheduleJoysoundArtistSongCountCacheSave();
-      return count;
-    })
-    .finally(() => {
-      joysoundArtistSongCountInFlight.delete(artistId);
-    });
-
-  joysoundArtistSongCountInFlight.set(artistId, promise);
-  return promise;
-}
-
 // DAM's dkwebsys search returns human-curated katakana readings inline
 // (titleYomi/artistYomi), including correct proper-noun readings that
 // kuromoji's IPADIC dictionary simply doesn't carry (e.g. 涼宮→スズミヤ,
@@ -1532,13 +1456,6 @@ const resolvers = {
   JoysoundArtist: {
     nameYomi(parent: JoysoundArtistParent) {
       return toYomi(parent.name);
-    },
-    songCount(
-      parent: JoysoundArtistParent,
-      _: any,
-      { dataSources }: IDataSources,
-    ) {
-      return getJoysoundArtistSongCount(parent.id, dataSources.joysound);
     },
   },
   DamQueueItem: {
@@ -2969,7 +2886,6 @@ export function applyGraphQLMiddleware(app: Application) {
 
   db = loadDb();
   loadReadingCache();
-  loadJoysoundArtistSongCountCache();
 
   const server = new ApolloServer<IDataSources>({
     schema,

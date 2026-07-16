@@ -9,25 +9,10 @@ import { JoysoundArtistSearchResults_joysoundArtistsByKeyword$data } from "./__g
 type Props =
   JoysoundArtistSearchResults_joysoundArtistsByKeyword$data["joysoundArtistsByKeyword"]["edges"][0]["node"];
 
-// The song count is capped server-side (see getJoysoundArtistSongCount in
-// main/graphql.ts) since JOYSOUND's API exposes no true total; a count that
-// hit the cap is shown as an underestimate rather than an exact number.
-const SONG_COUNT_CAP = 200;
-
-const JoysoundArtistSearchResultsItem = ({
-  id,
-  name,
-  nameYomi,
-  songCount,
-}: Props) => (
+const JoysoundArtistSearchResultsItem = ({ id, name, nameYomi }: Props) => (
   <Link to={`/joysoundArtist/${id}`}>
     <ListItem>
       <WeebText bold text={name} yomi={nameYomi} />
-      <span className={styles.songCount}>
-        {songCount}
-        {songCount === SONG_COUNT_CAP ? "+" : ""}{" "}
-        {songCount === 1 ? "song" : "songs"}
-      </span>
     </ListItem>
   </Link>
 );

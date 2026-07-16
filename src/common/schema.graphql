@@ -215,7 +215,6 @@ type JoysoundArtist {
   id: ID!
   name: String!
   nameYomi: String!
-  songCount: Int!
 }
 
 type JoysoundArtistConnection {
