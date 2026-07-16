@@ -1,5 +1,5 @@
 import formatDuration from "format-duration";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import { cyrb53 } from "../common/hash";
 import useQueue from "../common/hooks/useQueue";
@@ -20,6 +20,71 @@ function nicknameBadge(nickname: string) {
     >
       {nickname}
     </span>
+  );
+}
+
+// Gap (px) between the end of one copy of the track name and the start of
+// the next, while it scrolls.
+const BGM_MARQUEE_GAP_PX = 60;
+// Scroll speed in px/sec — kept constant so short and long names scroll at
+// the same pace rather than taking the same total duration.
+const BGM_MARQUEE_PX_PER_SEC = 60;
+
+// The BGM track name only scrolls if it's too wide to fit; short names stay
+// static. "Now Playing" is a separate, always-static label so only the name
+// itself marquees.
+function NowPlayingBgm(props: { track: string }) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
+  const [scrolling, setScrolling] = useState(false);
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    const text = textRef.current;
+    if (!wrapper || !text) return;
+
+    const measure = () => {
+      setTrackWidth(text.scrollWidth);
+      setScrolling(text.scrollWidth > wrapper.clientWidth);
+    };
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, [props.track]);
+
+  const scrollDistance = trackWidth + BGM_MARQUEE_GAP_PX;
+  const trackStyle:
+    | (React.CSSProperties & { "--bgm-marquee-distance": string })
+    | undefined = scrolling
+    ? {
+        "--bgm-marquee-distance": `${scrollDistance}px`,
+        animationDuration: `${scrollDistance / BGM_MARQUEE_PX_PER_SEC}s`,
+      }
+    : undefined;
+
+  return (
+    <div className="queueIntermissionNowPlayingBgm">
+      <span className="queueIntermissionNowPlayingLabel">♪ Now Playing:</span>
+      <div className="queueIntermissionNowPlayingTrackWrapper" ref={wrapperRef}>
+        <div
+          className={`queueIntermissionNowPlayingTrack ${
+            scrolling ? "queueIntermissionNowPlayingTrackScrolling" : ""
+          }`}
+          style={trackStyle}
+        >
+          <span
+            ref={textRef}
+            style={scrolling ? { marginRight: BGM_MARQUEE_GAP_PX } : undefined}
+          >
+            {props.track}
+          </span>
+          {scrolling && <span aria-hidden="true">{props.track}</span>}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -72,9 +137,7 @@ export default function QueueIntermission(props: {
         <QRCode hostname={props.hostname} inverted />
       </div>
       {props.bgmNowPlaying ? (
-        <div className="queueIntermissionNowPlayingBgm">
-          ♪ Now Playing: {props.bgmNowPlaying}
-        </div>
+        <NowPlayingBgm track={props.bgmNowPlaying} />
       ) : null}
       {breakActive ? (
         <div className="queueIntermissionBreak">

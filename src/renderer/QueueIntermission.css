@@ -89,9 +89,42 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
   max-width: 60vw;
   font-size: 2.2vh;
   color: #cccccc;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4em;
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.queueIntermissionNowPlayingLabel {
+  flex-shrink: 0;
   white-space: nowrap;
+}
+
+.queueIntermissionNowPlayingTrackWrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.queueIntermissionNowPlayingTrack {
+  display: inline-flex;
+  white-space: nowrap;
+}
+
+.queueIntermissionNowPlayingTrackScrolling {
+  animation-name: queueIntermissionNowPlayingScroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes queueIntermissionNowPlayingScroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-1 * var(--bgm-marquee-distance)));
+  }
 }
 
 .queueIntermissionBreak {
