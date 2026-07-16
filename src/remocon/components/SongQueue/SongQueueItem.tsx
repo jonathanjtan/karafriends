@@ -1,21 +1,12 @@
 import formatDuration from "format-duration";
 import React, { useState } from "react";
-// tslint:disable-next-line:no-submodule-imports
-import { FaYoutube } from "react-icons/fa";
-// tslint:disable-next-line:no-submodule-imports
 /* tslint:disable:no-submodule-imports */
-import {
-  MdArrowDownward,
-  MdArrowUpward,
-  MdClose,
-  MdMusicVideo,
-} from "react-icons/md";
+import { MdArrowDownward, MdArrowUpward, MdClose } from "react-icons/md";
 /* tslint:enable:no-submodule-imports */
-// tslint:disable-next-line:no-submodule-imports
-import { SiNiconico } from "react-icons/si";
 import { graphql, useMutation } from "react-relay";
 import { useNavigate } from "react-router";
 
+import SourceBadge from "../../../common/components/SourceBadge";
 import { cyrb53 } from "../../../common/hash";
 import { useQueueQueueQuery$data } from "../../../common/hooks/__generated__/useQueueQueueQuery.graphql";
 import useConfig from "../../hooks/useConfig";
@@ -118,12 +109,6 @@ const SongQueueItem = ({
     });
   };
 
-  let icon = null;
-  if (itemType === "DamQueueItem") icon = <MdMusicVideo />;
-  if (itemType === "JoysoundQueueItem") icon = <MdMusicVideo />;
-  if (itemType === "YoutubeQueueItem") icon = <FaYoutube />;
-  if (itemType === "NicoQueueItem") icon = <SiNiconico />;
-
   return (
     <div className={styles.queueItem}>
       {expanded ? (
@@ -177,7 +162,6 @@ const SongQueueItem = ({
       <div className={styles.songMeta} onClick={onClick}>
         <Marquee>
           <div className={styles.songMetaContent}>
-            {icon}{" "}
             <WeebText
               text={item.artistName ?? ""}
               yomi={item.artistNameYomi ?? ""}
@@ -186,6 +170,13 @@ const SongQueueItem = ({
           </div>
         </Marquee>
       </div>
+      <SourceBadge
+        typename={itemType}
+        youtubeVideoId={
+          "youtubeVideoId" in item ? item.youtubeVideoId : undefined
+        }
+        fontSize="11px"
+      />
       {!isCurrent && <div>+{formatDuration(eta * 1000)}</div>}
     </div>
   );

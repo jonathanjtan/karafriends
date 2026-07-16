@@ -39,6 +39,9 @@ const queueQuery = graphql`
           profilePictureFrame
         }
       }
+      ... on JoysoundQueueItem {
+        youtubeVideoId
+      }
     }
   }
 `;
@@ -69,6 +72,9 @@ const queueSubscription = graphql`
             profilePictureUrl
             profilePictureFrame
           }
+        }
+        ... on JoysoundQueueItem {
+          youtubeVideoId
         }
       }
     }

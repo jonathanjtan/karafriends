@@ -1,6 +1,7 @@
 import formatDuration from "format-duration";
 import React, { useEffect, useRef, useState } from "react";
 
+import SourceBadge from "../common/components/SourceBadge";
 import { cyrb53 } from "../common/hash";
 import useQueue from "../common/hooks/useQueue";
 import QRCode from "./QRCode";
@@ -170,7 +171,18 @@ export default function QueueIntermission(props: {
             />
           ) : null}
           <div className="queueIntermissionNextUp">
-            <div className="queueIntermissionSongName">{nextUp[0].name}</div>
+            <div className="queueIntermissionSongName">
+              {nextUp[0].name}{" "}
+              <SourceBadge
+                typename={nextUp[0].__typename}
+                youtubeVideoId={
+                  "youtubeVideoId" in nextUp[0]
+                    ? nextUp[0].youtubeVideoId
+                    : undefined
+                }
+                fontSize="2.2vh"
+              />
+            </div>
             <div className="queueIntermissionArtistName">
               {nextUp[0].artistName}{" "}
               {nicknameBadge(nextUp[0].userIdentity?.nickname || "")}
@@ -208,6 +220,13 @@ export default function QueueIntermission(props: {
                 {item.name} - {item.artistName}{" "}
                 {nicknameBadge(item.userIdentity?.nickname || "")}
               </span>
+              <SourceBadge
+                typename={item.__typename}
+                youtubeVideoId={
+                  "youtubeVideoId" in item ? item.youtubeVideoId : undefined
+                }
+                fontSize="1.9vh"
+              />
               <span className="queueIntermissionUpcomingEta">
                 T+{formatDuration((eta - baseEta) * 1000)}
               </span>

@@ -1,6 +1,7 @@
 import formatDuration from "format-duration";
 import React from "react";
 
+import SourceBadge from "../common/components/SourceBadge";
 import { cyrb53 } from "../common/hash";
 import useQueue from "../common/hooks/useQueue";
 import "./Queue.css";
@@ -45,7 +46,7 @@ export default function Queue() {
           <div
             key={`${item.songId}_${i}`}
             className="collection-item"
-            style={{ display: "flex" }}
+            style={{ display: "flex", gap: "0.5em" }}
           >
             <span className="queueMarquee">
               <span className="queueMarqueeInner">
@@ -57,6 +58,13 @@ export default function Queue() {
                 </span>
               </span>
             </span>
+            <SourceBadge
+              typename={item.__typename}
+              youtubeVideoId={
+                "youtubeVideoId" in item ? item.youtubeVideoId : undefined
+              }
+              fontSize="0.75em"
+            />
             <span className="secondary-content">
               {formatDuration(eta * 1000)}
             </span>

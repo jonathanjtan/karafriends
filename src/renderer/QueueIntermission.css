@@ -249,11 +249,12 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Push the source badge + ETA that follow to the right edge of the row. */
+  margin-right: auto;
 }
 
 .queueIntermissionUpcomingEta {
   flex: none;
-  margin-left: auto;
   color: #cccccc;
 }
 

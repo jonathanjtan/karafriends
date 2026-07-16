@@ -45,6 +45,10 @@ const nowPlayingQuery = graphql`
           profilePictureFrame
         }
       }
+
+      ... on JoysoundQueueItem {
+        youtubeVideoId
+      }
     }
   }
 `;
@@ -81,6 +85,10 @@ const nowPlayingSubscription = graphql`
           profilePictureUrl
           profilePictureFrame
         }
+      }
+
+      ... on JoysoundQueueItem {
+        youtubeVideoId
       }
     }
   }
