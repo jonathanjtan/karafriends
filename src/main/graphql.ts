@@ -168,23 +168,40 @@ function loadReadingCache(): void {
 }
 
 let readingCacheSaveTimer: ReturnType<typeof setTimeout> | null = null;
+function writeReadingCacheToDisk(): void {
+  try {
+    if (!fs.existsSync(TEMP_FOLDER)) fs.mkdirSync(TEMP_FOLDER);
+    fs.writeFileSync(
+      READING_CACHE_PATH,
+      JSON.stringify(Object.fromEntries(readingCache)),
+      "utf-8",
+    );
+  } catch (e) {
+    console.error("[yomi] failed to save reading cache", e);
+  }
+}
+
 function scheduleReadingCacheSave(): void {
   if (readingCacheSaveTimer) return;
   // Debounced: one search primes dozens of entries at once, so coalesce them
   // into a single write rather than thrashing the disk per name.
   readingCacheSaveTimer = setTimeout(() => {
     readingCacheSaveTimer = null;
-    try {
-      if (!fs.existsSync(TEMP_FOLDER)) fs.mkdirSync(TEMP_FOLDER);
-      fs.writeFileSync(
-        READING_CACHE_PATH,
-        JSON.stringify(Object.fromEntries(readingCache)),
-        "utf-8",
-      );
-    } catch (e) {
-      console.error("[yomi] failed to save reading cache", e);
-    }
+    writeReadingCacheToDisk();
   }, 2000);
+}
+
+// Called on process shutdown so a pending debounced write (or one that never
+// got scheduled because the process died mid-sweep) isn't lost — otherwise
+// every name resolved in the last 2s (or the whole in-flight primeRankings
+// sweep, if killed before its first debounce fires) gets re-searched against
+// DAM/JOYSOUND on the next launch instead of hitting the persisted cache.
+export function flushReadingCacheOnShutdown(): void {
+  if (readingCacheSaveTimer) {
+    clearTimeout(readingCacheSaveTimer);
+    readingCacheSaveTimer = null;
+  }
+  writeReadingCacheToDisk();
 }
 
 function cacheReading(name: string, yomi: string, canonical: boolean): void {

@@ -23,6 +23,21 @@ async function handleError(err: unknown) {
 process.on("uncaughtException", handleError);
 process.on("unhandledRejection", handleError);
 
+// `_run-dev` runs under `concurrently --kill-others`, which SIGTERMs this
+// process the instant the dev server is stopped. Node's default SIGTERM/
+// SIGINT handling exits immediately without draining pending debounce
+// timers, so any reading/ranking cache entries resolved in the last
+// debounce window (or a whole in-flight primeRankings sweep) never reached
+// disk — and got re-searched against DAM/JOYSOUND on the very next launch.
+// Flush synchronously before exiting so restarts actually see prior work.
+function flushCachesAndExit() {
+  flushReadingCacheOnShutdown();
+  flushRankingCacheOnShutdown();
+  process.exit(0);
+}
+process.on("SIGINT", flushCachesAndExit);
+process.on("SIGTERM", flushCachesAndExit);
+
 import inspector from "inspector";
 
 // Start a debug server if we don't have one already. If we already have one, this would throw.
@@ -46,11 +61,12 @@ import express from "express";
 import karafriendsConfig from "../common/config";
 import { TEMP_FOLDER } from "./../common/videoDownloader";
 import { MinseiAPI } from "./damApi";
-import { applyGraphQLMiddleware } from "./graphql";
+import { applyGraphQLMiddleware, flushReadingCacheOnShutdown } from "./graphql";
 import { JoysoundAPI } from "./joysoundApi";
 import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
+import { flushRankingCacheOnShutdown } from "./rankings";
 
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import { default as preloadUrl } from "url:../preload";
@@ -165,6 +181,14 @@ app.on("ready", createWindow);
 
 app.on("window-all-closed", () => {
   app.quit();
+});
+
+// Covers app.quit()/Cmd+Q in addition to the SIGINT/SIGTERM handlers above,
+// which only fire for a terminal-driven stop (e.g. `_run-dev`'s
+// concurrently --kill-others).
+app.on("before-quit", () => {
+  flushReadingCacheOnShutdown();
+  flushRankingCacheOnShutdown();
 });
 
 app.on("activate", () => {

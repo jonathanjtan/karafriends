@@ -510,21 +510,39 @@ function loadRankingCache(): void {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
+function rankingCacheJson(): string {
+  const obj: { [key: string]: CachedRanking } = {};
+  for (const [key, value] of rankingCache) obj[key] = value;
+  return JSON.stringify(obj);
+}
+
 function saveRankingCache(): void {
   // Debounce so a burst of prefetches writes the file once.
   if (saveTimer) return;
 
   saveTimer = setTimeout(() => {
     saveTimer = null;
-    const obj: { [key: string]: CachedRanking } = {};
-    for (const [key, value] of rankingCache) obj[key] = value;
-
-    fs.writeFile(RANKING_CACHE_PATH, JSON.stringify(obj), (err) => {
+    fs.writeFile(RANKING_CACHE_PATH, rankingCacheJson(), (err) => {
       if (err) console.warn("Failed to persist rankings cache:", err);
     });
   }, 1000);
 
   saveTimer.unref?.();
+}
+
+// Called on process shutdown so a pending debounced write isn't lost to a
+// SIGTERM/SIGINT landing before the 1s debounce fires. Synchronous, since an
+// async write racing process exit could still get dropped.
+export function flushRankingCacheOnShutdown(): void {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  try {
+    fs.writeFileSync(RANKING_CACHE_PATH, rankingCacheJson(), "utf-8");
+  } catch (e) {
+    console.warn("Failed to persist rankings cache:", e);
+  }
 }
 
 // Monday-anchored week key (local time) — two dates in the same week share
