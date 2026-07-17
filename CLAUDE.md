@@ -279,7 +279,18 @@ hook, relay-compile. Persistence is automatic via the `...db` spread.
   song-name filter and hides the JP exclusion keywords.
 - **Video ↔ karaoke sync** (`computeYoutubeIntroOffsetMs`): cross-correlates
   RMS envelopes of several 20s windows sampled from inside the karaoke track
-  against the whole MV audio, takes the consensus offset. Positive → `-ss`
+  against the whole MV audio, in **two stages**: a coarse (100ms) scan
+  collects _every_ local correlation peak per anchor as a candidate offset,
+  then each candidate is refined and validated on a fine (10ms) envelope by
+  its mean correlation across _all_ anchors, best-validated candidate wins.
+  Don't regress this to "each anchor's single best match + cluster
+  consensus" — on riff-repetitive songs a phrase-aliased ghost offset (one
+  repetition off) can outscore the true offset at coarse resolution, both
+  because the true offset can fall between the 100ms lag grid points (losing
+  score to envelope misalignment) and because one confident aliased anchor
+  can win a cluster vote (this desynced 新宝島 by 3s: alias 10400ms vs true
+  7350ms; the alias only correlates inside the repeated section, which the
+  cross-anchor validation exposes). Positive offset → `-ss`
   trim; negative (karaoke has extra head material, e.g. a count-off) →
   frozen-first-frame front-pad. When cross-correlation is inconclusive (the
   common case — a karaoke re-recording rarely envelope-correlates with the

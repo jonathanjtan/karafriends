@@ -554,10 +554,25 @@ function downloadJoysoundYoutubeVideoPromise(
 // itself have extra material at the head (a count-off, a longer intro) that
 // the original recording doesn't. We estimate the signed offset between the
 // two by cross-correlating cheap amplitude envelopes of several windows of
-// the karaoke audio against the MV's own audio and taking the consensus.
-// Windows are sampled from *inside* the song rather than just its head,
-// because the head is exactly where karaoke arrangements diverge most from
-// the original (count-offs, re-arranged intros).
+// the karaoke audio against the MV's own audio. Windows are sampled from
+// *inside* the song rather than just its head, because the head is exactly
+// where karaoke arrangements diverge most from the original (count-offs,
+// re-arranged intros).
+//
+// The estimate runs in two stages. A coarse (100ms-envelope) scan of every
+// lag at every anchor collects *all* local correlation peaks as candidate
+// offsets - not just each anchor's best match. Each candidate is then
+// refined and re-scored on a fine (10ms) envelope, averaged across every
+// anchor, and the best-validated candidate wins. The two stages exist
+// because the coarse scan alone gets repetitive songs wrong in two
+// compounding ways (this was the Shintakarajima bug): (1) a true offset
+// that falls between the 100ms lag grid points loses enough envelope
+// correlation to score *below* a phrase-aliased ghost offset (one riff
+// repetition away) that happens to sit on the grid, and (2) trusting each
+// anchor's single best match means one confident aliased anchor can win the
+// consensus outright. Scoring every candidate at every anchor at fine
+// resolution disambiguates both: the true offset scores well everywhere,
+// while a phrase alias only scores well inside the repeated section.
 //
 // A positive offset means the MV has extra head material: trim it off with
 // -ss when compositing. A negative offset means the karaoke track has extra
@@ -576,14 +591,33 @@ const INTRO_SYNC_REFERENCE_SEC = 20;
 const INTRO_SYNC_MAX_DECODE_SEC = 600;
 const INTRO_SYNC_MAX_OFFSET_MS = 40000;
 const INTRO_SYNC_CONFIDENCE_THRESHOLD = 0.5;
-const INTRO_SYNC_STRONG_CONFIDENCE_THRESHOLD = 0.75;
-const INTRO_SYNC_CLUSTER_TOLERANCE_MS = 1500;
-const INTRO_SYNC_CLUSTER_MIN_TOTAL_SCORE = 1.0;
 const INTRO_SYNC_FIRST_ANCHOR_SEC = 10;
 const INTRO_SYNC_ANCHOR_STEP_SEC = 15;
 const INTRO_SYNC_LAST_ANCHOR_SEC = 120;
 const INTRO_SYNC_ENVELOPE_WINDOW_MS = 100;
+const INTRO_SYNC_FINE_WINDOW_MS = 10;
 const INTRO_SYNC_SAMPLE_RATE_HZ = 8000;
+// Candidate handling for the two-stage estimate. Coarse local peaks within
+// MERGE_MS of a stronger one are the same peak sampled off-grid, not a
+// separate candidate. The refine radius only needs to cover coarse grid
+// quantization (half a coarse window) plus a little envelope smear - the
+// nearest distinct alias is a full riff repetition (seconds) away. The
+// candidate cap bounds main-process CPU on pathologically repetitive tracks;
+// the worst observed true-candidate coarse rank is 20 (Shintakarajima).
+// MIN_MEAN_SCORE gates how well the winner must correlate on average across
+// all anchors (observed true offsets: 0.57-0.77), and MIN_RUNNER_UP_MARGIN
+// declares the measurement inconclusive when a well-separated second
+// candidate scores nearly as well (observed true margins: 0.11-0.21).
+const INTRO_SYNC_CANDIDATE_MERGE_MS = 300;
+const INTRO_SYNC_REFINE_RADIUS_MS = 250;
+const INTRO_SYNC_MAX_CANDIDATES = 64;
+const INTRO_SYNC_MIN_MEAN_SCORE = 0.5;
+const INTRO_SYNC_RUNNER_UP_SEPARATION_MS = 1500;
+const INTRO_SYNC_MIN_RUNNER_UP_MARGIN = 0.05;
+// Tempo drift between the two recordings makes a single offset a
+// compromise; after validation, the winner is nudged to best fit the
+// head-most anchors, where a visual mismatch throws the singer off most.
+const INTRO_SYNC_HEAD_REFINE_ANCHORS = 2;
 // Onset-alignment fallback (used when the interior-window cross-correlation
 // can't reach a confident consensus - which is the common case, because a
 // JOYSOUND karaoke re-recording rarely envelope-correlates with the original
@@ -706,105 +740,221 @@ function pearsonCorrelationAt(
   return denom === 0 ? 0 : numerator / denom;
 }
 
-interface AnchorMatch {
-  anchorWindows: number;
+interface OffsetCandidate {
   offsetMs: number;
   score: number;
 }
 
-// Cross-correlates INTRO_SYNC_REFERENCE_SEC-long windows of the karaoke
-// envelope (taken at several anchor points) against the whole video
-// envelope, then looks for a cluster of anchors that agree on the same
-// video-minus-karaoke offset. Returns the consensus offset in ms (positive:
-// video has extra head material; negative: karaoke does), or null if no
-// confident consensus exists.
-function estimateVideoOffsetMs(
-  karaokeEnvelope: number[],
-  videoEnvelope: number[],
-): number | null {
+// Anchor positions (ms into the karaoke track) at which
+// INTRO_SYNC_REFERENCE_SEC-long comparison windows are taken.
+function anchorPositionsMs(karaokeEnvelope: number[]): number[] {
   const windowMs = INTRO_SYNC_ENVELOPE_WINDOW_MS;
   const referenceWindows = (INTRO_SYNC_REFERENCE_SEC * 1000) / windowMs;
 
-  const anchors: number[] = [];
+  const anchorsMs: number[] = [];
   for (
     let anchorSec = INTRO_SYNC_FIRST_ANCHOR_SEC;
     anchorSec <= INTRO_SYNC_LAST_ANCHOR_SEC &&
     (anchorSec * 1000) / windowMs + referenceWindows <= karaokeEnvelope.length;
     anchorSec += INTRO_SYNC_ANCHOR_STEP_SEC
   ) {
-    anchors.push((anchorSec * 1000) / windowMs);
+    anchorsMs.push(anchorSec * 1000);
   }
   // Very short track: fall back to matching what we have from the head.
-  if (anchors.length === 0 && referenceWindows <= karaokeEnvelope.length) {
-    anchors.push(0);
+  if (anchorsMs.length === 0 && referenceWindows <= karaokeEnvelope.length) {
+    anchorsMs.push(0);
+  }
+  return anchorsMs;
+}
+
+// Mean fine-envelope correlation of a fixed candidate offset across the
+// anchor set - the validation score of the two-stage estimate. -Infinity
+// when fewer than half the anchors fit inside both tracks at this offset
+// (a candidate shouldn't win by being scored on a cherry-picked remnant).
+function meanAnchorScoreAt(
+  karaokeFineEnvelope: number[],
+  videoFineEnvelope: number[],
+  anchorsMs: number[],
+  offsetMs: number,
+): number {
+  const windowMs = INTRO_SYNC_FINE_WINDOW_MS;
+  const referenceWindows = (INTRO_SYNC_REFERENCE_SEC * 1000) / windowMs;
+  const lagWindows = Math.round(offsetMs / windowMs);
+
+  let sum = 0;
+  let count = 0;
+  for (const anchorMs of anchorsMs) {
+    const anchorWindows = anchorMs / windowMs;
+    const videoStart = anchorWindows + lagWindows;
+    if (
+      anchorWindows + referenceWindows > karaokeFineEnvelope.length ||
+      videoStart < 0 ||
+      videoStart + referenceWindows > videoFineEnvelope.length
+    ) {
+      continue;
+    }
+    sum += pearsonCorrelationAt(
+      karaokeFineEnvelope,
+      anchorWindows,
+      videoFineEnvelope,
+      videoStart,
+      referenceWindows,
+    );
+    count++;
   }
 
-  const matches: AnchorMatch[] = [];
+  return count < Math.ceil(anchorsMs.length / 2) ? -Infinity : sum / count;
+}
 
-  for (const anchorWindows of anchors) {
-    let bestLagWindows = 0;
-    let bestScore = -Infinity;
+// Two-stage offset estimate (see the block comment above the constants).
+// Returns the video-minus-karaoke offset in ms (positive: video has extra
+// head material; negative: karaoke does), or null if no candidate validates
+// confidently.
+function estimateVideoOffsetMs(
+  karaokeEnvelope: number[],
+  videoEnvelope: number[],
+  karaokeFineEnvelope: number[],
+  videoFineEnvelope: number[],
+): number | null {
+  const windowMs = INTRO_SYNC_ENVELOPE_WINDOW_MS;
+  const referenceWindows = (INTRO_SYNC_REFERENCE_SEC * 1000) / windowMs;
+  const anchorsMs = anchorPositionsMs(karaokeEnvelope);
 
+  // Stage 1: coarse scan. Keep every local correlation peak as a candidate,
+  // not just each anchor's best - on repetitive songs the true offset often
+  // sits *behind* a phrase-aliased ghost at coarse resolution.
+  const candidates: OffsetCandidate[] = [];
+  for (const anchorMs of anchorsMs) {
+    const anchorWindows = anchorMs / windowMs;
+    if (anchorWindows + referenceWindows > karaokeEnvelope.length) {
+      continue;
+    }
+
+    const scores: number[] = [];
     for (let lag = 0; lag + referenceWindows <= videoEnvelope.length; lag++) {
-      const score = pearsonCorrelationAt(
-        karaokeEnvelope,
-        anchorWindows,
-        videoEnvelope,
-        lag,
-        referenceWindows,
+      scores.push(
+        pearsonCorrelationAt(
+          karaokeEnvelope,
+          anchorWindows,
+          videoEnvelope,
+          lag,
+          referenceWindows,
+        ),
       );
+    }
 
-      if (score > bestScore) {
-        bestScore = score;
-        bestLagWindows = lag;
+    for (let lag = 1; lag + 1 < scores.length; lag++) {
+      const offsetMs = (lag - anchorWindows) * windowMs;
+      if (
+        Math.abs(offsetMs) <= INTRO_SYNC_MAX_OFFSET_MS &&
+        scores[lag] >= INTRO_SYNC_CONFIDENCE_THRESHOLD &&
+        scores[lag] >= scores[lag - 1] &&
+        scores[lag] >= scores[lag + 1]
+      ) {
+        candidates.push({ offsetMs, score: scores[lag] });
       }
     }
+  }
 
-    const offsetMs = (bestLagWindows - anchorWindows) * windowMs;
-
+  candidates.sort((a, b) => b.score - a.score);
+  const merged: OffsetCandidate[] = [];
+  for (const candidate of candidates) {
+    if (merged.length >= INTRO_SYNC_MAX_CANDIDATES) {
+      break;
+    }
     if (
-      bestScore >= INTRO_SYNC_CONFIDENCE_THRESHOLD &&
-      Math.abs(offsetMs) <= INTRO_SYNC_MAX_OFFSET_MS
+      merged.every(
+        (m) =>
+          Math.abs(m.offsetMs - candidate.offsetMs) >
+          INTRO_SYNC_CANDIDATE_MERGE_MS,
+      )
     ) {
-      matches.push({ anchorWindows, offsetMs, score: bestScore });
+      merged.push(candidate);
     }
   }
 
-  // Pick the cluster of mutually-agreeing offsets with the highest total
-  // score. Tolerance is loose enough to absorb slight tempo drift between
-  // the two recordings across anchor points.
-  let bestCluster: AnchorMatch[] = [];
-  let bestClusterScore = 0;
-
-  for (const seed of matches) {
-    const cluster = matches.filter(
-      (m) =>
-        Math.abs(m.offsetMs - seed.offsetMs) <= INTRO_SYNC_CLUSTER_TOLERANCE_MS,
-    );
-    const clusterScore = cluster.reduce((acc, m) => acc + m.score, 0);
-
-    if (clusterScore > bestClusterScore) {
-      bestCluster = cluster;
-      bestClusterScore = clusterScore;
+  // Stage 2: refine each candidate on the fine envelope (the coarse grid
+  // quantizes offsets to 100ms, which is audible) and validate it by its
+  // mean correlation across every anchor.
+  const refined: OffsetCandidate[] = [];
+  for (const candidate of merged) {
+    let best: OffsetCandidate = {
+      offsetMs: candidate.offsetMs,
+      score: -Infinity,
+    };
+    for (
+      let offsetMs = candidate.offsetMs - INTRO_SYNC_REFINE_RADIUS_MS;
+      offsetMs <= candidate.offsetMs + INTRO_SYNC_REFINE_RADIUS_MS;
+      offsetMs += INTRO_SYNC_FINE_WINDOW_MS
+    ) {
+      if (Math.abs(offsetMs) > INTRO_SYNC_MAX_OFFSET_MS) {
+        continue;
+      }
+      const score = meanAnchorScoreAt(
+        karaokeFineEnvelope,
+        videoFineEnvelope,
+        anchorsMs,
+        offsetMs,
+      );
+      if (score > best.score) {
+        best = { offsetMs, score };
+      }
+    }
+    if (best.score > -Infinity) {
+      refined.push(best);
     }
   }
+  refined.sort((a, b) => b.score - a.score);
 
-  const isConfident =
-    bestClusterScore >= INTRO_SYNC_CLUSTER_MIN_TOTAL_SCORE ||
-    (bestCluster.length === 1 &&
-      bestCluster[0].score >= INTRO_SYNC_STRONG_CONFIDENCE_THRESHOLD);
-
-  if (!isConfident) {
+  const winner = refined[0];
+  if (!winner || winner.score < INTRO_SYNC_MIN_MEAN_SCORE) {
+    return null;
+  }
+  const runnerUp = refined.find(
+    (c) =>
+      Math.abs(c.offsetMs - winner.offsetMs) >
+      INTRO_SYNC_RUNNER_UP_SEPARATION_MS,
+  );
+  if (
+    runnerUp &&
+    winner.score - runnerUp.score < INTRO_SYNC_MIN_RUNNER_UP_MARGIN
+  ) {
     return null;
   }
 
-  // Tempo drift makes the offset slide slowly over the song, so the anchor
-  // closest to the head gives the best estimate for where sync matters most.
-  const headMostMatch = bestCluster.reduce((best, m) =>
-    m.anchorWindows < best.anchorWindows ? m : best,
-  );
+  // Head polish: under tempo drift the all-anchor mean is a compromise, but
+  // the head is where a visual mismatch throws the singer off most. Nudge
+  // the validated winner to best fit the head-most anchors.
+  const headAnchorsMs = anchorsMs.slice(0, INTRO_SYNC_HEAD_REFINE_ANCHORS);
+  let polished: OffsetCandidate = {
+    offsetMs: winner.offsetMs,
+    score: meanAnchorScoreAt(
+      karaokeFineEnvelope,
+      videoFineEnvelope,
+      headAnchorsMs,
+      winner.offsetMs,
+    ),
+  };
+  for (
+    let offsetMs = winner.offsetMs - INTRO_SYNC_REFINE_RADIUS_MS;
+    offsetMs <= winner.offsetMs + INTRO_SYNC_REFINE_RADIUS_MS;
+    offsetMs += INTRO_SYNC_FINE_WINDOW_MS
+  ) {
+    if (Math.abs(offsetMs) > INTRO_SYNC_MAX_OFFSET_MS) {
+      continue;
+    }
+    const score = meanAnchorScoreAt(
+      karaokeFineEnvelope,
+      videoFineEnvelope,
+      headAnchorsMs,
+      offsetMs,
+    );
+    if (score > polished.score) {
+      polished = { offsetMs, score };
+    }
+  }
 
-  return headMostMatch.offsetMs;
+  return polished.offsetMs;
 }
 
 // First window whose trailing smoothed RMS crosses a fraction of the
@@ -890,13 +1040,26 @@ export async function computeYoutubeIntroOffsetMs(
       videoPcm,
       INTRO_SYNC_ENVELOPE_WINDOW_MS,
     );
+    const karaokeFineEnvelope = computeRmsEnvelope(
+      karaokePcm,
+      INTRO_SYNC_FINE_WINDOW_MS,
+    );
+    const videoFineEnvelope = computeRmsEnvelope(
+      videoPcm,
+      INTRO_SYNC_FINE_WINDOW_MS,
+    );
 
     // Cross-correlation is the primary method: it can see through a loud
     // non-musical intro (spoken bit, ambient) that would fool onset
     // detection. But it's often inconclusive on karaoke re-recordings, and
     // when it is, aligning where the music starts is far more reliable than
     // the old end-together guess (which desynced already-aligned songs).
-    let offsetMs = estimateVideoOffsetMs(karaokeEnvelope, videoEnvelope);
+    let offsetMs = estimateVideoOffsetMs(
+      karaokeEnvelope,
+      videoEnvelope,
+      karaokeFineEnvelope,
+      videoFineEnvelope,
+    );
     let method = "correlation";
     if (offsetMs === null) {
       offsetMs = estimateOnsetOffsetMs(karaokeEnvelope, videoEnvelope);
