@@ -15,7 +15,12 @@ import {
   UserIdentity,
 } from "../main/graphql";
 import { JoysoundAPI, JoysoundSongRawData } from "../main/joysoundApi";
-import { ensureJoysoundGuideMelody } from "../main/joysoundMelody";
+import {
+  ensureJoysoundGuideMelody,
+  getJoysoundScoringData,
+} from "../main/joysoundMelody";
+
+import { GuideMelodyNote, parseScoringData } from "./guideMelody";
 
 import { decodeJoysoundBase64Field, getSongDuration } from "./joysoundParser";
 
@@ -559,33 +564,39 @@ function downloadJoysoundYoutubeVideoPromise(
 // where karaoke arrangements diverge most from the original (count-offs,
 // re-arranged intros).
 //
-// The estimate runs in two stages. A coarse (100ms-envelope) scan of every
-// lag at every anchor collects *all* local correlation peaks as candidate
-// offsets - not just each anchor's best match. Each candidate is then
-// refined and re-scored on a fine (10ms) envelope, averaged across every
-// anchor, and the best-validated candidate wins. The two stages exist
-// because the coarse scan alone gets repetitive songs wrong in two
-// compounding ways (this was the Shintakarajima bug): (1) a true offset
-// that falls between the 100ms lag grid points loses enough envelope
-// correlation to score *below* a phrase-aliased ghost offset (one riff
-// repetition away) that happens to sit on the grid, and (2) trusting each
-// anchor's single best match means one confident aliased anchor can win the
-// consensus outright. Scoring every candidate at every anchor at fine
-// resolution disambiguates both: the true offset scores well everywhere,
-// while a phrase alias only scores well inside the repeated section.
+// The estimate runs in three stages:
+//
+// 1. A coarse (100ms-envelope) scan of every lag at every anchor collects
+//    *all* local correlation peaks as candidate offsets - not just each
+//    anchor's best match. On repetitive songs a phrase-aliased ghost offset
+//    (one riff repetition away) routinely outscores the true offset at
+//    coarse resolution (the Shintakarajima bug), so no single argmax can be
+//    trusted; the true offset just has to make the candidate list.
+// 2. Each candidate is refined on a fine (10ms) envelope drift-tolerantly:
+//    every anchor reports its own best fine offset within a small window
+//    around the candidate (karaoke re-recordings genuinely drift by
+//    hundreds of ms across a song, so demanding one exact offset at every
+//    anchor collapses honest candidates - the Zankoku-na-Tenshi-no-These
+//    regression), the score-weighted median of those per-anchor peaks
+//    becomes the candidate's refined offset, and its validation score is
+//    the mean of the per-anchor maxima around it.
+// 3. The top refined candidates are ranked by guide-melody salience: does
+//    the MV's audio actually contain the guide melody's pitches at the
+//    times this offset predicts (Goertzel power on-pitch vs off-pitch over
+//    the first 30s of sung notes)? Envelope correlation measures "the mix
+//    is loud in the same places", which phrase aliases fake convincingly;
+//    the melody-vs-accompaniment distinction is what they can't fake. On
+//    every measured song the melody margin between true offset and best
+//    alias (>=0.37) dwarfs the envelope margin (sometimes inverted), so a
+//    confident melody ranking overrides the envelope one; the envelope
+//    winner (with confidence gates) is the fallback when melody data is
+//    missing or its ranking is ambiguous.
 //
 // A positive offset means the MV has extra head material: trim it off with
 // -ss when compositing. A negative offset means the karaoke track has extra
 // head material: delay the video by front-padding it with its frozen first
-// frame (padJoysoundVideoPromise). If no confident consensus emerges we
-// return null and leave the legacy duration-difference pad heuristic to do
-// its best.
-//
-// Known limitation: a single offset can't correct tempo drift (karaoke
-// re-recordings sometimes run fractions of a percent slower/faster than the
-// original master), so we anchor the head of the song - where a visual
-// mismatch throws the singer off the most - and accept the tail drifting by
-// up to a second or two.
+// frame (padJoysoundVideoPromise). If no candidate survives, onset
+// alignment (below) is the last resort before giving up.
 
 const INTRO_SYNC_REFERENCE_SEC = 20;
 const INTRO_SYNC_MAX_DECODE_SEC = 600;
@@ -597,27 +608,36 @@ const INTRO_SYNC_LAST_ANCHOR_SEC = 120;
 const INTRO_SYNC_ENVELOPE_WINDOW_MS = 100;
 const INTRO_SYNC_FINE_WINDOW_MS = 10;
 const INTRO_SYNC_SAMPLE_RATE_HZ = 8000;
-// Candidate handling for the two-stage estimate. Coarse local peaks within
-// MERGE_MS of a stronger one are the same peak sampled off-grid, not a
-// separate candidate. The refine radius only needs to cover coarse grid
-// quantization (half a coarse window) plus a little envelope smear - the
-// nearest distinct alias is a full riff repetition (seconds) away. The
-// candidate cap bounds main-process CPU on pathologically repetitive tracks;
-// the worst observed true-candidate coarse rank is 20 (Shintakarajima).
-// MIN_MEAN_SCORE gates how well the winner must correlate on average across
-// all anchors (observed true offsets: 0.57-0.77), and MIN_RUNNER_UP_MARGIN
-// declares the measurement inconclusive when a well-separated second
-// candidate scores nearly as well (observed true margins: 0.11-0.21).
+// Candidate handling. Coarse local peaks within MERGE_MS of a stronger one
+// are the same peak sampled off-grid, not a separate candidate. The
+// refinement cap bounds main-process CPU on pathologically repetitive
+// tracks; the worst observed true-candidate coarse rank is 20
+// (Shintakarajima). DRIFT_TOLERANCE is how far an individual anchor's fine
+// peak may sit from the candidate and still count as the same alignment
+// (covers real tempo drift, observed up to ~150ms plus coarse-grid error;
+// must stay well under the closest observed alias spacing, ~1.7s), and
+// anchors whose peak stays below PEAK_VOTE_FLOOR don't vote on where the
+// refined offset lands. For the envelope-only fallback decision,
+// MIN_MEAN_SCORE gates the winner's mean per-anchor correlation and
+// MIN_RUNNER_UP_MARGIN declares the measurement inconclusive when a
+// well-separated second candidate scores nearly as well.
 const INTRO_SYNC_CANDIDATE_MERGE_MS = 300;
-const INTRO_SYNC_REFINE_RADIUS_MS = 250;
-const INTRO_SYNC_MAX_CANDIDATES = 64;
+const INTRO_SYNC_MAX_REFINE_CANDIDATES = 32;
+const INTRO_SYNC_DRIFT_TOLERANCE_MS = 1000;
+const INTRO_SYNC_PEAK_VOTE_FLOOR = 0.4;
 const INTRO_SYNC_MIN_MEAN_SCORE = 0.5;
 const INTRO_SYNC_RUNNER_UP_SEPARATION_MS = 1500;
 const INTRO_SYNC_MIN_RUNNER_UP_MARGIN = 0.05;
-// Tempo drift between the two recordings makes a single offset a
-// compromise; after validation, the winner is nudged to best fit the
-// head-most anchors, where a visual mismatch throws the singer off most.
-const INTRO_SYNC_HEAD_REFINE_ANCHORS = 2;
+// Guide-melody salience selection. Scores are log10(on-pitch power /
+// off-pitch power) averaged over the first HEAD_NOTES_SEC of sung notes;
+// observed true offsets score 1.65-2.04 and aliases 0.69-1.28, so MIN_SCORE
+// rejects rankings where nothing really matches (e.g. a transposed or live
+// MV) and MIN_MARGIN rejects ambiguous ones (observed true margins:
+// 0.37-0.99) - both fall back to the envelope decision.
+const INTRO_SYNC_MELODY_TOP_K = 8;
+const INTRO_SYNC_MELODY_HEAD_NOTES_SEC = 30;
+const INTRO_SYNC_MELODY_MIN_SCORE = 1.0;
+const INTRO_SYNC_MELODY_MIN_MARGIN = 0.3;
 // Onset-alignment fallback (used when the interior-window cross-correlation
 // can't reach a confident consensus - which is the common case, because a
 // JOYSOUND karaoke re-recording rarely envelope-correlates with the original
@@ -767,55 +787,87 @@ function anchorPositionsMs(karaokeEnvelope: number[]): number[] {
   return anchorsMs;
 }
 
-// Mean fine-envelope correlation of a fixed candidate offset across the
-// anchor set - the validation score of the two-stage estimate. -Infinity
-// when fewer than half the anchors fit inside both tracks at this offset
-// (a candidate shouldn't win by being scored on a cherry-picked remnant).
-function meanAnchorScoreAt(
+// Per-anchor best fine-envelope match near a candidate offset: each anchor
+// reports the offset (within DRIFT_TOLERANCE of the candidate) where it
+// correlates best, and how well. This is what makes refinement
+// drift-tolerant - anchors vote on where the alignment is instead of being
+// scored against one exact offset. Do NOT score a candidate by taking a
+// window-max around an arbitrary center instead: that makes the score flat
+// across the whole window and even rewards centers that straddle two alias
+// tracks, catching each anchor's peak from whichever track is closer.
+function anchorFinePeaksAround(
   karaokeFineEnvelope: number[],
   videoFineEnvelope: number[],
   anchorsMs: number[],
-  offsetMs: number,
-): number {
+  centerMs: number,
+): OffsetCandidate[] {
   const windowMs = INTRO_SYNC_FINE_WINDOW_MS;
   const referenceWindows = (INTRO_SYNC_REFERENCE_SEC * 1000) / windowMs;
-  const lagWindows = Math.round(offsetMs / windowMs);
 
-  let sum = 0;
-  let count = 0;
+  const peaks: OffsetCandidate[] = [];
   for (const anchorMs of anchorsMs) {
     const anchorWindows = anchorMs / windowMs;
-    const videoStart = anchorWindows + lagWindows;
-    if (
-      anchorWindows + referenceWindows > karaokeFineEnvelope.length ||
-      videoStart < 0 ||
-      videoStart + referenceWindows > videoFineEnvelope.length
-    ) {
+    if (anchorWindows + referenceWindows > karaokeFineEnvelope.length) {
       continue;
     }
-    sum += pearsonCorrelationAt(
-      karaokeFineEnvelope,
-      anchorWindows,
-      videoFineEnvelope,
-      videoStart,
-      referenceWindows,
-    );
-    count++;
+    let best: OffsetCandidate | null = null;
+    for (
+      let offsetMs = centerMs - INTRO_SYNC_DRIFT_TOLERANCE_MS;
+      offsetMs <= centerMs + INTRO_SYNC_DRIFT_TOLERANCE_MS;
+      offsetMs += windowMs
+    ) {
+      const videoStart = anchorWindows + offsetMs / windowMs;
+      if (
+        videoStart < 0 ||
+        videoStart + referenceWindows > videoFineEnvelope.length
+      ) {
+        continue;
+      }
+      const score = pearsonCorrelationAt(
+        karaokeFineEnvelope,
+        anchorWindows,
+        videoFineEnvelope,
+        videoStart,
+        referenceWindows,
+      );
+      if (best === null || score > best.score) {
+        best = { offsetMs, score };
+      }
+    }
+    if (best !== null) {
+      peaks.push(best);
+    }
   }
-
-  return count < Math.ceil(anchorsMs.length / 2) ? -Infinity : sum / count;
+  return peaks;
 }
 
-// Two-stage offset estimate (see the block comment above the constants).
-// Returns the video-minus-karaoke offset in ms (positive: video has extra
-// head material; negative: karaoke does), or null if no candidate validates
-// confidently.
-function estimateVideoOffsetMs(
+// Median of the anchors' peak offsets, weighted by their correlation - the
+// consensus alignment among anchors that actually matched something.
+function weightedMedianOffsetMs(peaks: OffsetCandidate[]): number {
+  const sorted = [...peaks].sort((a, b) => a.offsetMs - b.offsetMs);
+  const total = sorted.reduce((acc, peak) => acc + peak.score, 0);
+  let cumulative = 0;
+  for (const peak of sorted) {
+    cumulative += peak.score;
+    if (cumulative >= total / 2) {
+      return peak.offsetMs;
+    }
+  }
+  return sorted[sorted.length - 1].offsetMs;
+}
+
+// Stages 1+2 (see the block comment above the constants): coarse candidate
+// collection, then drift-tolerant fine refinement + validation. Returns
+// refined candidates ranked by mean per-anchor envelope correlation,
+// deduplicated so entries are genuinely distinct alignments (at least
+// RUNNER_UP_SEPARATION apart). Offsets are video-minus-karaoke ms
+// (positive: video has extra head material; negative: karaoke does).
+function estimateVideoOffsetCandidates(
   karaokeEnvelope: number[],
   videoEnvelope: number[],
   karaokeFineEnvelope: number[],
   videoFineEnvelope: number[],
-): number | null {
+): OffsetCandidate[] {
   const windowMs = INTRO_SYNC_ENVELOPE_WINDOW_MS;
   const referenceWindows = (INTRO_SYNC_REFERENCE_SEC * 1000) / windowMs;
   const anchorsMs = anchorPositionsMs(karaokeEnvelope);
@@ -859,7 +911,7 @@ function estimateVideoOffsetMs(
   candidates.sort((a, b) => b.score - a.score);
   const merged: OffsetCandidate[] = [];
   for (const candidate of candidates) {
-    if (merged.length >= INTRO_SYNC_MAX_CANDIDATES) {
+    if (merged.length >= INTRO_SYNC_MAX_REFINE_CANDIDATES) {
       break;
     }
     if (
@@ -873,88 +925,230 @@ function estimateVideoOffsetMs(
     }
   }
 
-  // Stage 2: refine each candidate on the fine envelope (the coarse grid
-  // quantizes offsets to 100ms, which is audible) and validate it by its
-  // mean correlation across every anchor.
+  // Stage 2: drift-tolerant refinement. Each anchor votes on where the
+  // alignment near this candidate really is (also fixing the coarse grid's
+  // 100ms quantization, which is audible); the weighted median of the votes
+  // is the refined offset, validated by re-collecting per-anchor maxima
+  // around it.
   const refined: OffsetCandidate[] = [];
   for (const candidate of merged) {
-    let best: OffsetCandidate = {
-      offsetMs: candidate.offsetMs,
-      score: -Infinity,
-    };
-    for (
-      let offsetMs = candidate.offsetMs - INTRO_SYNC_REFINE_RADIUS_MS;
-      offsetMs <= candidate.offsetMs + INTRO_SYNC_REFINE_RADIUS_MS;
-      offsetMs += INTRO_SYNC_FINE_WINDOW_MS
-    ) {
-      if (Math.abs(offsetMs) > INTRO_SYNC_MAX_OFFSET_MS) {
-        continue;
-      }
-      const score = meanAnchorScoreAt(
-        karaokeFineEnvelope,
-        videoFineEnvelope,
-        anchorsMs,
-        offsetMs,
-      );
-      if (score > best.score) {
-        best = { offsetMs, score };
-      }
+    const peaks = anchorFinePeaksAround(
+      karaokeFineEnvelope,
+      videoFineEnvelope,
+      anchorsMs,
+      candidate.offsetMs,
+    );
+    // A candidate scored on a cherry-picked remnant of anchors can't win.
+    if (peaks.length < Math.ceil(anchorsMs.length / 2)) {
+      continue;
     }
-    if (best.score > -Infinity) {
-      refined.push(best);
+    const voters = peaks.filter(
+      (peak) => peak.score >= INTRO_SYNC_PEAK_VOTE_FLOOR,
+    );
+    if (voters.length === 0) {
+      continue;
     }
+    const offsetMs = weightedMedianOffsetMs(voters);
+    if (Math.abs(offsetMs) > INTRO_SYNC_MAX_OFFSET_MS) {
+      continue;
+    }
+
+    const validationPeaks = anchorFinePeaksAround(
+      karaokeFineEnvelope,
+      videoFineEnvelope,
+      anchorsMs,
+      offsetMs,
+    );
+    if (validationPeaks.length < Math.ceil(anchorsMs.length / 2)) {
+      continue;
+    }
+    const score =
+      validationPeaks.reduce((acc, peak) => acc + peak.score, 0) /
+      validationPeaks.length;
+    refined.push({ offsetMs, score });
   }
   refined.sort((a, b) => b.score - a.score);
 
-  const winner = refined[0];
-  if (!winner || winner.score < INTRO_SYNC_MIN_MEAN_SCORE) {
+  // Nearby candidates routinely refine onto the same alignment; keep only
+  // genuinely distinct ones.
+  const separated: OffsetCandidate[] = [];
+  for (const candidate of refined) {
+    if (
+      separated.every(
+        (s) =>
+          Math.abs(s.offsetMs - candidate.offsetMs) >
+          INTRO_SYNC_RUNNER_UP_SEPARATION_MS,
+      )
+    ) {
+      separated.push(candidate);
+    }
+  }
+  return separated;
+}
+
+function midiToHz(midi: number): number {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+// Goertzel power of one frequency over a PCM span - O(n) per probe
+// frequency, so no FFT machinery is needed for the handful of probes per
+// note.
+function goertzelPower(
+  pcm: Float64Array,
+  startSample: number,
+  endSample: number,
+  freqHz: number,
+): number {
+  const omega = (2 * Math.PI * freqHz) / INTRO_SYNC_SAMPLE_RATE_HZ;
+  const coeff = 2 * Math.cos(omega);
+  let s1 = 0;
+  let s2 = 0;
+  for (let i = startSample; i < endSample; i++) {
+    const s0 = pcm[i] + coeff * s1 - s2;
+    s2 = s1;
+    s1 = s0;
+  }
+  const sampleCount = endSample - startSample;
+  return (s1 * s1 + s2 * s2 - coeff * s1 * s2) / (sampleCount * sampleCount);
+}
+
+// log10 ratio of on-pitch to off-pitch power for one guide note mapped onto
+// the video's audio. On-pitch probes the note's fundamental and the octave
+// above (the sung melody sits at one or the other relative to the guide
+// synth's register) with +-25-cent slack for vibrato/tuning; off-pitch
+// probes +-1.5/+-2.5 semitones - close enough to share the local spectral
+// tilt, but never part of the same sung note. Null when the mapped span is
+// too short to resolve or the probes would exceed Nyquist.
+function noteSalienceAt(
+  videoPcm: Float64Array,
+  startSample: number,
+  endSample: number,
+  midi: number,
+): number | null {
+  if (endSample - startSample < INTRO_SYNC_SAMPLE_RATE_HZ / 20) return null;
+  if (midiToHz(midi + 12.25) >= INTRO_SYNC_SAMPLE_RATE_HZ / 2) return null;
+
+  let onPower = 0;
+  for (const octave of [0, 12]) {
+    for (const cents of [-25, 0, 25]) {
+      onPower = Math.max(
+        onPower,
+        goertzelPower(
+          videoPcm,
+          startSample,
+          endSample,
+          midiToHz(midi + octave + cents / 100),
+        ),
+      );
+    }
+  }
+
+  let offPower = 0;
+  let offCount = 0;
+  for (const octave of [0, 12]) {
+    for (const semis of [-2.5, -1.5, 1.5, 2.5]) {
+      offPower += goertzelPower(
+        videoPcm,
+        startSample,
+        endSample,
+        midiToHz(midi + octave + semis),
+      );
+      offCount++;
+    }
+  }
+
+  return Math.log10((onPower + 1e-9) / (offPower / offCount + 1e-9));
+}
+
+// Mean note salience of a candidate offset: do the guide melody's pitches
+// actually sound in the video's audio at the times this offset predicts?
+// Null when fewer than half the notes could be scored (offset maps them
+// outside the video).
+function melodySalienceAt(
+  videoPcm: Float64Array,
+  headNotes: GuideMelodyNote[],
+  offsetMs: number,
+): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const note of headNotes) {
+    const startSample = Math.round(
+      ((note.startMs + offsetMs) / 1000) * INTRO_SYNC_SAMPLE_RATE_HZ,
+    );
+    const endSample = Math.round(
+      ((note.endMs + offsetMs) / 1000) * INTRO_SYNC_SAMPLE_RATE_HZ,
+    );
+    if (startSample < 0 || endSample > videoPcm.length) {
+      continue;
+    }
+    const salience = noteSalienceAt(
+      videoPcm,
+      startSample,
+      endSample,
+      note.midi,
+    );
+    if (salience !== null) {
+      sum += salience;
+      count++;
+    }
+  }
+  return count < headNotes.length / 2 ? null : sum / count;
+}
+
+// Stage 3 + final decision (see the block comment above the constants):
+// melody-salience ranking with confidence gates, falling back to the
+// envelope ranking with its own gates. Null means nothing was confident
+// enough - the caller falls through to onset alignment.
+function chooseVideoOffset(
+  candidates: OffsetCandidate[],
+  videoPcm: Float64Array,
+  guideMelodyNotes: GuideMelodyNote[] | null,
+): { offsetMs: number; method: string } | null {
+  if (candidates.length === 0) {
     return null;
   }
-  const runnerUp = refined.find(
-    (c) =>
-      Math.abs(c.offsetMs - winner.offsetMs) >
-      INTRO_SYNC_RUNNER_UP_SEPARATION_MS,
-  );
+
+  if (guideMelodyNotes !== null && guideMelodyNotes.length > 0) {
+    const firstNoteMs = guideMelodyNotes[0].startMs;
+    const headNotes = guideMelodyNotes.filter(
+      (note) =>
+        note.startMs < firstNoteMs + INTRO_SYNC_MELODY_HEAD_NOTES_SEC * 1000,
+    );
+    const ranked = candidates
+      .slice(0, INTRO_SYNC_MELODY_TOP_K)
+      .flatMap((candidate) => {
+        const melody = melodySalienceAt(
+          videoPcm,
+          headNotes,
+          candidate.offsetMs,
+        );
+        return melody === null ? [] : [{ candidate, melody }];
+      })
+      .sort((a, b) => b.melody - a.melody);
+    if (
+      ranked.length > 0 &&
+      ranked[0].melody >= INTRO_SYNC_MELODY_MIN_SCORE &&
+      (ranked.length < 2 ||
+        ranked[0].melody - ranked[1].melody >= INTRO_SYNC_MELODY_MIN_MARGIN)
+    ) {
+      return { offsetMs: ranked[0].candidate.offsetMs, method: "melody" };
+    }
+  }
+
+  // Envelope fallback. Candidates arrive separated, so the runner-up for
+  // the ambiguity check is simply the next entry.
+  const winner = candidates[0];
+  if (winner.score < INTRO_SYNC_MIN_MEAN_SCORE) {
+    return null;
+  }
+  const runnerUp = candidates[1];
   if (
     runnerUp &&
     winner.score - runnerUp.score < INTRO_SYNC_MIN_RUNNER_UP_MARGIN
   ) {
     return null;
   }
-
-  // Head polish: under tempo drift the all-anchor mean is a compromise, but
-  // the head is where a visual mismatch throws the singer off most. Nudge
-  // the validated winner to best fit the head-most anchors.
-  const headAnchorsMs = anchorsMs.slice(0, INTRO_SYNC_HEAD_REFINE_ANCHORS);
-  let polished: OffsetCandidate = {
-    offsetMs: winner.offsetMs,
-    score: meanAnchorScoreAt(
-      karaokeFineEnvelope,
-      videoFineEnvelope,
-      headAnchorsMs,
-      winner.offsetMs,
-    ),
-  };
-  for (
-    let offsetMs = winner.offsetMs - INTRO_SYNC_REFINE_RADIUS_MS;
-    offsetMs <= winner.offsetMs + INTRO_SYNC_REFINE_RADIUS_MS;
-    offsetMs += INTRO_SYNC_FINE_WINDOW_MS
-  ) {
-    if (Math.abs(offsetMs) > INTRO_SYNC_MAX_OFFSET_MS) {
-      continue;
-    }
-    const score = meanAnchorScoreAt(
-      karaokeFineEnvelope,
-      videoFineEnvelope,
-      headAnchorsMs,
-      offsetMs,
-    );
-    if (score > polished.score) {
-      polished = { offsetMs, score };
-    }
-  }
-
-  return polished.offsetMs;
+  return { offsetMs: winner.offsetMs, method: "correlation" };
 }
 
 // First window whose trailing smoothed RMS crosses a fraction of the
@@ -1022,9 +1216,14 @@ function estimateOnsetOffsetMs(
 // YouTube requests. It used to re-download the same video's audio with a
 // second "-f ba" extraction, which doubled our request volume per song and
 // helped earn us HTTP 429s.
+//
+// guideMelodyNotes (when available - i.e. the song has a usable guide
+// melody channel) powers the melody-salience candidate selection; without
+// it, selection falls back to envelope correlation alone.
 export async function computeYoutubeIntroOffsetMs(
   oggBuffer: Buffer,
   videoFilename: string,
+  guideMelodyNotes: GuideMelodyNote[] | null = null,
 ): Promise<number | null> {
   try {
     const [videoPcm, karaokePcm] = await Promise.all([
@@ -1049,19 +1248,37 @@ export async function computeYoutubeIntroOffsetMs(
       INTRO_SYNC_FINE_WINDOW_MS,
     );
 
-    // Cross-correlation is the primary method: it can see through a loud
+    // Cross-correlation generates the candidates: it can see through a loud
     // non-musical intro (spoken bit, ambient) that would fool onset
-    // detection. But it's often inconclusive on karaoke re-recordings, and
-    // when it is, aligning where the music starts is far more reliable than
-    // the old end-together guess (which desynced already-aligned songs).
-    let offsetMs = estimateVideoOffsetMs(
+    // detection. Melody salience picks among them when it can. When neither
+    // is conclusive (common on karaoke re-recordings, which need not
+    // envelope-correlate with the original master at all), aligning where
+    // the music starts is far more reliable than the old end-together guess
+    // (which desynced already-aligned songs).
+    const candidates = estimateVideoOffsetCandidates(
       karaokeEnvelope,
       videoEnvelope,
       karaokeFineEnvelope,
       videoFineEnvelope,
     );
-    let method = "correlation";
-    if (offsetMs === null) {
+
+    // Melody probing wants the raw samples, not the envelope.
+    const videoSamples = new Float64Array(Math.floor(videoPcm.length / 2));
+    for (let i = 0; i < videoSamples.length; i++) {
+      videoSamples[i] = videoPcm.readInt16LE(i * 2);
+    }
+
+    const choice = chooseVideoOffset(
+      candidates,
+      videoSamples,
+      guideMelodyNotes,
+    );
+    let offsetMs: number | null;
+    let method: string;
+    if (choice !== null) {
+      offsetMs = choice.offsetMs;
+      method = choice.method;
+    } else {
       offsetMs = estimateOnsetOffsetMs(karaokeEnvelope, videoEnvelope);
       method = "onset";
     }
@@ -1604,11 +1821,20 @@ export function downloadJoysoundData(
 
   const introOffsetPromise: Promise<number | null> =
     queueItem.youtubeVideoId && syncEnabled
-      ? Promise.all([videoDataPromise, songDataPromise]).then(([, raw]) =>
-          computeYoutubeIntroOffsetMs(
-            decodeJoysoundBase64Field(raw.ogg),
-            tempFilename,
-          ),
+      ? Promise.all([videoDataPromise, songDataPromise]).then(
+          async ([, raw]) => {
+            const oggBuffer = decodeJoysoundBase64Field(raw.ogg);
+            // The guide melody powers intro-sync's melody-salience candidate
+            // selection (and the piano roll needs it anyway): kick off (or
+            // reuse) the extraction and wait for its notes.
+            ensureJoysoundGuideMelody(songId, { oggBuffer });
+            const scoringData = await getJoysoundScoringData(songId);
+            return computeYoutubeIntroOffsetMs(
+              oggBuffer,
+              tempFilename,
+              scoringData === null ? null : parseScoringData(scoringData),
+            );
+          },
         )
       : Promise.resolve(null);
 
