@@ -103,8 +103,16 @@ export default function BackgroundMusic({
       deadline: startTime + durationMs,
     };
     const step = (now: number) => {
-      const progress = Math.min((now - startTime) / durationMs, 1);
-      audio.volume = startVolume + (getTarget() - startVolume) * progress;
+      // rAF hands the frame's vsync timestamp, which can lag the
+      // performance.now() captured at schedule time — an unfloored progress
+      // goes slightly negative on the first frame, and the ramp then computes
+      // a volume just outside [0, 1], which HTMLMediaElement.volume rejects
+      // with an IndexSizeError.
+      const progress = Math.min(Math.max((now - startTime) / durationMs, 0), 1);
+      audio.volume = Math.min(
+        Math.max(startVolume + (getTarget() - startVolume) * progress, 0),
+        1,
+      );
       if (progress < 1) {
         fadeRaf.current = requestAnimationFrame(step);
       } else {
