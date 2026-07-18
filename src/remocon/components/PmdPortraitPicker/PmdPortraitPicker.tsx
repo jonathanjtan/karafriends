@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import * as styles from "./PmdPortraitPicker.module.scss";
 
@@ -35,7 +35,10 @@ function fetchPortraitIndex(): Promise<PortraitMonster[]> {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
       })
-      .then((data: { monsters: PortraitMonster[] }) => data.monsters)
+      .then((data: { monsters: PortraitMonster[] }) =>
+        // dex 0000 is SpriteCollab's "Missingno_" test entry, not a pokemon
+        data.monsters.filter((monster) => monster.id !== 0),
+      )
       .catch((e) => {
         indexPromise = null;
         throw e;
@@ -53,12 +56,14 @@ function previewUrl(monster: PortraitMonster): string {
   return portraitUrl(form, Object.keys(form.emotions)[0]);
 }
 
-function searchMonsters(
+// With no filter the whole dex is shown (browsing is the primary flow);
+// typing narrows it, prefix matches before substring matches.
+function filterMonsters(
   monsters: PortraitMonster[],
   query: string,
 ): PortraitMonster[] {
   const needle = query.trim().toLowerCase();
-  if (needle.length === 0) return [];
+  if (needle.length === 0) return monsters;
   const prefixMatches: PortraitMonster[] = [];
   const substringMatches: PortraitMonster[] = [];
   for (const monster of monsters) {
@@ -69,7 +74,7 @@ function searchMonsters(
       substringMatches.push(monster);
     }
   }
-  return [...prefixMatches, ...substringMatches].slice(0, 60);
+  return [...prefixMatches, ...substringMatches];
 }
 
 interface Props {
@@ -84,6 +89,17 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
   const [selectedMonster, setSelectedMonster] =
     useState<PortraitMonster | null>(null);
   const [formIdx, setFormIdx] = useState(0);
+  const emotionsRef = useRef<HTMLDivElement | null>(null);
+
+  // Tapping a pokemon far down the dex grid renders the version/emotion
+  // panel above the grid, off-screen — bring it into view. Instant, not
+  // smooth: a smooth scroll spanning the whole dex gets canceled mid-flight
+  // by the lazy-image loads it triggers (and would take seconds anyway).
+  useEffect(() => {
+    if (selectedMonster) {
+      emotionsRef.current?.scrollIntoView({ block: "nearest" });
+    }
+  }, [selectedMonster]);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,7 +116,7 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
   }, []);
 
   const results = useMemo(
-    () => (monsters === null ? [] : searchMonsters(monsters, query)),
+    () => (monsters === null ? [] : filterMonsters(monsters, query)),
     [monsters, query],
   );
 
@@ -109,7 +125,7 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
   return (
     <div className={styles.picker}>
       <input
-        placeholder="Search Pokémon (English name)"
+        placeholder="Filter Pokémon (English name)"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
@@ -117,30 +133,14 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
       {monsters === null && !error && (
         <div className={styles.hint}>Loading portraits...</div>
       )}
-      {monsters !== null && query.trim().length > 0 && results.length === 0 && (
+      {monsters !== null && results.length === 0 && (
         <div className={styles.hint}>No Pokémon found</div>
       )}
-      {results.length > 0 && (
-        <div className={styles.grid}>
-          {results.map((monster) => (
-            <div
-              key={monster.id}
-              className={`${styles.cell} ${
-                selectedMonster?.id === monster.id ? styles.cellSelected : ""
-              }`}
-              onClick={() => {
-                setSelectedMonster(monster);
-                setFormIdx(0);
-              }}
-            >
-              <img src={previewUrl(monster)} alt={monster.name} />
-              <span>{monster.name}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* The version/emotion panel renders above the dex grid — with the
+          whole dex shown, anything below it would be off-screen when a
+          mid-list pokemon is tapped. */}
       {selectedMonster && (
-        <div className={styles.emotions}>
+        <div className={styles.emotions} ref={emotionsRef}>
           {selectedMonster.forms.length > 1 && (
             <h4>
               {selectedMonster.name} — pick a version
@@ -173,6 +173,33 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
               </div>
             ))}
           </div>
+        </div>
+      )}
+      {results.length > 0 && (
+        <div className={styles.grid}>
+          {results.map((monster) => (
+            <div
+              key={monster.id}
+              className={`${styles.cell} ${
+                selectedMonster?.id === monster.id ? styles.cellSelected : ""
+              }`}
+              onClick={() => {
+                setSelectedMonster(monster);
+                setFormIdx(0);
+              }}
+            >
+              {/* lazy: the unfiltered grid is the whole dex (~1000 images);
+                  only fetch the ones scrolled into view */}
+              <img
+                src={previewUrl(monster)}
+                alt={monster.name}
+                loading="lazy"
+                width={40}
+                height={40}
+              />
+              <span>{monster.name}</span>
+            </div>
+          ))}
         </div>
       )}
       <div className={styles.credit}>
