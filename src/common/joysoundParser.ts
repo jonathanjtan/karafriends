@@ -4,6 +4,8 @@ import invariant from "ts-invariant";
 import Kuroshiro from "kuroshiro";
 import KuromojiAnalyzer, { AnalyzerResult } from "kuroshiro-analyzer-kuromoji";
 
+import { toKatakana } from "wanakana";
+
 import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "../common/constants";
 import kanjiToReading from "./dictionary.json";
 
@@ -175,13 +177,24 @@ function isSpaceUnicodeChar(unicodeChar: string) {
 }
 
 function kanaReadingToRomaji(kanaReading: string) {
-  if (["ッ", "っ"].includes(kanaReading.slice(-1))) {
-    return Kuroshiro.Util.kanaToRomaji(kanaReading.slice(0, -1), "hepburn");
-  } else if (kanaReading === "ンー") {
+  // currPhrase mixes scripts glyph by glyph: a kuromoji token with
+  // pronunciation data contributes katakana, one without (kuromoji has no
+  // entry for it — common for onomatopoeia, e.g. ひゅるひゅるり in
+  // HYURURIRAPAPPA) falls back to the literal hiragana source character.
+  // kanaToRomaji only recognizes a small-kana digraph (ひゅ/ヒュ -> "hyu")
+  // when both characters share a script — ヒ (katakana) + ゅ (hiragana)
+  // romanizes as two morae, "hi" + "yu", instead of one. Normalize to a
+  // single script first so a token-boundary script mismatch can't split a
+  // digraph that direct-hiragana or direct-katakana readings render fine.
+  const normalized = toKatakana(kanaReading);
+
+  if (normalized.slice(-1) === "ッ") {
+    return Kuroshiro.Util.kanaToRomaji(normalized.slice(0, -1), "hepburn");
+  } else if (normalized === "ンー") {
     return "n";
   }
 
-  return Kuroshiro.Util.kanaToRomaji(kanaReading, "hepburn");
+  return Kuroshiro.Util.kanaToRomaji(normalized, "hepburn");
 }
 
 function kanjiPhraseToRomaji(
