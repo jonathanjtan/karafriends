@@ -422,7 +422,12 @@ function getTokenIndexByXPos(
     if (!isSpace) {
       xPosToTokenIndex.set(currXPos, tokenizedLyricsIndex);
 
-      if (char.furiganaIndex >= 0) {
+      // furiganaIndex can hold getNonKanaRomajiBlocks' 6969 marker (its
+      // "handled via dictionary" sentinel) rather than a real index into
+      // `furigana` — those glyphs have no ruby annotation to map, so only
+      // in-bounds indices count (crashed on 愛をこめて花束を's
+      // ruby-less 二人 otherwise).
+      if (char.furiganaIndex >= 0 && char.furiganaIndex < furigana.length) {
         xPosToTokenIndex.set(
           furigana[char.furiganaIndex].xPos,
           tokenizedLyricsIndex,
