@@ -218,7 +218,7 @@ const JoysoundSongPage = () => {
               checked={youtubeVideoSyncEnabled}
               onChange={(e) => setYoutubeVideoSyncEnabled(e.target.checked)}
             />
-            Sync video timing to karaoke track (Recommended)
+            Sync video to karaoke (Recommended, takes a sec!)
           </label>
         </>
       ) : (
