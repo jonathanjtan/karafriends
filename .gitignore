@@ -43,4 +43,9 @@ __generated__
 /extraResources/ffmpeg/**/*
 /extraResources/ytdlp/*
 /buildResources/asio/*
+
+# Claude Code local/scratch state
 .claude/settings.local.json
+.claude/worktrees/
+.claude/repro/
+.claude/common/

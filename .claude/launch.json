@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "karafriends-remocon-via-app",
+      "runtimeExecutable": "/Users/jtan/.local/node-v24.18.0-darwin-arm64/bin/node",
+      "runtimeArgs": [".claude/tcp-proxy-8080.js"],
+      "port": 3002
+    },
+    {
+      "name": "karafriends-remocon-static",
+      "runtimeExecutable": "/Users/jtan/.local/node-v24.18.0-darwin-arm64/bin/node",
+      "runtimeArgs": ["scripts/devStaticServer.mjs", "3005", "build/dev"],
+      "port": 3005
+    },
+    {
+      "name": "karafriends-static-3000",
+      "runtimeExecutable": "/Users/jtan/.local/node-v24.18.0-darwin-arm64/bin/node",
+      "runtimeArgs": ["scripts/devStaticServer.mjs", "3000", "build/dev"],
+      "port": 3000
+    }
+  ]
+}
