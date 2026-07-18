@@ -739,6 +739,7 @@ async function parseLyricsBlock(
   palette: JoysoundPaletteColor[],
   kuroshiro: KuroshiroSingleton,
   wordSegmentation: boolean,
+  skipRomaji: boolean,
 ) {
   let currOffset = offset;
 
@@ -796,47 +797,51 @@ async function parseLyricsBlock(
     currOffset += 4 + furiganaLength * 2;
   }
 
-  mapCharsToFurigana(chars, furigana);
+  let romaji: JoysoundLyricsRomaji[] = [];
 
-  await kuroshiro.analyzerInitPromise;
+  if (!skipRomaji) {
+    mapCharsToFurigana(chars, furigana);
 
-  const rawLyrics = getRawLyrics(chars);
-  const tokenizedLyrics = await kuroshiro.analyzer.parse(
-    rawLyrics.replace(/[ 　]/g, ""),
-  );
-  const okuriganaLyrics = await kuroshiro.kuroshiro.convert(rawLyrics, {
-    mode: "okurigana",
-    to: "hiragana",
-    delimiter_start: "¬",
-    delimiter_end: "¬",
-  });
+    await kuroshiro.analyzerInitPromise;
 
-  const mainRomaji = getMainRomajiBlocks(
-    chars,
-    tokenizedLyrics,
-    wordSegmentation,
-  );
-  const furiganaRomaji = getFuriganaRomajiBlocks(furigana);
-  // XXX: For kanji without furigana and no kana (i.e. 空), we trust
-  //      dictionary.json and fallback to kuroshiro
-  const nonKanaRomaji = getNonKanaRomajiBlocks(chars, tokenizedLyrics);
-  // XXX: For kanji without furigana and kana (i.e. 下げる), we trust
-  //      kuroshiro's okurigana format
-  const fillerRomaji = getFillerRomajiBlocks(chars, okuriganaLyrics);
+    const rawLyrics = getRawLyrics(chars);
+    const tokenizedLyrics = await kuroshiro.analyzer.parse(
+      rawLyrics.replace(/[ 　]/g, ""),
+    );
+    const okuriganaLyrics = await kuroshiro.kuroshiro.convert(rawLyrics, {
+      mode: "okurigana",
+      to: "hiragana",
+      delimiter_start: "¬",
+      delimiter_end: "¬",
+    });
 
-  deleteOverwrittenFuriganaRomaji(chars, furiganaRomaji);
+    const mainRomaji = getMainRomajiBlocks(
+      chars,
+      tokenizedLyrics,
+      wordSegmentation,
+    );
+    const furiganaRomaji = getFuriganaRomajiBlocks(furigana);
+    // XXX: For kanji without furigana and no kana (i.e. 空), we trust
+    //      dictionary.json and fallback to kuroshiro
+    const nonKanaRomaji = getNonKanaRomajiBlocks(chars, tokenizedLyrics);
+    // XXX: For kanji without furigana and kana (i.e. 下げる), we trust
+    //      kuroshiro's okurigana format
+    const fillerRomaji = getFillerRomajiBlocks(chars, okuriganaLyrics);
 
-  const combinedRomaji = mainRomaji
-    .concat(furiganaRomaji)
-    .concat(nonKanaRomaji)
-    .concat(fillerRomaji);
+    deleteOverwrittenFuriganaRomaji(chars, furiganaRomaji);
 
-  const romaji = wordSegmentation
-    ? mergeRomajiByWord(
-        combinedRomaji,
-        getTokenIndexByXPos(chars, furigana, tokenizedLyrics),
-      )
-    : combinedRomaji;
+    const combinedRomaji = mainRomaji
+      .concat(furiganaRomaji)
+      .concat(nonKanaRomaji)
+      .concat(fillerRomaji);
+
+    romaji = wordSegmentation
+      ? mergeRomajiByWord(
+          combinedRomaji,
+          getTokenIndexByXPos(chars, furigana, tokenizedLyrics),
+        )
+      : combinedRomaji;
+  }
 
   return {
     blockSize,
@@ -969,6 +974,7 @@ async function parseJoy02LyricsData(
   size: number,
   kuroshiro: KuroshiroSingleton,
   wordSegmentation: boolean,
+  skipRomaji: boolean,
 ): Promise<JoysoundLyricsBlock[]> {
   const lyricsView = new DataView(data, offset, size);
   const lyricsBlocks = [];
@@ -1000,6 +1006,7 @@ async function parseJoy02LyricsData(
       palette,
       kuroshiro,
       wordSegmentation,
+      skipRomaji,
     );
     lyricsBlocks.push(block);
 
@@ -1095,6 +1102,11 @@ async function parseJoysoundData(
   // flag — parsing (and this toggle) happens fresh in the renderer process
   // on every draw, so flipping it needs no re-download or cache bust.
   wordSegmentation: boolean = false,
+  // Skip romaji derivation entirely (no kuroshiro/kuromoji involvement;
+  // lyrics blocks get an empty romaji list, so main text and furigana still
+  // render). This is the graceful-degradation fallback for telop blobs whose
+  // romaji pipeline crashes — a plain parse beats a frozen canvas.
+  skipRomaji: boolean = false,
 ): Promise<JoysoundTelopData> {
   const lyricsBlocks = [];
 
@@ -1115,6 +1127,7 @@ async function parseJoysoundData(
     timingOffset - lyricsOffset,
     kuroshiro,
     wordSegmentation,
+    skipRomaji,
   );
   const timeline = parseJoy02TimingData(
     data,

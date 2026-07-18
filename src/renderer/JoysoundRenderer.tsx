@@ -1,3 +1,5 @@
+import * as Sentry from "@sentry/browser";
+import M from "materialize-css";
 import React, { useEffect, useRef } from "react";
 import invariant from "ts-invariant";
 
@@ -7,6 +9,7 @@ import parseJoysoundData, {
   decodeJoysoundText,
   JoysoundLyricsBlock,
   JoysoundMetadata,
+  JoysoundTelopData,
   KuroshiroSingleton,
 } from "../common/joysoundParser";
 
@@ -976,12 +979,70 @@ export default function JoysoundRenderer(props: {
       window.addEventListener("resize", updateSize);
 
       // Yeah we parse the data on each re-render, ffuck it
-      const joysoundData = await parseJoysoundData(
-        props.telop,
-        props.kuroshiro,
-        joysoundRomajiWordSegmentation,
-      );
-      if (cancelled) {
+      //
+      // A parse failure here must not throw out of refresh(): by the time
+      // this effect runs, the previous effect instance's draw loop is already
+      // cancelled, so bailing would freeze the canvas on its last-drawn frame
+      // — typically the PREVIOUS song's title card — for the entire song (the
+      // EZ Romaji 6969-sentinel crash did exactly this). Degrade stepwise
+      // instead: retry without word segmentation, then without romaji at all;
+      // only if even the plain parse fails do we give up, and then we clear
+      // the canvas so the room sees the bare MV rather than stale telop.
+      const parseAttempts = [
+        {
+          wordSegmentation: joysoundRomajiWordSegmentation,
+          skipRomaji: false,
+        },
+        ...(joysoundRomajiWordSegmentation
+          ? [{ wordSegmentation: false, skipRomaji: false }]
+          : []),
+        { wordSegmentation: false, skipRomaji: true },
+      ];
+
+      let joysoundData: JoysoundTelopData | null = null;
+      let parseError: unknown = null;
+
+      for (const { wordSegmentation, skipRomaji } of parseAttempts) {
+        try {
+          joysoundData = await parseJoysoundData(
+            props.telop,
+            props.kuroshiro,
+            wordSegmentation,
+            skipRomaji,
+          );
+        } catch (e) {
+          parseError = e;
+          console.error(
+            `parseJoysoundData failed (wordSegmentation=${wordSegmentation}, skipRomaji=${skipRomaji})`,
+            e,
+          );
+        }
+        if (cancelled) {
+          return;
+        }
+        if (joysoundData !== null) {
+          break;
+        }
+      }
+
+      if (joysoundData === null) {
+        Sentry.captureException(parseError);
+        M.toast({
+          html: "<span>⚠️ Lyrics failed to render for this song</span>",
+        });
+
+        // Wipe the previous song's last frame off the canvas, and release
+        // the piano roll (it waits on the title card fading out, which will
+        // never happen now).
+        const staleGl = canvasRef.current?.getContext("webgl2", {
+          antialias: false,
+          premultipliedAlpha: false,
+        });
+        if (staleGl) {
+          staleGl.clearColor(0, 0, 0, 0);
+          staleGl.clear(staleGl.COLOR_BUFFER_BIT);
+        }
+        props.onTitleFadeout?.();
         return;
       }
 
