@@ -78,6 +78,11 @@ type Query {
   # Months JOYSOUND offers for its monthly charts (current + ~5 archives),
   # newest first, for the remocon's month picker.
   joysoundRankingMonths: [RankingMonth!]!
+  # Whether JOYSOUND romaji lyrics are segmented at word boundaries (kuromoji
+  # tokenization, e.g. あるもの -> "aru mono") instead of only at script-class
+  # boundaries (e.g. "arumono"). Synced so it can be A/B toggled live from the
+  # remocon or renderer sidebar without restarting or re-downloading the song.
+  joysoundRomajiWordSegmentation: Boolean!
   songHistory(first: Int, after: String): SongHistoryConnection!
   suggestedYoutubeVideos(songId: String!): SuggestedYoutubeVideosResult!
   videoDownloadProgress(
@@ -128,6 +133,7 @@ type Mutation {
   setPianoRollOpacity(opacity: Float!): Boolean!
   setPianoRollSize(size: Float!): Boolean!
   setPitchShiftSemis(semis: Int!): Boolean!
+  setJoysoundRomajiWordSegmentation(enabled: Boolean!): Boolean!
   setPlaybackState(playbackState: PlaybackState!): Boolean!
   setQueueIntermissionEnabled(enabled: Boolean!): Boolean!
   setSettingsCollapsed(collapsed: Boolean!): Boolean!
@@ -143,6 +149,7 @@ type Subscription {
   currentSongChanged: QueueItem
   emote: Emote!
   guideMelodyVolumeChanged: Float!
+  joysoundRomajiWordSegmentationChanged: Boolean!
   oledFriendlyChanged: Boolean!
   pianoRollOpacityChanged: Float!
   pianoRollSizeChanged: Float!

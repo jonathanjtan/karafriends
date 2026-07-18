@@ -15,6 +15,7 @@ import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
 import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
+import useJoysoundRomajiWordSegmentation from "../common/hooks/useJoysoundRomajiWordSegmentation";
 import useOledFriendly from "../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
@@ -239,6 +240,8 @@ function App(props: {
   }, [props.audio, guideMelodyVolume]);
 
   const { oledFriendly, setOledFriendly } = useOledFriendly();
+  const { joysoundRomajiWordSegmentation, setJoysoundRomajiWordSegmentation } =
+    useJoysoundRomajiWordSegmentation();
 
   useEffect(() => {
     if (localStorage.getItem(LEGACY_OLED_FRIENDLY_STORAGE_KEY) === "true") {
@@ -609,6 +612,28 @@ function App(props: {
                       type="checkbox"
                       checked={oledFriendly}
                       onChange={(e) => setOledFriendly(e.target.checked)}
+                    />
+                    <span className="lever"></span>
+                  </label>
+                </div>
+                <span
+                  className="settingLabel settingLabelClickable"
+                  onClick={() =>
+                    setJoysoundRomajiWordSegmentation(
+                      !joysoundRomajiWordSegmentation,
+                    )
+                  }
+                >
+                  EZ Romaji
+                </span>
+                <div className="switch settingControlWide">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={joysoundRomajiWordSegmentation}
+                      onChange={(e) =>
+                        setJoysoundRomajiWordSegmentation(e.target.checked)
+                      }
                     />
                     <span className="lever"></span>
                   </label>

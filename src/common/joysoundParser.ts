@@ -160,6 +160,20 @@ function isKanjiUnicodeChar(unicodeChar: string) {
   return Kuroshiro.Util.hasKanji(unicodeChar) || unicodeChar === "々";
 }
 
+// Some JOYSOUND telops place literal space glyphs (half- or full-width)
+// between characters purely for on-screen kerning (e.g. 少[space]年,
+// still one word, 少年). Feeding those to kuromoji verbatim breaks its
+// tokenization — a bare space is a hard boundary, so it saw 少 as a
+// prefix and 年 as a separate noun instead of the compound 少年 (a real
+// case: joysound-9630, block 1). Tokenization runs on the space-stripped
+// text; every walk that steps tokenizedLyrics in lockstep with `chars`
+// must skip these glyphs to stay aligned with it — see the `isSpaceUnicodeChar`
+// guards in getMainRomajiBlocks, getNonKanaRomajiBlocks, and
+// getTokenIndexByXPos.
+function isSpaceUnicodeChar(unicodeChar: string) {
+  return unicodeChar === " " || unicodeChar === "　";
+}
+
 function kanaReadingToRomaji(kanaReading: string) {
   if (["ッ", "っ"].includes(kanaReading.slice(-1))) {
     return Kuroshiro.Util.kanaToRomaji(kanaReading.slice(0, -1), "hepburn");
@@ -196,6 +210,7 @@ function getRawLyrics(chars: JoysoundLyricsChar[]): string {
 function getMainRomajiBlocks(
   chars: JoysoundLyricsChar[],
   tokenizedLyrics: AnalyzerResult[],
+  wordSegmentation: boolean,
 ): JoysoundLyricsRomaji[] {
   const mainRomajiBlocks = [];
 
@@ -203,6 +218,13 @@ function getMainRomajiBlocks(
   let currPhrase = "";
   let currPhraseWidth = 0;
   let prevGlyph = null;
+  // Which tokenizedLyrics index the previous glyph belonged to, so
+  // wordSegmentation can tell a same-word mora transition (glue) apart from
+  // a word-boundary one (flush). Read at the bottom of the loop body, before
+  // tokenizedLyricsIndex advances past a glyph that completed its token —
+  // see the comment below on why that ordering makes it "current at time of
+  // use" for the *next* iteration's prevUnicodeChar.
+  let prevGlyphTokenIndex: number | null = null;
 
   let tokenizedLyricsIndex = 0;
   let tokenizedLyricsCharIndex = 0;
@@ -214,6 +236,27 @@ function getMainRomajiBlocks(
         ? decodeJoysoundText(prevGlyph.charCode, currGlyph.font)
         : null;
 
+    // Without this, every kana glyph flushes as its own single-mora block
+    // (see the four unconditional checks below) and only reads as one word
+    // because adjacent blocks are drawn with zero gap. In word-segmentation
+    // mode, mora kuromoji tokenized as the same word (e.g. ある, もの) stay
+    // glued into one block instead, so あるもの renders as "aru" + "mono"
+    // (two independently-positioned blocks) rather than one "arumono" run.
+    // Katakana is deliberately excluded — IPADIC is known to shatter
+    // loanwords/proper nouns into bogus sub-word tokens (see the 涼宮
+    // tokenizer note in nameYomi resolution) — so katakana runs keep the
+    // existing blanket glue below instead of trusting kuromoji's split.
+    const isContinuationOfSameKanaWord =
+      wordSegmentation &&
+      prevUnicodeChar !== null &&
+      isKanaUnicodeChar(prevUnicodeChar) &&
+      isKanaUnicodeChar(unicodeChar) &&
+      !(
+        isKatakanaUnicodeChar(prevUnicodeChar) &&
+        isKatakanaUnicodeChar(unicodeChar)
+      ) &&
+      tokenizedLyricsIndex === prevGlyphTokenIndex;
+
     if (
       prevUnicodeChar !== null &&
       isKanaUnicodeChar(prevUnicodeChar) &&
@@ -223,7 +266,8 @@ function getMainRomajiBlocks(
         isKatakanaUnicodeChar(prevUnicodeChar) &&
         isKatakanaUnicodeChar(unicodeChar)
       ) &&
-      unicodeChar !== "ー"
+      unicodeChar !== "ー" &&
+      !isContinuationOfSameKanaWord
     ) {
       mainRomajiBlocks.push({
         phrase: kanaReadingToRomaji(currPhrase),
@@ -276,16 +320,25 @@ function getMainRomajiBlocks(
       currPhraseWidth += currGlyph.width;
     }
 
-    prevGlyph = currGlyph;
+    // Kerning-only space glyphs were stripped before tokenization (see
+    // isSpaceUnicodeChar), so they don't occupy a tokenizedLyrics position
+    // and are invisible to it here too — skip updating prevGlyph/the token
+    // walk, or a space would (a) make the next char's prevUnicodeChar
+    // non-kana and suppress a flush that should still happen, and (b) drift
+    // this walk out of alignment with tokenizedLyrics.
+    if (!isSpaceUnicodeChar(unicodeChar)) {
+      prevGlyph = currGlyph;
+      prevGlyphTokenIndex = tokenizedLyricsIndex;
 
-    tokenizedLyricsCharIndex += 1;
+      tokenizedLyricsCharIndex += 1;
 
-    if (
-      tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
-      tokenizedLyricsCharIndex
-    ) {
-      tokenizedLyricsIndex += 1;
-      tokenizedLyricsCharIndex = 0;
+      if (
+        tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
+        tokenizedLyricsCharIndex
+      ) {
+        tokenizedLyricsIndex += 1;
+        tokenizedLyricsCharIndex = 0;
+      }
     }
   }
 
@@ -323,6 +376,106 @@ function getFuriganaRomajiBlocks(
   return furiganaRomajiBlocks;
 }
 
+// JOYSOUND furigana is authored per source character — a two-kanji word like
+// 天使 gets two separate furigana entries (天→てん, 使→し), not one spanning
+// the compound — so getFuriganaRomajiBlocks above always emits one romaji
+// block per entry ("ten" + "shi") regardless of word boundaries. Worse, a
+// token can straddle block *types* entirely: 知らない tokenizes as 知ら
+// (mixed kanji+kana) + ない, so its kanji half renders via furigana ("shi")
+// and its kana half via getMainRomajiBlocks ("ra"), two unrelated builder
+// functions that don't know about each other.
+//
+// This maps every glyph's on-screen xPos — both its position in the main
+// text row and, if it's under furigana, that ruby annotation's own xPos (a
+// separate coordinate authored independently in the telop, not derivable
+// from the glyph's position) — to the kuromoji token index covering it, so
+// mergeRomajiByWord can glue same-token blocks together regardless of which
+// function produced them.
+function getTokenIndexByXPos(
+  chars: JoysoundLyricsChar[],
+  furigana: JoysoundLyricsFurigana[],
+  tokenizedLyrics: AnalyzerResult[],
+): Map<number, number> {
+  const xPosToTokenIndex = new Map<number, number>();
+
+  let tokenizedLyricsIndex = 0;
+  let tokenizedLyricsCharIndex = 0;
+  let currXPos = 0;
+
+  for (const char of chars) {
+    const unicodeChar = decodeJoysoundText(char.charCode, char.font);
+    const isSpace = isSpaceUnicodeChar(unicodeChar);
+
+    if (!isSpace) {
+      xPosToTokenIndex.set(currXPos, tokenizedLyricsIndex);
+
+      if (char.furiganaIndex >= 0) {
+        xPosToTokenIndex.set(
+          furigana[char.furiganaIndex].xPos,
+          tokenizedLyricsIndex,
+        );
+      }
+    }
+
+    currXPos += char.width;
+
+    // Kerning-only space glyphs were stripped before tokenization (see
+    // isSpaceUnicodeChar) — skip them here too, or this walk drifts out of
+    // alignment with tokenizedLyrics.
+    if (isSpace) {
+      continue;
+    }
+
+    tokenizedLyricsCharIndex += 1;
+
+    if (
+      tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
+      tokenizedLyricsCharIndex
+    ) {
+      tokenizedLyricsIndex += 1;
+      tokenizedLyricsCharIndex = 0;
+    }
+  }
+
+  return xPosToTokenIndex;
+}
+
+// Glues adjacent romaji blocks (on-screen xPos order, across all four
+// builder functions above) into one when they belong to the same kuromoji
+// token — e.g. 天使's "ten" + "shi" -> "tenshi", or 知らない's furigana
+// "shi" + kana "ra" (+ the separate token ない, left alone) -> "shira" +
+// "nai". Must run after deleteOverwrittenFuriganaRomaji, which relies on
+// the pre-merge 1:1 correspondence between a raw furiganaRomaji array and
+// `furigana`.
+function mergeRomajiByWord(
+  romaji: JoysoundLyricsRomaji[],
+  xPosToTokenIndex: Map<number, number>,
+): JoysoundLyricsRomaji[] {
+  const sorted = [...romaji].sort((a, b) => a.xPos - b.xPos);
+  const merged: JoysoundLyricsRomaji[] = [];
+  let prevTokenIndex: number | undefined;
+
+  for (const block of sorted) {
+    const tokenIndex = xPosToTokenIndex.get(block.xPos);
+    const prevBlock = merged[merged.length - 1];
+
+    if (
+      prevBlock !== undefined &&
+      tokenIndex !== undefined &&
+      tokenIndex === prevTokenIndex
+    ) {
+      prevBlock.phrase += block.phrase;
+      prevBlock.sourceWidth += block.sourceWidth;
+    } else {
+      merged.push({ ...block });
+    }
+
+    prevTokenIndex = tokenIndex;
+  }
+
+  return merged;
+}
+
 function getNonKanaRomajiBlocks(
   chars: JoysoundLyricsChar[],
   tokenizedLyrics: AnalyzerResult[],
@@ -340,6 +493,21 @@ function getNonKanaRomajiBlocks(
 
   for (const currGlyph of chars) {
     const unicodeChar = decodeJoysoundText(currGlyph.charCode, currGlyph.font);
+
+    // Kerning-only space glyphs (see isSpaceUnicodeChar) were stripped
+    // before tokenization, so they don't occupy a tokenizedLyrics position.
+    // Treat them as transparent here too — folding their width into
+    // whatever's on either side — rather than letting them force a flush
+    // mid-word (e.g. 少[space]年, still one word) or drift this walk out of
+    // alignment with tokenizedLyrics.
+    if (isSpaceUnicodeChar(unicodeChar)) {
+      if (currPhrase.length > 0) {
+        currPhraseWidth += currGlyph.width;
+      } else {
+        currXPos += currGlyph.width;
+      }
+      continue;
+    }
 
     if (
       isKanjiUnicodeChar(unicodeChar) &&
@@ -552,6 +720,7 @@ async function parseLyricsBlock(
   offset: number,
   palette: JoysoundPaletteColor[],
   kuroshiro: KuroshiroSingleton,
+  wordSegmentation: boolean,
 ) {
   let currOffset = offset;
 
@@ -614,7 +783,9 @@ async function parseLyricsBlock(
   await kuroshiro.analyzerInitPromise;
 
   const rawLyrics = getRawLyrics(chars);
-  const tokenizedLyrics = await kuroshiro.analyzer.parse(rawLyrics);
+  const tokenizedLyrics = await kuroshiro.analyzer.parse(
+    rawLyrics.replace(/[ 　]/g, ""),
+  );
   const okuriganaLyrics = await kuroshiro.kuroshiro.convert(rawLyrics, {
     mode: "okurigana",
     to: "hiragana",
@@ -622,7 +793,11 @@ async function parseLyricsBlock(
     delimiter_end: "¬",
   });
 
-  const mainRomaji = getMainRomajiBlocks(chars, tokenizedLyrics);
+  const mainRomaji = getMainRomajiBlocks(
+    chars,
+    tokenizedLyrics,
+    wordSegmentation,
+  );
   const furiganaRomaji = getFuriganaRomajiBlocks(furigana);
   // XXX: For kanji without furigana and no kana (i.e. 空), we trust
   //      dictionary.json and fallback to kuroshiro
@@ -633,10 +808,17 @@ async function parseLyricsBlock(
 
   deleteOverwrittenFuriganaRomaji(chars, furiganaRomaji);
 
-  const romaji = mainRomaji
+  const combinedRomaji = mainRomaji
     .concat(furiganaRomaji)
     .concat(nonKanaRomaji)
     .concat(fillerRomaji);
+
+  const romaji = wordSegmentation
+    ? mergeRomajiByWord(
+        combinedRomaji,
+        getTokenIndexByXPos(chars, furigana, tokenizedLyrics),
+      )
+    : combinedRomaji;
 
   return {
     blockSize,
@@ -768,6 +950,7 @@ async function parseJoy02LyricsData(
   offset: number,
   size: number,
   kuroshiro: KuroshiroSingleton,
+  wordSegmentation: boolean,
 ): Promise<JoysoundLyricsBlock[]> {
   const lyricsView = new DataView(data, offset, size);
   const lyricsBlocks = [];
@@ -798,6 +981,7 @@ async function parseJoy02LyricsData(
       currOffset,
       palette,
       kuroshiro,
+      wordSegmentation,
     );
     lyricsBlocks.push(block);
 
@@ -886,6 +1070,13 @@ function processTimeline(
 async function parseJoysoundData(
   data: ArrayBuffer,
   kuroshiro: KuroshiroSingleton,
+  // Segment kana-run romaji at kuromoji word boundaries (e.g. あるもの ->
+  // "aru" + "mono") instead of the default per-mora blocks (e.g. "a" + "ru"
+  // + "mo" + "no", visually glued into "arumono" by zero inter-block gap).
+  // The cached .joy_02 blob this parses is raw telop data untouched by this
+  // flag — parsing (and this toggle) happens fresh in the renderer process
+  // on every draw, so flipping it needs no re-download or cache bust.
+  wordSegmentation: boolean = false,
 ): Promise<JoysoundTelopData> {
   const lyricsBlocks = [];
 
@@ -905,6 +1096,7 @@ async function parseJoysoundData(
     lyricsOffset,
     timingOffset - lyricsOffset,
     kuroshiro,
+    wordSegmentation,
   );
   const timeline = parseJoy02TimingData(
     data,

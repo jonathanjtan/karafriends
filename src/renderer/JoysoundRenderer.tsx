@@ -16,6 +16,7 @@ import {
   RUBY_FONT_SIZE,
   RUBY_FONT_STROKE,
 } from "../common/constants";
+import useJoysoundRomajiWordSegmentation from "../common/hooks/useJoysoundRomajiWordSegmentation";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { InstrumentalBreak } from "../common/scoringData";
 
@@ -914,6 +915,8 @@ export default function JoysoundRenderer(props: {
   // don't hide behind the piano roll. Held in a ref so the draw loop (which
   // lives inside a one-shot effect) always sees the live synced size.
   const { pianoRollSize } = usePianoRollSize();
+  const { joysoundRomajiWordSegmentation } =
+    useJoysoundRomajiWordSegmentation();
   const pianoRollClearanceRef = useRef(0);
   pianoRollClearanceRef.current =
     props.pianoRollVisible && pianoRollSize > 0
@@ -976,6 +979,7 @@ export default function JoysoundRenderer(props: {
       const joysoundData = await parseJoysoundData(
         props.telop,
         props.kuroshiro,
+        joysoundRomajiWordSegmentation,
       );
       if (cancelled) {
         return;
@@ -1187,7 +1191,7 @@ export default function JoysoundRenderer(props: {
       window.removeEventListener("resize", updateSize);
       window.cancelAnimationFrame(animationFrameRequest);
     };
-  }, [props.telop, props.isRomaji]);
+  }, [props.telop, props.isRomaji, joysoundRomajiWordSegmentation]);
 
   return <canvas ref={canvasRef} className="joysoundDisplay"></canvas>;
 }

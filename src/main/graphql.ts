@@ -1221,6 +1221,7 @@ type NotARealDb = {
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   guideMelodyVolume: number;
   idToAdhocLyrics: Record<string, string[]>;
+  joysoundRomajiWordSegmentation: boolean;
   oledFriendly: boolean;
   pianoRollOpacity: number;
   pianoRollSize: number;
@@ -1251,6 +1252,7 @@ enum SubscriptionEvent {
   CurrentSongChanged = "CurrentSongChanged",
   Emote = "Emote",
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
+  JoysoundRomajiWordSegmentationChanged = "JoysoundRomajiWordSegmentationChanged",
   OledFriendlyChanged = "OledFriendlyChanged",
   PianoRollOpacityChanged = "PianoRollOpacityChanged",
   PianoRollSizeChanged = "PianoRollSizeChanged",
@@ -1295,6 +1297,7 @@ let db: NotARealDb = {
   currentSongAdhocLyrics: [],
   guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
   idToAdhocLyrics: {},
+  joysoundRomajiWordSegmentation: false,
   oledFriendly: false,
   pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
   pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
@@ -1364,6 +1367,7 @@ function loadDb(): NotARealDb {
     currentSongAdhocLyrics: [],
     guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
     idToAdhocLyrics: {},
+    joysoundRomajiWordSegmentation: false,
     oledFriendly: false,
     pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
     pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
@@ -2258,6 +2262,7 @@ const resolvers = {
         ? { text: db.breakMessageText, author: db.breakMessageAuthor }
         : null,
     guideMelodyVolume: () => db.guideMelodyVolume,
+    joysoundRomajiWordSegmentation: () => db.joysoundRomajiWordSegmentation,
     oledFriendly: () => db.oledFriendly,
     pianoRollOpacity: () => db.pianoRollOpacity,
     pianoRollSize: () => db.pianoRollSize,
@@ -2658,6 +2663,18 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setJoysoundRomajiWordSegmentation: (
+      _: any,
+      args: { enabled: boolean },
+    ): boolean => {
+      db.joysoundRomajiWordSegmentation = args.enabled;
+      pubsub.publish(SubscriptionEvent.JoysoundRomajiWordSegmentationChanged, {
+        joysoundRomajiWordSegmentationChanged:
+          db.joysoundRomajiWordSegmentation,
+      });
+      saveDb();
+      return true;
+    },
     setSidebarCollapsed: (_: any, args: { collapsed: boolean }): boolean => {
       db.sidebarCollapsed = args.collapsed;
       pubsub.publish(SubscriptionEvent.SidebarCollapsedChanged, {
@@ -2781,6 +2798,12 @@ const resolvers = {
     oledFriendlyChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([SubscriptionEvent.OledFriendlyChanged]),
+    },
+    joysoundRomajiWordSegmentationChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.JoysoundRomajiWordSegmentationChanged,
+        ]),
     },
     sidebarCollapsedChanged: {
       subscribe: () =>

@@ -8,6 +8,7 @@ import useBgmVolume from "../../../common/hooks/useBgmVolume";
 import useBreakEndsAt from "../../../common/hooks/useBreakEndsAt";
 import useBreakMessage from "../../../common/hooks/useBreakMessage";
 import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
+import useJoysoundRomajiWordSegmentation from "../../../common/hooks/useJoysoundRomajiWordSegmentation";
 import useOledFriendly from "../../../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
@@ -64,6 +65,8 @@ const VolumeControls = () => {
   const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
   const { oledFriendly, setOledFriendly } = useOledFriendly();
+  const { joysoundRomajiWordSegmentation, setJoysoundRomajiWordSegmentation } =
+    useJoysoundRomajiWordSegmentation();
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
   const [commitClearQueue, isClearingQueue] =
     useMutation<VolumeControlsClearQueueMutation>(clearQueueMutation);
@@ -268,6 +271,16 @@ const VolumeControls = () => {
             onClick={() => setOledFriendly(!oledFriendly)}
           >
             OLED Mode: {oledFriendly ? "On" : "Off"}
+          </button>
+        </div>
+        <div>
+          <button
+            className={styles.recheckButton}
+            onClick={() =>
+              setJoysoundRomajiWordSegmentation(!joysoundRomajiWordSegmentation)
+            }
+          >
+            EZ Romaji: {joysoundRomajiWordSegmentation ? "On" : "Off"}
           </button>
         </div>
         <div className={styles.serviceHealth}>
