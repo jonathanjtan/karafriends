@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from "react";
 
 import {
   PIANO_ROLL_CURSOR_FRACTION as CURSOR_FRACTION,
+  PIANO_ROLL_LOOKAHEAD_SECS,
   PIANO_ROLL_TIME_WIDTH_SECS as TIME_WIDTH_SECS,
   PIANO_ROLL_TOP_FRACTION,
 } from "../common/constants";
@@ -458,9 +459,11 @@ export default function PianoRoll(props: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationFrameRequestRef = useRef<number>(0);
 
-  // Fades the roll out once the guide melody is over (the outro), so the
-  // background video can be enjoyed unobstructed. Seeking back un-fades.
-  const [melodyEnded, setMelodyEnded] = useState(false);
+  // Keeps the roll hidden through a long instrumental intro (so the MV plays
+  // unobstructed), fading it in as the first note scrolls into the visible
+  // window, and fades it back out once the guide melody is over (the outro).
+  // Seeking un-fades/re-fades to match the new position.
+  const [melodyActive, setMelodyActive] = useState(false);
 
   // Applied as plain CSS below; changes re-render the canvas element but
   // don't re-run the GL effect (its deps only cover props identity).
@@ -474,13 +477,20 @@ export default function PianoRoll(props: {
     const { notes } = parseScoringData(props.scoringData);
     if (notes.length === 0) return;
 
-    // Fade once the final note has scrolled fully past the left edge:
+    // Fade in once the first note starts entering the visible window from
+    // the right edge, PIANO_ROLL_LOOKAHEAD_SECS before its startTime crosses
+    // the "now" cursor.
+    const fadeInTime = notes[0].startTime - PIANO_ROLL_LOOKAHEAD_SECS;
+    // Fade out once the final note has scrolled fully past the left edge:
     // a note exits the visible window CURSOR_FRACTION * TIME_WIDTH_SECS
     // after its endTime crosses the "now" cursor.
     const fadeOutTime =
       notes[notes.length - 1].endTime + CURSOR_FRACTION * TIME_WIDTH_SECS;
 
-    const onTimeUpdate = () => setMelodyEnded(video.currentTime >= fadeOutTime);
+    const onTimeUpdate = () =>
+      setMelodyActive(
+        video.currentTime >= fadeInTime && video.currentTime < fadeOutTime,
+      );
     onTimeUpdate();
     video.addEventListener("timeupdate", onTimeUpdate);
     return () => video.removeEventListener("timeupdate", onTimeUpdate);
@@ -656,7 +666,7 @@ export default function PianoRoll(props: {
         top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
         height: `${pianoRollSize * 100}%`,
         opacity:
-          !props.visible || melodyEnded
+          !props.visible || !melodyActive
             ? 0
             : props.ducked
               ? pianoRollOpacity * PIANO_ROLL_DUCK_FACTOR
