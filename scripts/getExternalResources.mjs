@@ -9,6 +9,8 @@ import process from "process";
 import zlib from "zlib";
 import { exec, execFile } from "child_process";
 
+import { ensurePortraits } from "./getPortraits.mjs";
+
 const pathTo7zip = sevenBin.path7za;
 const buildResourcesDir = `${process.cwd()}/buildResources`;
 const extraResourcesDir = `${process.cwd()}/extraResources`;
@@ -273,6 +275,7 @@ async function refreshYtdlp(tasks) {
 }
 
 async function getExternalResources(tasks) {
+  await ensurePortraits();
   await refreshYtdlp(tasks);
   if (tasks.doChecks().every((check) => check === true)) {
     return;

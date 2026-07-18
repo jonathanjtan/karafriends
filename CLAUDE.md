@@ -356,6 +356,20 @@ hook, relay-compile. Persistence is automatic via the `...db` spread.
 - **BGM**: bundled tracks in `src/common/bgmTracks.ts` (normalized to −20
   LUFS; see the file header for the re-encode recipe). Track selection and
   volume are synced settings; the renderer plays them between songs.
+- **Avatar portraits** (`scripts/getPortraits.mjs`, `main/portraits.ts`,
+  `remocon/components/PmdPortraitPicker`): the avatar picker runs off a
+  **local mirror** of PMDCollab SpriteCollab (no external requests at
+  runtime). The build sparse-clones just `portrait/` + `tracker.json` and
+  packs ~48k 40×40 PNGs into a single `extraResources/portraits/portraits.pack`
+  (~78MB, content-deduped) plus a `portraits.json` manifest of
+  monster/form/emotion names and byte offsets; delete those files to force a
+  refresh. The main process serves `/portraits/index.json` and
+  `/portraits/<form path>/<emotion>.png` on :8080; the remocon fetches the
+  manifest once and searches it client-side. Picked URLs are stored
+  **host-relative** (`/portraits/...`) — the remocon resolves them against its
+  own origin, the renderer via `resolveProfilePictureUrl`
+  (`src/common/profilePicture.ts`); pre-mirror avatars remain absolute
+  raw.githubusercontent.com URLs and still work.
 
 ## External tools (yt-dlp / ffmpeg)
 

@@ -66,6 +66,7 @@ import { JoysoundAPI } from "./joysoundApi";
 import setupMdns from "./mdns";
 import remoconReverseProxy from "./middleware/remoconReverseProxy";
 import remoconServiceWorkerAllowed from "./middleware/remoconServiceWorkerAllowed";
+import { applyPortraitsMiddleware } from "./portraits";
 import { flushRankingCacheOnShutdown } from "./rankings";
 
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
@@ -158,6 +159,8 @@ function createWindow() {
   expressApp.use(compression());
 
   applyGraphQLMiddleware(expressApp);
+
+  applyPortraitsMiddleware(expressApp);
 
   expressApp.use(remoconServiceWorkerAllowed());
 

@@ -42,6 +42,7 @@ __generated__
 # Extra resources that are downloaded on build
 /extraResources/ffmpeg/**/*
 /extraResources/ytdlp/*
+/extraResources/portraits/
 /buildResources/asio/*
 
 # Claude Code local/scratch state

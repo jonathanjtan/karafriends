@@ -4,6 +4,7 @@ import React from "react";
 import SourceBadge from "../common/components/SourceBadge";
 import { cyrb53 } from "../common/hash";
 import useQueue from "../common/hooks/useQueue";
+import { resolveProfilePictureUrl } from "../common/profilePicture";
 import "./Queue.css";
 
 export default function Queue() {
@@ -34,7 +35,7 @@ export default function Queue() {
                       ? " queueNicknameAvatarFemale"
                       : ""
                   }`}
-                  src={profilePictureUrl}
+                  src={resolveProfilePictureUrl(profilePictureUrl)}
                   alt=""
                 />
               )}

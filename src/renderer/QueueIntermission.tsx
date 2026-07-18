@@ -9,6 +9,7 @@ import youtubeIcon from "url:./images/sources/youtube.jpg";
 import SourceBadge from "../common/components/SourceBadge";
 import { cyrb53 } from "../common/hash";
 import useQueue from "../common/hooks/useQueue";
+import { resolveProfilePictureUrl } from "../common/profilePicture";
 /* tslint:enable:no-submodule-imports no-implicit-dependencies */
 import QRCode from "./QRCode";
 import "./QueueIntermission.css";
@@ -181,7 +182,9 @@ export default function QueueIntermission(props: {
                   ? " queueIntermissionNextUpPortraitFemale"
                   : ""
               }`}
-              src={nextUp[0].userIdentity.profilePictureUrl}
+              src={resolveProfilePictureUrl(
+                nextUp[0].userIdentity.profilePictureUrl,
+              )}
               alt=""
             />
           ) : null}
@@ -232,7 +235,9 @@ export default function QueueIntermission(props: {
                       ? " queueIntermissionUpcomingPortraitFemale"
                       : ""
                   }`}
-                  src={item.userIdentity.profilePictureUrl}
+                  src={resolveProfilePictureUrl(
+                    item.userIdentity.profilePictureUrl,
+                  )}
                   alt=""
                 />
               ) : null}

@@ -1,101 +1,75 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
-import DebouncedInput from "../DebouncedInput";
 import * as styles from "./PmdPortraitPicker.module.scss";
 
-// Portrait picker backed by the PMDCollab SpriteCollab project
-// (https://sprites.pmdcollab.org) — community-made Pokémon Mystery Dungeon
-// portraits, one 40x40 image per pokemon/form/emotion. We query their public
-// GraphQL API directly from the phone (CORS is open) and the chosen portrait
-// is just the raw.githubusercontent.com URL of the image.
-const SPRITE_SERVER_URL = "https://spriteserver.pmdcollab.org/graphql";
+// Portrait picker backed by a local mirror of the PMDCollab SpriteCollab
+// project (https://sprites.pmdcollab.org) — community-made Pokémon Mystery
+// Dungeon portraits, one 40x40 image per pokemon/form/emotion. The dataset is
+// bundled at build time (scripts/getPortraits.mjs) and served by the app
+// under /portraits/; the manifest is fetched once and searched entirely
+// client-side, so typing and browsing never leave the LAN. Selected portrait
+// URLs are stored host-relative ("/portraits/...") — the renderer resolves
+// them via resolveProfilePictureUrl.
 
-interface PmdEmotion {
-  emotion: string;
-  url: string;
-}
-
-interface PmdForm {
+interface PortraitForm {
   path: string;
-  fullName: string;
-  portraits: {
-    previewEmotion: PmdEmotion | null;
-    emotions?: PmdEmotion[];
-  };
+  name: string;
+  // emotion name → [offset, length] in the server-side pack; only the keys
+  // (and their order — "Normal" first) matter to the client.
+  emotions: Record<string, [number, number]>;
 }
 
-interface PmdMonster {
+interface PortraitMonster {
   id: number;
   name: string;
-  forms: PmdForm[];
+  forms: PortraitForm[];
 }
 
-const SEARCH_QUERY = `
-  query PmdPortraitSearch($name: String!) {
-    searchMonster(monsterName: $name) {
-      id
-      name
-      forms {
-        path
-        fullName
-        portraits {
-          previewEmotion {
-            emotion
-            url
-          }
-        }
-      }
-    }
+// The manifest is ~1.4MB raw (a few hundred KB gzipped) and immutable within
+// an app run — fetch it once per page load and share across picker mounts.
+let indexPromise: Promise<PortraitMonster[]> | null = null;
+function fetchPortraitIndex(): Promise<PortraitMonster[]> {
+  if (indexPromise === null) {
+    indexPromise = fetch("/portraits/index.json")
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((data: { monsters: PortraitMonster[] }) => data.monsters)
+      .catch((e) => {
+        indexPromise = null;
+        throw e;
+      });
   }
-`;
+  return indexPromise;
+}
 
-const DETAIL_QUERY = `
-  query PmdPortraitDetail($id: Int!) {
-    monster(filter: [$id]) {
-      id
-      name
-      forms {
-        path
-        fullName
-        portraits {
-          previewEmotion {
-            emotion
-            url
-          }
-          emotions {
-            emotion
-            url
-          }
-        }
-      }
-    }
-  }
-`;
+function portraitUrl(form: PortraitForm, emotion: string): string {
+  return `/portraits/${form.path}/${encodeURIComponent(emotion)}.png`;
+}
 
-async function spriteServerQuery<T>(
+function previewUrl(monster: PortraitMonster): string {
+  const form = monster.forms[0];
+  return portraitUrl(form, Object.keys(form.emotions)[0]);
+}
+
+function searchMonsters(
+  monsters: PortraitMonster[],
   query: string,
-  variables: object,
-): Promise<T> {
-  const response = await fetch(SPRITE_SERVER_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!response.ok) {
-    throw new Error(`SpriteCollab returned HTTP ${response.status}`);
+): PortraitMonster[] {
+  const needle = query.trim().toLowerCase();
+  if (needle.length === 0) return [];
+  const prefixMatches: PortraitMonster[] = [];
+  const substringMatches: PortraitMonster[] = [];
+  for (const monster of monsters) {
+    const name = monster.name.toLowerCase();
+    if (name.startsWith(needle)) {
+      prefixMatches.push(monster);
+    } else if (name.includes(needle)) {
+      substringMatches.push(monster);
+    }
   }
-  const json = await response.json();
-  if (json.errors?.length) {
-    throw new Error(json.errors[0].message);
-  }
-  return json.data;
-}
-
-function previewUrl(monster: PmdMonster): string | null {
-  for (const form of monster.forms) {
-    if (form.portraits.previewEmotion) return form.portraits.previewEmotion.url;
-  }
-  return null;
+  return [...prefixMatches, ...substringMatches].slice(0, 60);
 }
 
 interface Props {
@@ -104,83 +78,49 @@ interface Props {
 }
 
 const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
-  const [query, setQuery] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
-  const [results, setResults] = useState<PmdMonster[] | null>(null);
-  const [selectedMonster, setSelectedMonster] = useState<PmdMonster | null>(
-    null,
-  );
-  const [formIdx, setFormIdx] = useState(0);
+  const [monsters, setMonsters] = useState<PortraitMonster[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Monotonic id so a slow earlier response can't clobber a newer one.
-  const requestSeq = useRef(0);
+  const [query, setQuery] = useState("");
+  const [selectedMonster, setSelectedMonster] =
+    useState<PortraitMonster | null>(null);
+  const [formIdx, setFormIdx] = useState(0);
 
   useEffect(() => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) {
-      setResults(null);
-      setIsSearching(false);
-      return;
-    }
-
-    const seq = ++requestSeq.current;
-    setIsSearching(true);
-    setError(null);
-    spriteServerQuery<{ searchMonster: PmdMonster[] }>(SEARCH_QUERY, {
-      name: trimmed,
-    })
-      .then((data) => {
-        if (seq !== requestSeq.current) return;
-        setResults(data.searchMonster.filter((m) => previewUrl(m) !== null));
-        setIsSearching(false);
+    let cancelled = false;
+    fetchPortraitIndex()
+      .then((loaded) => {
+        if (!cancelled) setMonsters(loaded);
       })
       .catch((e) => {
-        if (seq !== requestSeq.current) return;
-        setError(`Search failed: ${e.message}`);
-        setIsSearching(false);
+        if (!cancelled) setError(`Couldn't load portraits: ${e.message}`);
       });
-  }, [query]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const pickMonster = (monster: PmdMonster) => {
-    const seq = ++requestSeq.current;
-    setSelectedMonster(null);
-    setFormIdx(0);
-    setError(null);
-    spriteServerQuery<{ monster: PmdMonster[] }>(DETAIL_QUERY, {
-      id: monster.id,
-    })
-      .then((data) => {
-        if (seq !== requestSeq.current) return;
-        const detail = data.monster[0];
-        if (!detail) throw new Error("not found");
-        setSelectedMonster({
-          ...detail,
-          forms: detail.forms.filter(
-            (form) => (form.portraits.emotions || []).length > 0,
-          ),
-        });
-      })
-      .catch((e) => {
-        if (seq !== requestSeq.current) return;
-        setError(`Couldn't load ${monster.name}'s portraits: ${e.message}`);
-      });
-  };
+  const results = useMemo(
+    () => (monsters === null ? [] : searchMonsters(monsters, query)),
+    [monsters, query],
+  );
 
   const selectedForm = selectedMonster?.forms[formIdx];
 
   return (
     <div className={styles.picker}>
-      <DebouncedInput
-        period={500}
+      <input
         placeholder="Search Pokémon (English name)"
+        value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
       {error && <div className={styles.error}>{error}</div>}
-      {isSearching && <div className={styles.hint}>Searching...</div>}
-      {!isSearching && results !== null && results.length === 0 && (
+      {monsters === null && !error && (
+        <div className={styles.hint}>Loading portraits...</div>
+      )}
+      {monsters !== null && query.trim().length > 0 && results.length === 0 && (
         <div className={styles.hint}>No Pokémon found</div>
       )}
-      {results !== null && results.length > 0 && (
+      {results.length > 0 && (
         <div className={styles.grid}>
           {results.map((monster) => (
             <div
@@ -188,9 +128,12 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
               className={`${styles.cell} ${
                 selectedMonster?.id === monster.id ? styles.cellSelected : ""
               }`}
-              onClick={() => pickMonster(monster)}
+              onClick={() => {
+                setSelectedMonster(monster);
+                setFormIdx(0);
+              }}
             >
-              <img src={previewUrl(monster)!} alt={monster.name} />
+              <img src={previewUrl(monster)} alt={monster.name} />
               <span>{monster.name}</span>
             </div>
           ))}
@@ -207,7 +150,7 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
               >
                 {selectedMonster.forms.map((form, i) => (
                   <option key={form.path} value={i}>
-                    {form.fullName.replace(/_/g, " ")}
+                    {form.name || "Normal"}
                   </option>
                 ))}
               </select>
@@ -215,16 +158,18 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
           )}
           <h4>{selectedMonster.name} — pick an emotion</h4>
           <div className={styles.grid}>
-            {(selectedForm?.portraits.emotions || []).map((portrait) => (
+            {Object.keys(selectedForm?.emotions || {}).map((emotion) => (
               <div
-                key={portrait.url}
+                key={emotion}
                 className={`${styles.cell} ${
-                  selectedUrl === portrait.url ? styles.cellSelected : ""
+                  selectedUrl === portraitUrl(selectedForm!, emotion)
+                    ? styles.cellSelected
+                    : ""
                 }`}
-                onClick={() => onSelect(portrait.url)}
+                onClick={() => onSelect(portraitUrl(selectedForm!, emotion))}
               >
-                <img src={portrait.url} alt={portrait.emotion} />
-                <span>{portrait.emotion}</span>
+                <img src={portraitUrl(selectedForm!, emotion)} alt={emotion} />
+                <span>{emotion}</span>
               </div>
             ))}
           </div>

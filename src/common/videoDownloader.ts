@@ -27,7 +27,7 @@ import { decodeJoysoundBase64Field, getSongDuration } from "./joysoundParser";
 export const TEMP_FOLDER: string = `${app.getPath("temp")}/karafriends_tmp`;
 const captionCodeRe: RegExp = new RegExp(/^[a-z]{2}$/);
 
-const extraResourcesPath: string =
+export const extraResourcesPath: string =
   process.env.NODE_ENV === "development"
     ? `${app.getAppPath()}/../../../extraResources/`
     : `${process.resourcesPath}/extraResources/`;
