@@ -122,23 +122,57 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
 
   const selectedForm = selectedMonster?.forms[formIdx];
 
-  return (
-    <div className={styles.picker}>
+  // Once a pokemon is selected its version/emotion panel becomes the top of
+  // the picker, and the filter + dex grid move below it as the "switch to a
+  // different pokemon" section. (The panel also can't render below the grid:
+  // with the whole dex shown it would be off-screen when a mid-list pokemon
+  // is tapped.)
+  const filterAndResults = (
+    <>
       <input
         placeholder="Filter Pokémon (English name)"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      {error && <div className={styles.error}>{error}</div>}
       {monsters === null && !error && (
         <div className={styles.hint}>Loading portraits...</div>
       )}
       {monsters !== null && results.length === 0 && (
         <div className={styles.hint}>No Pokémon found</div>
       )}
-      {/* The version/emotion panel renders above the dex grid — with the
-          whole dex shown, anything below it would be off-screen when a
-          mid-list pokemon is tapped. */}
+      {results.length > 0 && (
+        <div className={styles.grid}>
+          {results.map((monster) => (
+            <div
+              key={monster.id}
+              className={`${styles.cell} ${
+                selectedMonster?.id === monster.id ? styles.cellSelected : ""
+              }`}
+              onClick={() => {
+                setSelectedMonster(monster);
+                setFormIdx(0);
+              }}
+            >
+              {/* lazy: the unfiltered grid is the whole dex (~1000 images);
+                  only fetch the ones scrolled into view */}
+              <img
+                src={previewUrl(monster)}
+                alt={monster.name}
+                loading="lazy"
+                width={40}
+                height={40}
+              />
+              <span>{monster.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <div className={styles.picker}>
+      {error && <div className={styles.error}>{error}</div>}
       {selectedMonster && (
         <div className={styles.emotions} ref={emotionsRef}>
           {selectedMonster.forms.length > 1 && (
@@ -175,33 +209,7 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
           </div>
         </div>
       )}
-      {results.length > 0 && (
-        <div className={styles.grid}>
-          {results.map((monster) => (
-            <div
-              key={monster.id}
-              className={`${styles.cell} ${
-                selectedMonster?.id === monster.id ? styles.cellSelected : ""
-              }`}
-              onClick={() => {
-                setSelectedMonster(monster);
-                setFormIdx(0);
-              }}
-            >
-              {/* lazy: the unfiltered grid is the whole dex (~1000 images);
-                  only fetch the ones scrolled into view */}
-              <img
-                src={previewUrl(monster)}
-                alt={monster.name}
-                loading="lazy"
-                width={40}
-                height={40}
-              />
-              <span>{monster.name}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {filterAndResults}
       <div className={styles.credit}>
         Portraits by the{" "}
         <a
