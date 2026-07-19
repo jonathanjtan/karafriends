@@ -112,11 +112,8 @@ const ProfilePage = () => {
           Remove avatar
         </Button>
       )}
-      <h4 className={styles.collectionName}>Pokémon Mystery Dungeon</h4>
-      <PmdPortraitPicker
-        selectedUrl={identity.profilePictureUrl}
-        onSelect={(url) => setProfilePictureUrl(url)}
-      />
+      {/* Frame color sits above the picker — below it, the full dex grid
+          pushes it thousands of pixels off-screen. */}
       {identity.profilePictureUrl && (
         <>
           <h4 className={styles.collectionName}>Frame Color</h4>
@@ -144,6 +141,11 @@ const ProfilePage = () => {
           </div>
         </>
       )}
+      <h4 className={styles.collectionName}>Pokémon Mystery Dungeon</h4>
+      <PmdPortraitPicker
+        selectedUrl={identity.profilePictureUrl}
+        onSelect={(url) => setProfilePictureUrl(url)}
+      />
     </div>
   );
 };
