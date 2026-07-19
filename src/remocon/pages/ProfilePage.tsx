@@ -113,34 +113,39 @@ const ProfilePage = () => {
         </Button>
       )}
       {/* Frame color sits above the picker — below it, the full dex grid
-          pushes it thousands of pixels off-screen. */}
-      {identity.profilePictureUrl && (
-        <>
-          <h4 className={styles.collectionName}>Frame Color</h4>
-          <div className={styles.frameChoices}>
-            {(["male", "female"] as const).map((frame) => (
-              <div
-                key={frame}
-                className={`${styles.frameChoice}${
-                  identity.profilePictureFrame === frame
-                    ? ` ${styles.frameChoiceSelected}`
-                    : ""
-                }`}
-                onClick={() => setProfilePictureFrame(frame)}
-              >
+          pushes it thousands of pixels off-screen. It's always shown (not
+          only once an avatar exists) so it doesn't pop in mid-page; with no
+          avatar the frames are just empty. */}
+      <h4 className={styles.collectionName}>Frame Color</h4>
+      <div className={styles.frameChoices}>
+        {(["male", "female"] as const).map((frame) => {
+          const framedAvatarClassName = `${styles.framedAvatar}${
+            frame === "female" ? ` ${styles.framedAvatarFemale}` : ""
+          }`;
+          return (
+            <div
+              key={frame}
+              className={`${styles.frameChoice}${
+                identity.profilePictureFrame === frame
+                  ? ` ${styles.frameChoiceSelected}`
+                  : ""
+              }`}
+              onClick={() => setProfilePictureFrame(frame)}
+            >
+              {identity.profilePictureUrl ? (
                 <img
-                  className={`${styles.framedAvatar}${
-                    frame === "female" ? ` ${styles.framedAvatarFemale}` : ""
-                  }`}
-                  src={identity.profilePictureUrl ?? undefined}
+                  className={framedAvatarClassName}
+                  src={identity.profilePictureUrl}
                   alt=""
                 />
-                <span>{frame === "male" ? "Blue" : "Pink"}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+              ) : (
+                <div className={framedAvatarClassName} />
+              )}
+              <span>{frame === "male" ? "Blue" : "Pink"}</span>
+            </div>
+          );
+        })}
+      </div>
       <h4 className={styles.collectionName}>Pokémon Mystery Dungeon</h4>
       <PmdPortraitPicker
         selectedUrl={identity.profilePictureUrl}
