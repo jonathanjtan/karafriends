@@ -484,7 +484,7 @@ function downloadJoysoundYoutubeVideoPromise(
         "res:720,ext:mp4",
         // Grab the audio alongside the video in this one extraction. The
         // composite itself uses the JOYSOUND ogg, not this audio, but
-        // computeYoutubeIntroOffsetMs needs the MV's audio to measure the
+        // computeYoutubeIntroSync needs the MV's audio to measure the
         // offset - and pulling it here means one yt-dlp extraction per song
         // instead of two (a video-only "-f bv" fetch plus a separate "-f ba"
         // one), which is what was burning through YouTube's rate limit.
@@ -597,6 +597,15 @@ function downloadJoysoundYoutubeVideoPromise(
 // head material: delay the video by front-padding it with its frozen first
 // frame (padJoysoundVideoPromise). If no candidate survives, onset
 // alignment (below) is the last resort before giving up.
+//
+// After an offset is chosen (by any method), measureVideoDriftAround checks
+// whether the two tracks even run at the same tempo: some MV uploads are
+// speed-shifted (e.g. +1.19% on Romeo-to-Cinderella 9HrOqmiEsN8, a smooth
+// 3.3s of drift over the song - no constant offset can sync that). Anchors
+// across the whole track each report their local best offset, a weighted
+// linear fit recovers the rate difference, and the compose pipeline slows
+// or speeds the video's timestamps to match (stretchJoysoundVideoPromise,
+// a copy-codec -itsscale remux) before the usual trim/pad.
 
 const INTRO_SYNC_REFERENCE_SEC = 20;
 const INTRO_SYNC_MAX_DECODE_SEC = 600;
@@ -648,6 +657,41 @@ const INTRO_SYNC_MELODY_MIN_MARGIN = 0.3;
 const INTRO_SYNC_ONSET_HEAD_SEC = 90;
 const INTRO_SYNC_ONSET_THRESHOLD_FRAC = 0.15;
 const INTRO_SYNC_ONSET_SMOOTH_MS = 300;
+// Tempo-drift measurement (speed-shifted MV uploads). Shorter reference
+// windows than refinement (a 20s window smears ~240ms internally at ~1.2%
+// drift, flattening the very peaks being measured), and a much lower peak
+// floor: drift-smeared honest peaks legitimately score only 0.13-0.28, and
+// it's the robust line fit - not the floor - that rejects garbage
+// (unrelated peaks don't fall on a line). Collection windows are centered
+// on the caller's offset and widen with anchor position: they must absorb
+// the seed's own error (up to SEED_TOLERANCE - a seed chosen assuming
+// constant offset sits mid-drift, over a second off the head alignment)
+// plus drift accumulated at up to RATE_SCAN_BOUND. Line selection is
+// RANSAC-style because no single per-anchor argmax can be trusted (same
+// lesson as the coarse candidate scan): on Romeo-to-Cinderella a phrase
+// alias near the video head outscored every honest peak 0.57-vs-0.2 and a
+// greedy walk seeded on it nulled the whole measurement. Pair hypotheses
+// include same-track (constant, slope ~0) lines, so a non-drifting song
+// resolves to a sub-MIN_RATE slope and no stretch. Fit gates: enough
+// voters over a long enough baseline for the rate to be trustworthy,
+// residuals small enough that the drift is actually linear, and rate
+// bounds - below MIN_RATE a constant offset is within normal karaoke
+// wander (~0.1%) so don't touch the video, above MAX_RATE it's not a
+// speed-shift, it's a different arrangement.
+const INTRO_SYNC_DRIFT_REFERENCE_SEC = 8;
+const INTRO_SYNC_DRIFT_SEED_TOLERANCE_MS = 2500;
+const INTRO_SYNC_DRIFT_RATE_SCAN_BOUND = 0.02;
+const INTRO_SYNC_DRIFT_PEAK_FLOOR = 0.12;
+const INTRO_SYNC_DRIFT_PEAKS_PER_ANCHOR = 8;
+const INTRO_SYNC_DRIFT_PEAK_SEPARATION_MS = 400;
+const INTRO_SYNC_DRIFT_MIN_BASELINE_MS = 60000;
+const INTRO_SYNC_DRIFT_INLIER_TOLERANCE_MS = 250;
+const INTRO_SYNC_DRIFT_FINE_TOLERANCE_MS = 300;
+const INTRO_SYNC_DRIFT_MIN_VOTERS = 8;
+const INTRO_SYNC_DRIFT_MIN_SPAN_MS = 120000;
+const INTRO_SYNC_DRIFT_MAX_RESIDUAL_MS = 250;
+const INTRO_SYNC_DRIFT_MIN_RATE = 0.003;
+const INTRO_SYNC_DRIFT_MAX_RATE = 0.05;
 
 // Decodes an audio file or in-memory buffer to raw mono PCM at
 // INTRO_SYNC_SAMPLE_RATE_HZ, capped to maxDurationSec of output.
@@ -1206,10 +1250,248 @@ function estimateOnsetOffsetMs(
   return offsetMs;
 }
 
-// Estimates the signed offset (ms) between a YouTube video's audio and the
-// Joysound karaoke track. Positive: the video has extra head material that
-// should be trimmed. Negative: the karaoke track has extra head material,
-// so the video should be delayed. Null: no confident estimate.
+// What computeYoutubeIntroSync hands back to the compose pipeline: multiply
+// the video's timestamps by videoStretchFactor (ffmpeg -itsscale, 1 = leave
+// alone), then apply offsetMs (same sign convention as before: positive =
+// trim the video head, negative = front-pad it).
+interface IntroSyncMeasurement {
+  offsetMs: number;
+  videoStretchFactor: number;
+}
+
+interface DriftPeak {
+  anchorMs: number;
+  offsetMs: number;
+  score: number;
+}
+
+// Weighted least-squares line through (anchorMs, offsetMs) points; null on a
+// degenerate spread.
+function fitOffsetLine(
+  points: DriftPeak[],
+): { slope: number; intercept: number } | null {
+  let sumW = 0;
+  let sumWX = 0;
+  let sumWY = 0;
+  let sumWXX = 0;
+  let sumWXY = 0;
+  for (const point of points) {
+    sumW += point.score;
+    sumWX += point.score * point.anchorMs;
+    sumWY += point.score * point.offsetMs;
+    sumWXX += point.score * point.anchorMs * point.anchorMs;
+    sumWXY += point.score * point.anchorMs * point.offsetMs;
+  }
+  const denom = sumW * sumWXX - sumWX * sumWX;
+  if (denom === 0) return null;
+  const slope = (sumW * sumWXY - sumWX * sumWY) / denom;
+  return { slope, intercept: (sumWY - slope * sumWX) / sumW };
+}
+
+// Measures linear tempo drift between the karaoke track and the video
+// around an already-chosen offset. Anchors step through the WHOLE karaoke
+// track (unlike candidate refinement's first-120s anchors - a rate needs a
+// long baseline). Three phases:
+//
+// 1. Collection (coarse envelope): each anchor keeps its top few separated
+//    local correlation peaks inside a window around the seed offset that
+//    widens with anchor position (drift accumulates; the seed itself may be
+//    over a second off). ALL peaks are kept, not each anchor's argmax - an
+//    alias can outscore the honest peak at any single anchor.
+// 2. Robust line selection: every pair of peaks with a long enough baseline
+//    proposes a line; the line with the most inlier weight wins. Aliased
+//    peaks are scattered or parallel, so they can't out-vote the true
+//    track; on a non-drifting song the winning line comes from same-track
+//    pairs and its slope lands under MIN_RATE (-> no stretch).
+// 3. Refinement (fine envelope): each anchor re-votes within a small window
+//    around the winning line, and a weighted least-squares fit of those
+//    votes gives the final rate, gated on voter count, baseline span,
+//    residual RMS, and rate bounds.
+//
+// Sign bookkeeping: with offset(k) = intercept + slope*k measured at
+// karaoke time k, the video runs 1/(1+slope) times as fast as the karaoke,
+// so its timestamps must be scaled by F = 1/(1+slope); after that stretch
+// the remaining offset is constant at F*intercept (the drift-corrected
+// head alignment).
+function measureVideoDriftAround(
+  karaokeEnvelope: number[],
+  videoEnvelope: number[],
+  karaokeFineEnvelope: number[],
+  videoFineEnvelope: number[],
+  offsetMs: number,
+): IntroSyncMeasurement | null {
+  const coarseMs = INTRO_SYNC_ENVELOPE_WINDOW_MS;
+  const fineMs = INTRO_SYNC_FINE_WINDOW_MS;
+  const coarseReference = (INTRO_SYNC_DRIFT_REFERENCE_SEC * 1000) / coarseMs;
+  const fineReference = (INTRO_SYNC_DRIFT_REFERENCE_SEC * 1000) / fineMs;
+
+  const anchorsMs: number[] = [];
+  for (
+    let anchorMs = INTRO_SYNC_FIRST_ANCHOR_SEC * 1000;
+    anchorMs / fineMs + fineReference <= karaokeFineEnvelope.length;
+    anchorMs += INTRO_SYNC_ANCHOR_STEP_SEC * 1000
+  ) {
+    anchorsMs.push(anchorMs);
+  }
+
+  // Phase 1: coarse peak collection.
+  const peaks: DriftPeak[] = [];
+  for (const anchorMs of anchorsMs) {
+    const anchorWindows = anchorMs / coarseMs;
+    if (anchorWindows + coarseReference > karaokeEnvelope.length) continue;
+
+    const halfSpanMs =
+      INTRO_SYNC_DRIFT_SEED_TOLERANCE_MS +
+      INTRO_SYNC_DRIFT_RATE_SCAN_BOUND * anchorMs;
+    const firstProbe = Math.round((offsetMs - halfSpanMs) / coarseMs);
+    const lastProbe = Math.round((offsetMs + halfSpanMs) / coarseMs);
+    const scored: OffsetCandidate[] = [];
+    for (let probe = firstProbe; probe <= lastProbe; probe++) {
+      const videoStart = anchorWindows + probe;
+      if (
+        videoStart < 0 ||
+        videoStart + coarseReference > videoEnvelope.length
+      ) {
+        continue;
+      }
+      scored.push({
+        offsetMs: probe * coarseMs,
+        score: pearsonCorrelationAt(
+          karaokeEnvelope,
+          anchorWindows,
+          videoEnvelope,
+          videoStart,
+          coarseReference,
+        ),
+      });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const kept: OffsetCandidate[] = [];
+    for (const candidate of scored) {
+      if (candidate.score < INTRO_SYNC_DRIFT_PEAK_FLOOR) break;
+      if (kept.length >= INTRO_SYNC_DRIFT_PEAKS_PER_ANCHOR) break;
+      if (
+        kept.every(
+          (k) =>
+            Math.abs(k.offsetMs - candidate.offsetMs) >=
+            INTRO_SYNC_DRIFT_PEAK_SEPARATION_MS,
+        )
+      ) {
+        kept.push(candidate);
+      }
+    }
+    for (const candidate of kept) {
+      peaks.push({ anchorMs, ...candidate });
+    }
+  }
+
+  // Phase 2: RANSAC line selection over the collected peaks.
+  let bestLine: { slope: number; intercept: number } | null = null;
+  let bestInlierWeight = 0;
+  for (let i = 0; i < peaks.length; i++) {
+    for (let j = i + 1; j < peaks.length; j++) {
+      const baseline = peaks[j].anchorMs - peaks[i].anchorMs;
+      if (Math.abs(baseline) < INTRO_SYNC_DRIFT_MIN_BASELINE_MS) continue;
+      const slope = (peaks[j].offsetMs - peaks[i].offsetMs) / baseline;
+      if (Math.abs(slope) > INTRO_SYNC_DRIFT_MAX_RATE) continue;
+      const intercept = peaks[i].offsetMs - slope * peaks[i].anchorMs;
+      let inlierWeight = 0;
+      for (const peak of peaks) {
+        if (
+          Math.abs(peak.offsetMs - (intercept + slope * peak.anchorMs)) <=
+          INTRO_SYNC_DRIFT_INLIER_TOLERANCE_MS
+        ) {
+          inlierWeight += peak.score;
+        }
+      }
+      if (inlierWeight > bestInlierWeight) {
+        bestInlierWeight = inlierWeight;
+        bestLine = { slope, intercept };
+      }
+    }
+  }
+  if (bestLine === null) return null;
+
+  // Phase 3: fine refinement along the winning line.
+  const voters: DriftPeak[] = [];
+  for (const anchorMs of anchorsMs) {
+    const anchorWindows = anchorMs / fineMs;
+    const predictedMs = bestLine.intercept + bestLine.slope * anchorMs;
+    const firstProbe = Math.round(
+      (predictedMs - INTRO_SYNC_DRIFT_FINE_TOLERANCE_MS) / fineMs,
+    );
+    const lastProbe = Math.round(
+      (predictedMs + INTRO_SYNC_DRIFT_FINE_TOLERANCE_MS) / fineMs,
+    );
+    let best: OffsetCandidate | null = null;
+    for (let probe = firstProbe; probe <= lastProbe; probe++) {
+      const videoStart = anchorWindows + probe;
+      if (
+        videoStart < 0 ||
+        videoStart + fineReference > videoFineEnvelope.length
+      ) {
+        continue;
+      }
+      const score = pearsonCorrelationAt(
+        karaokeFineEnvelope,
+        anchorWindows,
+        videoFineEnvelope,
+        videoStart,
+        fineReference,
+      );
+      if (best === null || score > best.score) {
+        best = { offsetMs: probe * fineMs, score };
+      }
+    }
+    if (best !== null && best.score >= INTRO_SYNC_DRIFT_PEAK_FLOOR) {
+      voters.push({ anchorMs, ...best });
+    }
+  }
+
+  if (voters.length < INTRO_SYNC_DRIFT_MIN_VOTERS) return null;
+  if (
+    voters[voters.length - 1].anchorMs - voters[0].anchorMs <
+    INTRO_SYNC_DRIFT_MIN_SPAN_MS
+  ) {
+    return null;
+  }
+  const fit = fitOffsetLine(voters);
+  if (fit === null || Math.abs(fit.slope) > INTRO_SYNC_DRIFT_MAX_RATE) {
+    return null;
+  }
+
+  let weightSum = 0;
+  let residualSumSquares = 0;
+  for (const voter of voters) {
+    const residual =
+      voter.offsetMs - (fit.intercept + fit.slope * voter.anchorMs);
+    weightSum += voter.score;
+    residualSumSquares += voter.score * residual * residual;
+  }
+  const residualRms = Math.sqrt(residualSumSquares / weightSum);
+  if (residualRms > INTRO_SYNC_DRIFT_MAX_RESIDUAL_MS) {
+    return null;
+  }
+
+  const videoStretchFactor = 1 / (1 + fit.slope);
+  if (Math.abs(videoStretchFactor - 1) < INTRO_SYNC_DRIFT_MIN_RATE) {
+    return null;
+  }
+  console.info(
+    `measureVideoDriftAround: rate=${(fit.slope * 100).toFixed(3)}% stretch=${videoStretchFactor.toFixed(5)} voters=${voters.length} residualRms=${residualRms.toFixed(0)}ms`,
+  );
+  return {
+    offsetMs: Math.round(videoStretchFactor * fit.intercept),
+    videoStretchFactor,
+  };
+}
+
+// Estimates how a YouTube video's audio lines up with the Joysound karaoke
+// track: a signed head offset (ms) plus a timestamp stretch factor for
+// speed-shifted uploads. offsetMs positive: the video has extra head
+// material that should be trimmed. Negative: the karaoke track has extra
+// head material, so the video should be delayed. Null: no confident
+// estimate.
 //
 // videoFilename is the MV yt-dlp already downloaded (audio included, see the
 // "-f bv+ba/b" fetch): reading its audio off disk keeps this to zero extra
@@ -1220,11 +1502,11 @@ function estimateOnsetOffsetMs(
 // guideMelodyNotes (when available - i.e. the song has a usable guide
 // melody channel) powers the melody-salience candidate selection; without
 // it, selection falls back to envelope correlation alone.
-export async function computeYoutubeIntroOffsetMs(
+export async function computeYoutubeIntroSync(
   oggBuffer: Buffer,
   videoFilename: string,
   guideMelodyNotes: GuideMelodyNote[] | null = null,
-): Promise<number | null> {
+): Promise<IntroSyncMeasurement | null> {
   try {
     const [videoPcm, karaokePcm] = await Promise.all([
       decodeToPcm(videoFilename, INTRO_SYNC_MAX_DECODE_SEC),
@@ -1283,17 +1565,91 @@ export async function computeYoutubeIntroOffsetMs(
       method = "onset";
     }
 
+    // Whatever picked the offset, check whether the video's tempo even
+    // matches the karaoke's before trusting it as a constant - a
+    // speed-shifted upload drifts steadily and the drift fit both proves it
+    // and corrects the head offset for the stretch that will cancel it.
+    let measurement: IntroSyncMeasurement | null = null;
+    if (offsetMs !== null) {
+      measurement = measureVideoDriftAround(
+        karaokeEnvelope,
+        videoEnvelope,
+        karaokeFineEnvelope,
+        videoFineEnvelope,
+        offsetMs,
+      ) ?? { offsetMs, videoStretchFactor: 1 };
+    }
+
     console.info(
-      `computeYoutubeIntroOffsetMs: video=${videoFilename} method=${method} offsetMs=${offsetMs === null ? "no confident estimate" : offsetMs}`,
+      `computeYoutubeIntroSync: video=${videoFilename} method=${method} offsetMs=${measurement === null ? "no confident estimate" : measurement.offsetMs} stretch=${measurement === null ? "-" : measurement.videoStretchFactor.toFixed(5)}`,
     );
 
-    return offsetMs;
+    return measurement;
   } catch (e) {
     console.error(
-      `computeYoutubeIntroOffsetMs failed for video ${videoFilename}: ${e}`,
+      `computeYoutubeIntroSync failed for video ${videoFilename}: ${e}`,
     );
     return null;
   }
+}
+
+// Rescales the downloaded MV's video timestamps by stretchFactor (>1 slows
+// it down) so its tempo matches the karaoke track - a copy-codec -itsscale
+// remux, no re-encode. Runs before compose, so the usual trim/pad logic
+// then operates on an already-tempo-matched video. The MV's own audio
+// track is dropped here: intro-sync (the only consumer) has already read
+// it, scaling its timestamps without resampling would corrupt it, and the
+// composite's audio is the JOYSOUND ogg anyway.
+function stretchJoysoundVideoPromise(
+  songId: string,
+  tempFilename: string,
+  stretchFactor: number,
+  ffmpegLogFilename: string,
+): Promise<number> {
+  const stretchedFilename = `${tempFilename}.stretched`;
+
+  return new Promise((resolve, reject) => {
+    const ffmpegArgs = [
+      "-itsscale",
+      stretchFactor.toFixed(6),
+      "-i",
+      tempFilename,
+      "-map",
+      "0:v:0",
+      "-c",
+      "copy",
+      "-movflags",
+      "faststart",
+      "-f",
+      "mp4",
+      "-y",
+      stretchedFilename,
+    ];
+
+    const onExit = (code: number, signal: number) => {
+      if (code === 0) {
+        fs.unlinkSync(tempFilename);
+        fs.renameSync(stretchedFilename, tempFilename);
+
+        resolve(code);
+      } else {
+        console.error(
+          `Error stretching Joysound video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
+        );
+
+        reject(code);
+      }
+    };
+
+    makeJoysoundFFmpegCall(
+      songId,
+      ffmpegArgs,
+      ffmpegLogFilename,
+      null,
+      onExit,
+      null,
+    );
+  });
 }
 
 function composeJoysoundVideoPromise(
@@ -1426,7 +1782,7 @@ function padJoysoundVideoPromise(
   videoFilename: string,
   ffmpegLogFilename: string,
   // When set, front-pad the video by exactly this many ms (a measured
-  // karaoke-has-extra-head-material delay from computeYoutubeIntroOffsetMs)
+  // karaoke-has-extra-head-material delay from computeYoutubeIntroSync)
   // instead of the legacy heuristic of assuming the video and song should
   // end together.
   overridePadMs: number | null = null,
@@ -1813,13 +2169,14 @@ export function downloadJoysoundData(
     });
   }
 
-  // Signed video-vs-karaoke offset; null when no confident estimate (see
-  // computeYoutubeIntroOffsetMs). Captured for the post-compose pad decision.
-  // Chained after the video download because it reads the MV's audio straight
-  // out of the file that download produced - no second trip to YouTube.
-  let measuredIntroOffsetMs: number | null = null;
+  // Video-vs-karaoke sync measurement (head offset + tempo stretch); null
+  // when no confident estimate (see computeYoutubeIntroSync). Captured for
+  // the stretch step and the post-compose pad decision. Chained after the
+  // video download because it reads the MV's audio straight out of the file
+  // that download produced - no second trip to YouTube.
+  let measuredIntroSync: IntroSyncMeasurement | null = null;
 
-  const introOffsetPromise: Promise<number | null> =
+  const introSyncPromise: Promise<IntroSyncMeasurement | null> =
     queueItem.youtubeVideoId && syncEnabled
       ? Promise.all([videoDataPromise, songDataPromise]).then(
           async ([, raw]) => {
@@ -1829,7 +2186,7 @@ export function downloadJoysoundData(
             // reuse) the extraction and wait for its notes.
             ensureJoysoundGuideMelody(songId, { oggBuffer });
             const scoringData = await getJoysoundScoringData(songId);
-            return computeYoutubeIntroOffsetMs(
+            return computeYoutubeIntroSync(
               oggBuffer,
               tempFilename,
               scoringData === null ? null : parseScoringData(scoringData),
@@ -1840,10 +2197,10 @@ export function downloadJoysoundData(
 
   console.info(`Downloading Joysound video to ${videoFilename}`);
 
-  Promise.all([videoDataPromise, songDataPromise, introOffsetPromise])
+  Promise.all([videoDataPromise, songDataPromise, introSyncPromise])
     .then((values) => {
       const joysoundSongRawData = values[1];
-      measuredIntroOffsetMs = values[2];
+      measuredIntroSync = values[2];
 
       const telopBuffer = decodeJoysoundBase64Field(joysoundSongRawData.telop);
       const oggBuffer = decodeJoysoundBase64Field(joysoundSongRawData.ogg);
@@ -1854,14 +2211,28 @@ export function downloadJoysoundData(
 
       ensureJoysoundGuideMelody(songId, { oggBuffer });
 
-      return composeJoysoundVideoPromise(
-        songId,
-        telopBuffer,
-        oggBuffer,
-        tempFilename,
-        videoFilename,
-        ffmpegLogFilename,
-        measuredIntroOffsetMs,
+      // A speed-shifted MV gets its timestamps rescaled to the karaoke's
+      // tempo first; the offset already accounts for the stretch.
+      const stretchPromise =
+        measuredIntroSync !== null && measuredIntroSync.videoStretchFactor !== 1
+          ? stretchJoysoundVideoPromise(
+              songId,
+              tempFilename,
+              measuredIntroSync.videoStretchFactor,
+              ffmpegLogFilename,
+            )
+          : Promise.resolve(0);
+
+      return stretchPromise.then(() =>
+        composeJoysoundVideoPromise(
+          songId,
+          telopBuffer,
+          oggBuffer,
+          tempFilename,
+          videoFilename,
+          ffmpegLogFilename,
+          measuredIntroSync === null ? null : measuredIntroSync.offsetMs,
+        ),
       );
     })
     .then((data) => {
@@ -1872,8 +2243,8 @@ export function downloadJoysoundData(
 
       if (
         queueItem.youtubeVideoId &&
-        measuredIntroOffsetMs !== null &&
-        measuredIntroOffsetMs < 0
+        measuredIntroSync !== null &&
+        measuredIntroSync.offsetMs < 0
       ) {
         // The karaoke track has extra head material (e.g. a count-off, or a
         // longer intro than the original recording): delay the video by the
@@ -1882,7 +2253,7 @@ export function downloadJoysoundData(
           data,
           videoFilename,
           ffmpegLogFilename,
-          -measuredIntroOffsetMs,
+          -measuredIntroSync.offsetMs,
         );
       }
 

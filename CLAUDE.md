@@ -297,7 +297,19 @@ hook, relay-compile. Persistence is automatic via the `...db` spread.
   fake — on every measured song melody separates true from alias by ≥0.37
   where envelope margins were ~0.05 or inverted. Envelope ranking (with
   confidence gates) is only a fallback when melody data is missing or its
-  ranking is ambiguous. Positive offset → `-ss`
+  ranking is ambiguous. After an offset is picked (by any method),
+  **`measureVideoDriftAround`** checks the tempo actually matches: some MV
+  uploads are speed-shifted (ロミオとシンデレラ's 9HrOqmiEsN8 runs 1.2%
+  fast — a smooth 3.3s of drift across the song that no constant offset can
+  fix). Per-anchor local peaks are collected across the whole track
+  (multiple peaks per anchor — an alias can outscore the honest peak at any
+  single anchor, and a greedy predict-then-search walk got poisoned by
+  exactly that), a RANSAC pass keeps the max-inlier-weight line (same-track
+  pairs give non-drifting songs a ~0-slope winner → no stretch), and a fine
+  refit along it yields the rate; the video's timestamps are then rescaled
+  to the karaoke's tempo (`stretchJoysoundVideoPromise`, a copy-codec
+  `-itsscale` remux, no re-encode) and the head offset drift-corrected
+  (`F·intercept`) before the usual trim/pad. Positive offset → `-ss`
   trim; negative (karaoke has extra head material, e.g. a count-off) →
   frozen-first-frame front-pad. When cross-correlation is inconclusive (the
   common case — a karaoke re-recording rarely envelope-correlates with the
