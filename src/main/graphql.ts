@@ -202,6 +202,13 @@ export function flushReadingCacheOnShutdown(): void {
     readingCacheSaveTimer = null;
   }
   writeReadingCacheToDisk();
+  // Same deal for the DAM prime markers (declared further down): losing them
+  // means the next launch re-searches the whole ranking sweep.
+  if (damPrimeMarkerSaveTimer) {
+    clearTimeout(damPrimeMarkerSaveTimer);
+    damPrimeMarkerSaveTimer = null;
+  }
+  writeDamPrimeMarkersToDisk();
 }
 
 function cacheReading(name: string, yomi: string, canonical: boolean): void {
@@ -322,38 +329,150 @@ function getJoysoundArtistSongCount(
 // kuromoji's guess (see the God knows.../涼宮ハルヒ case). One DAM search per
 // query, deduped; failures are best-effort and leave the kuromoji fallback
 // in place.
-const damPrimeCache = new Map<string, Promise<void>>();
+const damPrimeCache = new Map<string, Promise<boolean>>();
 
+// DAM's keyword search matches by *reading*, not by string: searching
+// リンゴの唄 returns songs titled りんごのうた and 林檎の唄, and Western titles
+// come back with trailing katakana annotations ("Billie Jean [ビリー・ジーン]"
+// for BILLIE JEAN). So a successful prime often caches canonical readings only
+// under the *returned* titles' keys, never under the searched name's own key —
+// which is what the ranking sweeps below key their already-done skip on. Left
+// alone, those names get re-searched on every single launch forever. These
+// markers persist "this exact name was primed recently, whatever came of it";
+// the sweeps skip a marked name until the marker expires (the TTL keeps new
+// DAM catalog additions reachable eventually).
+const DAM_PRIME_MARKER_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+const damPrimeMarkers = new Map<string, number>();
+const DAM_PRIME_MARKER_PATH = path.resolve(
+  TEMP_FOLDER,
+  "dam-prime-markers.json",
+);
+
+function damPrimeMarkerKey(mode: "song" | "artist", name: string): string {
+  return `${mode}:${normalizeForYomiMatch(name)}`;
+}
+
+function loadDamPrimeMarkers(): void {
+  try {
+    if (!fs.existsSync(DAM_PRIME_MARKER_PATH)) return;
+    const parsed = JSON.parse(fs.readFileSync(DAM_PRIME_MARKER_PATH, "utf-8"));
+    const cutoff = Date.now() - DAM_PRIME_MARKER_TTL_MS;
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value === "number" && value > cutoff) {
+        damPrimeMarkers.set(key, value);
+      }
+    }
+  } catch (e) {
+    console.error("[yomi] failed to load DAM prime markers", e);
+  }
+}
+
+let damPrimeMarkerSaveTimer: ReturnType<typeof setTimeout> | null = null;
+function writeDamPrimeMarkersToDisk(): void {
+  try {
+    if (!fs.existsSync(TEMP_FOLDER)) fs.mkdirSync(TEMP_FOLDER);
+    fs.writeFileSync(
+      DAM_PRIME_MARKER_PATH,
+      JSON.stringify(Object.fromEntries(damPrimeMarkers)),
+      "utf-8",
+    );
+  } catch (e) {
+    console.error("[yomi] failed to save DAM prime markers", e);
+  }
+}
+
+function scheduleDamPrimeMarkerSave(): void {
+  if (damPrimeMarkerSaveTimer) return;
+  damPrimeMarkerSaveTimer = setTimeout(() => {
+    damPrimeMarkerSaveTimer = null;
+    writeDamPrimeMarkersToDisk();
+  }, 2000);
+}
+
+function markDamPrimed(mode: "song" | "artist", name: string): void {
+  damPrimeMarkers.set(damPrimeMarkerKey(mode, name), Date.now());
+  scheduleDamPrimeMarkerSave();
+}
+
+function isDamPrimedRecently(mode: "song" | "artist", name: string): boolean {
+  const primedAt = damPrimeMarkers.get(damPrimeMarkerKey(mode, name));
+  return (
+    primedAt !== undefined && primedAt > Date.now() - DAM_PRIME_MARKER_TTL_MS
+  );
+}
+
+// Bracketed segments are annotations, not part of the name: DAM suffixes
+// Western titles with katakana readings ("Billie Jean [ビリー・ジーン]") and
+// its ranking entries carry the same style. Strip them before comparing two
+// names so an annotation-only difference still counts as the same name;
+// anything fuzzier (kana/kanji spelling variants) deliberately doesn't match.
+function stripTitleAnnotations(text: string): string {
+  return text.replace(/[[［][^\]］]*[\]］]/g, " ").trim();
+}
+
+// Resolves true when the DAM search itself succeeded (regardless of whether
+// any result matched the keyword by name), false on failure.
 function primeDamReadings(
   mode: "song" | "artist",
   keyword: string,
   dkwebsys: DkwebsysAPI,
-): Promise<void> {
+): Promise<boolean> {
   const cacheKey = `${mode}:${keyword}`;
   const cached = damPrimeCache.get(cacheKey);
   if (cached) return cached;
 
+  // Beyond folding in every returned name, credit the searched name itself
+  // when results differ from it only by bracket annotations: all such
+  // matches must agree on a single reading (else it's ambiguous and skipped).
+  // This is what lets a ranking entry like "BILLIE JEAN" pick up DAM's
+  // reading from "Billie Jean [ビリー・ジーン]" under its own cache key.
+  const target = normalizeForYomiMatch(stripTitleAnnotations(keyword));
   const pairsPromise =
     mode === "song"
-      ? dkwebsys
-          .getMusicByKeyword(keyword, 30, 0)
-          .then((result) =>
-            result.list.flatMap((song) => [
-              [song.title, song.titleYomi] as const,
-              [song.artist, song.artistYomi] as const,
-            ]),
-          )
-      : dkwebsys
-          .getArtistByKeyword(keyword, 30, 0)
-          .then((result) =>
-            result.list.map(
-              (artist) => [artist.artist, artist.artistYomi] as const,
-            ),
+      ? dkwebsys.getMusicByKeyword(keyword, 30, 0).then((result) => {
+          const pairs = result.list.flatMap((song) => [
+            [song.title, song.titleYomi] as const,
+            [song.artist, song.artistYomi] as const,
+          ]);
+          const matchYomis = new Set(
+            result.list
+              .filter(
+                (song) =>
+                  normalizeForYomiMatch(stripTitleAnnotations(song.title)) ===
+                  target,
+              )
+              .map((song) => song.titleYomi),
           );
+          if (target && matchYomis.size === 1) {
+            pairs.push([keyword, [...matchYomis][0]] as const);
+          }
+          return pairs;
+        })
+      : dkwebsys.getArtistByKeyword(keyword, 30, 0).then((result) => {
+          const pairs = result.list.map(
+            (artist) => [artist.artist, artist.artistYomi] as const,
+          );
+          const matchYomis = new Set(
+            result.list
+              .filter(
+                (artist) =>
+                  normalizeForYomiMatch(
+                    stripTitleAnnotations(artist.artist),
+                  ) === target,
+              )
+              .map((artist) => artist.artistYomi),
+          );
+          if (target && matchYomis.size === 1) {
+            pairs.push([keyword, [...matchYomis][0]] as const);
+          }
+          return pairs;
+        });
 
   const promise = pairsPromise
     .then((pairs) => {
       for (const [name, yomi] of pairs) cacheReading(name, yomi, true);
+      markDamPrimed(mode, keyword);
+      return true;
     })
     .catch((e) => {
       // Don't poison the dedupe cache on a transient failure — drop it so a
@@ -363,6 +482,7 @@ function primeDamReadings(
         `[yomi] DAM canonical-reading lookup failed for "${keyword}"`,
         e,
       );
+      return false;
     });
 
   damPrimeCache.set(cacheKey, promise);
@@ -379,7 +499,11 @@ function primeDamReadings(
 // folding DAM's titleYomi/artistYomi into the persistent reading cache. Run in
 // the background off the launch prefetch (and on-demand chart visits), so the
 // ~hundreds of cold-start lookups are paid once — then only new chart entrants
-// cost anything, since canonical readings never expire or downgrade. Throttled
+// cost anything, since canonical readings never expire or downgrade. Names
+// whose search can never yield a same-key canonical reading (DAM matches
+// keywords by reading, so リンゴの唄 only returns りんごのうた/林檎の唄) are
+// covered by the persisted prime markers instead — searched once per marker
+// TTL, not once per launch. Throttled
 // and best-effort: primeDamReadings already swallows its own failures, but the
 // outer sweep is guarded too — an unhandled rejection in main takes down the
 // whole app.
@@ -397,6 +521,9 @@ function primeRankingReadings(
     seen.add(key);
     // Already have DAM's curated reading for this title — don't spend a search.
     if (readingCache.get(key)?.canonical) continue;
+    // Searched this exact name recently and nothing DAM returned matched it
+    // by name — don't re-pay the search on every launch.
+    if (isDamPrimedRecently("song", entry.name)) continue;
     names.push(entry.name);
   }
 
@@ -431,6 +558,7 @@ function primeRankingArtistReadings(
     if (seen.has(key)) continue;
     seen.add(key);
     if (readingCache.get(key)?.canonical) continue;
+    if (isDamPrimedRecently("artist", entry.name)) continue;
     names.push(entry.name);
   }
 
@@ -3145,6 +3273,7 @@ export function applyGraphQLMiddleware(app: Application) {
 
   db = loadDb();
   loadReadingCache();
+  loadDamPrimeMarkers();
   loadJoysoundArtistSongCountCache();
 
   const server = new ApolloServer<IDataSources>({
