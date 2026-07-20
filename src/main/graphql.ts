@@ -1222,6 +1222,7 @@ type NotARealDb = {
   guideMelodyVolume: number;
   idToAdhocLyrics: Record<string, string[]>;
   joysoundRomajiWordSegmentation: boolean;
+  micOutputEnabled: boolean;
   oledFriendly: boolean;
   pianoRollOpacity: number;
   pianoRollSize: number;
@@ -1253,6 +1254,7 @@ enum SubscriptionEvent {
   Emote = "Emote",
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
   JoysoundRomajiWordSegmentationChanged = "JoysoundRomajiWordSegmentationChanged",
+  MicOutputEnabledChanged = "MicOutputEnabledChanged",
   OledFriendlyChanged = "OledFriendlyChanged",
   PianoRollOpacityChanged = "PianoRollOpacityChanged",
   PianoRollSizeChanged = "PianoRollSizeChanged",
@@ -1298,6 +1300,7 @@ let db: NotARealDb = {
   guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
   idToAdhocLyrics: {},
   joysoundRomajiWordSegmentation: false,
+  micOutputEnabled: true,
   oledFriendly: false,
   pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
   pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
@@ -1368,6 +1371,7 @@ function loadDb(): NotARealDb {
     guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
     idToAdhocLyrics: {},
     joysoundRomajiWordSegmentation: false,
+    micOutputEnabled: true,
     oledFriendly: false,
     pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
     pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
@@ -2263,6 +2267,7 @@ const resolvers = {
         : null,
     guideMelodyVolume: () => db.guideMelodyVolume,
     joysoundRomajiWordSegmentation: () => db.joysoundRomajiWordSegmentation,
+    micOutputEnabled: () => db.micOutputEnabled,
     oledFriendly: () => db.oledFriendly,
     pianoRollOpacity: () => db.pianoRollOpacity,
     pianoRollSize: () => db.pianoRollSize,
@@ -2655,6 +2660,14 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setMicOutputEnabled: (_: any, args: { enabled: boolean }): boolean => {
+      db.micOutputEnabled = args.enabled;
+      pubsub.publish(SubscriptionEvent.MicOutputEnabledChanged, {
+        micOutputEnabledChanged: db.micOutputEnabled,
+      });
+      saveDb();
+      return true;
+    },
     setOledFriendly: (_: any, args: { oledFriendly: boolean }): boolean => {
       db.oledFriendly = args.oledFriendly;
       pubsub.publish(SubscriptionEvent.OledFriendlyChanged, {
@@ -2793,6 +2806,12 @@ const resolvers = {
       subscribe: () =>
         pubsub.asyncIterableIterator([
           SubscriptionEvent.SettingsCollapsedChanged,
+        ]),
+    },
+    micOutputEnabledChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.MicOutputEnabledChanged,
         ]),
     },
     oledFriendlyChanged: {

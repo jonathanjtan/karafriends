@@ -9,6 +9,7 @@ import useBreakEndsAt from "../../../common/hooks/useBreakEndsAt";
 import useBreakMessage from "../../../common/hooks/useBreakMessage";
 import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import useJoysoundRomajiWordSegmentation from "../../../common/hooks/useJoysoundRomajiWordSegmentation";
+import useMicOutputEnabled from "../../../common/hooks/useMicOutputEnabled";
 import useOledFriendly from "../../../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
@@ -44,6 +45,7 @@ const VolumeControls = () => {
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
   const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
     useQueueIntermissionEnabled();
+  const { micOutputEnabled, setMicOutputEnabled } = useMicOutputEnabled();
   const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
   const { setBreakMessage } = useBreakMessage();
   // Break length is a per-phone choice; only the break itself is synced.
@@ -141,6 +143,19 @@ const VolumeControls = () => {
             value={Math.round(guideMelodyVolume * 100)}
             onChange={(e) => setGuideMelodyVolume(Number(e.target.value) / 100)}
           />
+        </div>
+        <div>
+          <button
+            className={styles.recheckButton}
+            onClick={() => setMicOutputEnabled(!micOutputEnabled)}
+          >
+            Mic Output: {micOutputEnabled ? "On" : "Off"}
+          </button>
+          <div className={styles.hint}>
+            Off mutes the mics in the karaoke machine's own speakers, for
+            running them through an external mixer. Pitch tracking and scoring
+            keep working either way.
+          </div>
         </div>
         <div className={styles.sectionHeader}>Piano Roll</div>
         <div>

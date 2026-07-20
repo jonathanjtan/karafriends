@@ -16,6 +16,7 @@ import useBgmVolume from "../common/hooks/useBgmVolume";
 import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
 import useJoysoundRomajiWordSegmentation from "../common/hooks/useJoysoundRomajiWordSegmentation";
+import useMicOutputEnabled from "../common/hooks/useMicOutputEnabled";
 import useOledFriendly from "../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
@@ -188,6 +189,7 @@ function App(props: {
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
   const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
     useQueueIntermissionEnabled();
+  const { micOutputEnabled, setMicOutputEnabled } = useMicOutputEnabled();
   const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
   // Break length is a per-screen choice; only the break itself is synced.
   const [breakMinutes, setBreakMinutes] = useState(5);
@@ -238,6 +240,13 @@ function App(props: {
   useEffect(() => {
     props.audio.guideMelodyGain(guideMelodyVolume);
   }, [props.audio, guideMelodyVolume]);
+
+  // Newly created InputDevices start out with output enabled (the native default), so
+  // this has to re-run when the mic list changes too — otherwise picking a mic
+  // while muted would put it straight into the speakers.
+  useEffect(() => {
+    mics.forEach((mic) => mic.setMicOutputEnabled(micOutputEnabled));
+  }, [mics, micOutputEnabled]);
 
   const { oledFriendly, setOledFriendly } = useOledFriendly();
   const { joysoundRomajiWordSegmentation, setJoysoundRomajiWordSegmentation } =
@@ -535,6 +544,23 @@ function App(props: {
                   ))}
                 </div>
                 <span className="settingSubheader">Options</span>
+                <span
+                  className="settingLabel settingLabelClickable"
+                  title="Off mutes the mics in this app's speakers (for use with an external mixer). Pitch tracking and scoring keep working either way."
+                  onClick={() => setMicOutputEnabled(!micOutputEnabled)}
+                >
+                  Mic Output
+                </span>
+                <div className="switch settingControlWide">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={micOutputEnabled}
+                      onChange={(e) => setMicOutputEnabled(e.target.checked)}
+                    />
+                    <span className="lever"></span>
+                  </label>
+                </div>
                 <span
                   className="settingLabel settingLabelClickable"
                   onClick={() =>

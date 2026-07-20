@@ -14,6 +14,10 @@ declare global {
           midiNumber: number;
           confidence: number;
         };
+        inputDevice_setMicOutputEnabled: (
+          deviceId: number,
+          enabled: boolean,
+        ) => void;
         inputDevice_stop: (deviceId: number) => void;
       };
     };

@@ -48,6 +48,23 @@ contextBridge.exposeInMainWorld("karafriends", {
     inputDevice_getPitch(deviceId: number) {
       return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);
     },
+    // Parcel rebuilds this bundle without necessarily re-copying index.node
+    // (it will reuse a cached copy), so the addon behind us can be older than
+    // this wrapper. A missing mic-output binding is a degraded toggle; throwing here
+    // would kill the renderer's <App> and blank the big screen instead.
+    inputDevice_setMicOutputEnabled(deviceId: number, enabled: boolean) {
+      if (typeof nativeAudio.inputDevice_setMicOutputEnabled !== "function") {
+        console.warn(
+          "preload: native addon predates inputDevice_setMicOutputEnabled; ignoring mic output change",
+        );
+        return;
+      }
+
+      return nativeAudio.inputDevice_setMicOutputEnabled(
+        inputDevices[deviceId],
+        enabled,
+      );
+    },
     inputDevice_stop(deviceId: number) {
       return nativeAudio.inputDevice_stop(inputDevices[deviceId]);
     },

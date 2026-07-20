@@ -62,6 +62,13 @@ fn input_device__get_pitch(mut cx: FunctionContext) -> JsResult<JsObject> {
     Ok(js_object)
 }
 
+fn input_device__set_mic_output_enabled(mut cx: FunctionContext) -> JsResult<JsUndefined> {
+    let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
+    let enabled = cx.argument::<JsBoolean>(1)?.value(&mut cx);
+    device.borrow().set_mic_output_enabled(enabled);
+    Ok(cx.undefined())
+}
+
 fn input_device__stop(mut cx: FunctionContext) -> JsResult<JsUndefined> {
     let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
     if let Err(e) = device.borrow().stop() {
@@ -76,6 +83,10 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("inputDevices", input_devices)?;
     cx.export_function("inputDevice_new", input_device__new)?;
     cx.export_function("inputDevice_getPitch", input_device__get_pitch)?;
+    cx.export_function(
+        "inputDevice_setMicOutputEnabled",
+        input_device__set_mic_output_enabled,
+    )?;
     cx.export_function("inputDevice_stop", input_device__stop)?;
 
     Ok(())

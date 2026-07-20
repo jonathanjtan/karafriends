@@ -32,6 +32,11 @@ type Query {
   # or null for none. Set via the remocon's "Edit Break Message" button.
   breakMessage: BreakMessage
   guideMelodyVolume: Float!
+  # Whether mic audio is played through the app's own speakers (the dry
+  # signal plus its reverb/echo). Turning it off mutes the mics locally so the
+  # room can be mixed through external hardware instead; pitch tracking is
+  # unaffected either way, so scoring and the piano roll keep working.
+  micOutputEnabled: Boolean!
   nicoVideoInfo(videoId: String): NicoVideoInfoResult!
   # Whether the big screen uses the dark OLED-friendly theme. Synced so the
   # remocon can toggle it on the TV remotely.
@@ -129,6 +134,7 @@ type Mutation {
   setBreakEndsAt(endsAt: Float): Boolean!
   setBreakMessage(text: String, author: String): Boolean!
   setGuideMelodyVolume(volume: Float!): Boolean!
+  setMicOutputEnabled(enabled: Boolean!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
   setPianoRollSize(size: Float!): Boolean!
@@ -150,6 +156,7 @@ type Subscription {
   emote: Emote!
   guideMelodyVolumeChanged: Float!
   joysoundRomajiWordSegmentationChanged: Boolean!
+  micOutputEnabledChanged: Boolean!
   oledFriendlyChanged: Boolean!
   pianoRollOpacityChanged: Float!
   pianoRollSizeChanged: Float!

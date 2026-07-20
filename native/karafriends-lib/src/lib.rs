@@ -6,6 +6,7 @@ mod reverb_module;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::iter::{FromIterator, Iterator};
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -40,6 +41,10 @@ pub struct InputDevice {
     pitch_rx: ringbuf::HeapCons<f32>,
     pitch_sample_count: usize,
     pitch_detector: pitch_detector::PitchDetector,
+    // Shared with the input callback, which reads it every buffer. Gates only
+    // the mic's path out to the speakers (dry + reverb); pitch tracking
+    // always sees the raw mic signal.
+    mic_output_enabled: Arc<AtomicBool>,
 }
 
 unsafe impl Send for InputDevice {}
@@ -137,6 +142,8 @@ impl InputDevice {
 
         let error_callback = |e| panic!("{}", e);
 
+        let mic_output_enabled = Arc::new(AtomicBool::new(true));
+
         let input_stream = match best_supported_input_config.sample_format() {
             cpal::SampleFormat::U8 => {
                 let mut input_callback = Self::input_data_callback::<u8>(
@@ -145,6 +152,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -160,6 +168,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -175,6 +184,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -190,6 +200,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -205,6 +216,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -220,6 +232,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -235,6 +248,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -250,6 +264,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -265,6 +280,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -280,6 +296,7 @@ impl InputDevice {
                     channel_selection,
                     pitch_tx,
                     output_tx,
+                    Arc::clone(&mic_output_enabled),
                 )?;
                 input_device.build_input_stream(
                     &input_config,
@@ -394,7 +411,16 @@ impl InputDevice {
             pitch_rx,
             pitch_sample_count,
             pitch_detector,
+            mic_output_enabled,
         })
+    }
+
+    // Mute/unmute the mic in the room's speakers without touching pitch
+    // tracking, so the mics can be mixed through external hardware while
+    // scoring and the piano roll keep working.
+    pub fn set_mic_output_enabled(&self, enabled: bool) {
+        self.mic_output_enabled
+            .store(enabled, AtomicOrdering::Relaxed);
     }
 
     pub fn get_pitch(&mut self) -> Result<(f32, f32)> {
@@ -415,6 +441,7 @@ impl InputDevice {
         channel_selection: usize,
         mut pitch_tx: ringbuf::HeapProd<f32>,
         mut output_tx: ringbuf::HeapProd<f32>,
+        mic_output_enabled: Arc<AtomicBool>,
     ) -> Result<impl FnMut(&[Sample]) + Send + 'static>
     where
         f32: cpal::FromSample<Sample>,
@@ -465,12 +492,24 @@ impl InputDevice {
 
             pitch_tx.push_slice(&mono_samples);
 
-            let mut reverb_samples: Vec<_> = mono_samples.iter().map(|s| s * 0.2).collect();
+            // Everything below is the speaker path — what the room hears out
+            // of the app's own output device. Muting gates it here, at the
+            // reverb's input, so the tail decays out naturally instead of
+            // being chopped off mid-tail; the pitch feed above is untouched,
+            // so scoring and the piano roll keep working while the mics are
+            // mixed through external hardware.
+            let dry_samples: Vec<_> = if mic_output_enabled.load(AtomicOrdering::Relaxed) {
+                mono_samples.clone()
+            } else {
+                vec![0.0; mono_samples.len()]
+            };
+
+            let mut reverb_samples: Vec<_> = dry_samples.iter().map(|s| s * 0.2).collect();
             for reverb in &mut reverbs {
                 reverb_samples = reverb.process(reverb_samples.as_slice());
             }
 
-            let mut output_samples: Vec<_> = mono_samples
+            let mut output_samples: Vec<_> = dry_samples
                 .iter()
                 .zip_longest(reverb_samples.iter())
                 .map(|s| match s {
@@ -656,6 +695,7 @@ mod tests {
             0,
             pitch_tx,
             output_tx,
+            Arc::new(AtomicBool::new(true)),
         )?;
 
         let latency_sample_count =
@@ -690,6 +730,92 @@ mod tests {
         Ok(())
     }
 
+    // Muting the mics has to stay strictly a speaker-path concern: the room
+    // hears nothing, but the pitch feed keeps getting the raw mic signal so
+    // scoring and the piano roll survive being mixed through outboard gear.
+    #[test]
+    fn test_mic_output_disabled_silences_speakers_but_not_pitch() -> Result<()> {
+        let config = cpal::StreamConfig {
+            channels: 1,
+            sample_rate: 44100,
+            buffer_size: cpal::BufferSize::Fixed(256),
+        };
+
+        let (pitch_tx, mut pitch_rx) =
+            ringbuf::HeapRb::new((config.sample_rate as usize).div_ceil(40)).split();
+        let (output_tx, mut output_rx) = ringbuf::HeapRb::new(8192).split();
+
+        let mic_output_enabled = Arc::new(AtomicBool::new(true));
+        let mut input_callback = InputDevice::input_data_callback::<f32>(
+            &config,
+            &config,
+            0,
+            pitch_tx,
+            output_tx,
+            Arc::clone(&mic_output_enabled),
+        )?;
+
+        let input_samples = wf!(f32, config.sample_rate as f32, sine!(185.0))
+            .iter()
+            .take(1024)
+            .collect::<Vec<_>>();
+
+        // Baseline: mic output on, so the mic is audible.
+        input_callback(&input_samples);
+        let output_samples: Vec<f32> = output_rx.pop_iter().collect();
+        let pitch_samples: Vec<f32> = pitch_rx.pop_iter().collect();
+        let unmuted_peak = output_samples.iter().fold(0.0f32, |a, s| a.max(s.abs()));
+        assert!(unmuted_peak > 0.01);
+        assert_eq!(input_samples[..pitch_samples.len()], pitch_samples);
+
+        // Muting gates the reverb's input rather than its output, so the dry
+        // signal drops out immediately while the tail rings down naturally
+        // instead of being chopped off. Both are worth pinning: the first
+        // muted buffer is already far below the unmuted level...
+        mic_output_enabled.store(false, AtomicOrdering::Relaxed);
+        input_callback(&input_samples);
+        let first_muted: Vec<f32> = output_rx.pop_iter().collect();
+        let first_muted_peak = first_muted.iter().fold(0.0f32, |a, s| a.max(s.abs()));
+        pitch_rx.pop_iter().for_each(drop);
+        assert!(
+            first_muted_peak < unmuted_peak / 10.0,
+            "dry signal not gated immediately: {} vs unmuted {}",
+            first_muted_peak,
+            unmuted_peak
+        );
+
+        // ...and the tail decays to true silence rather than settling at some
+        // steady-state leak. It measures ~6e-10 by here, so -80dBFS is a
+        // generous bound that still fails loudly if the gate ever leaks.
+        for _ in 0..160 {
+            input_callback(&input_samples);
+            output_rx.pop_iter().for_each(drop);
+            pitch_rx.pop_iter().for_each(drop);
+        }
+
+        input_callback(&input_samples);
+        let output_samples: Vec<f32> = output_rx.pop_iter().collect();
+        let pitch_samples: Vec<f32> = pitch_rx.pop_iter().collect();
+        assert!(!output_samples.is_empty());
+        let peak = output_samples.iter().fold(0.0f32, |a, s| a.max(s.abs()));
+        assert!(
+            peak < 0.0001,
+            "speaker path not silent while muted: {}",
+            peak
+        );
+        // The whole point: pitch still sees the mic verbatim while muted.
+        assert_eq!(input_samples[..pitch_samples.len()], pitch_samples);
+        assert!(pitch_samples.iter().any(|s| s.abs() > 0.01));
+
+        // Unmuting brings the mic straight back.
+        mic_output_enabled.store(true, AtomicOrdering::Relaxed);
+        input_callback(&input_samples);
+        let output_samples: Vec<f32> = output_rx.pop_iter().collect();
+        assert!(output_samples.iter().any(|s| s.abs() > 0.01));
+
+        Ok(())
+    }
+
     #[test]
     fn test_input_callback_upsampling() -> Result<()> {
         let input_config = cpal::StreamConfig {
@@ -716,6 +842,7 @@ mod tests {
             0,
             pitch_tx,
             output_tx,
+            Arc::new(AtomicBool::new(true)),
         )?;
 
         let input_samples = wf!(f32, input_config.sample_rate as f32, sine!(185.0))
@@ -766,6 +893,7 @@ mod tests {
             0,
             pitch_tx,
             output_tx,
+            Arc::new(AtomicBool::new(true)),
         )?;
 
         let input_samples = wf!(f32, input_config.sample_rate as f32, sine!(185.0))
