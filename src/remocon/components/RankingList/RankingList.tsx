@@ -48,17 +48,20 @@ const RankingListItem = ({ song }: { song: RankingSongData }) => (
 
 const RankingList = ({ songs, linkBase }: Props) => (
   <List>
-    {songs.map((song) =>
-      song.songId ? (
-        <Link key={song.rank} to={`${linkBase}/${song.songId}`}>
+    {songs.map((song) => {
+      // Charts tie, so rank alone is not unique (two rank-84 rows is a real
+      // JOYSOUND weekly chart) and React drops rows that share a key.
+      const key = `${song.rank}-${song.name}-${song.artistName}`;
+      return song.songId ? (
+        <Link key={key} to={`${linkBase}/${song.songId}`}>
           <RankingListItem song={song} />
         </Link>
       ) : (
-        <div key={song.rank} className={styles.unavailable}>
+        <div key={key} className={styles.unavailable}>
           <RankingListItem song={song} />
         </div>
-      ),
-    )}
+      );
+    })}
   </List>
 );
 

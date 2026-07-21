@@ -41,17 +41,19 @@ const RankingArtistItem = ({ artist }: { artist: RankingArtistData }) => (
 
 const RankingArtistList = ({ artists, linkBase }: Props) => (
   <List>
-    {artists.map((artist) =>
-      artist.artistId ? (
-        <Link key={artist.rank} to={`${linkBase}/${artist.artistId}`}>
+    {artists.map((artist) => {
+      // Charts tie, so rank alone is not unique — see RankingList.
+      const key = `${artist.rank}-${artist.name}`;
+      return artist.artistId ? (
+        <Link key={key} to={`${linkBase}/${artist.artistId}`}>
           <RankingArtistItem artist={artist} />
         </Link>
       ) : (
-        <div key={artist.rank} className={styles.unavailable}>
+        <div key={key} className={styles.unavailable}>
           <RankingArtistItem artist={artist} />
         </div>
-      ),
-    )}
+      );
+    })}
   </List>
 );
 
