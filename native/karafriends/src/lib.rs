@@ -50,15 +50,17 @@ fn input_device__new(
 fn input_device__get_pitch(mut cx: FunctionContext) -> JsResult<JsObject> {
     let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
     let mut device = device.borrow_mut();
-    let (midi_number, confidence) = match device.get_pitch() {
-        Ok((midi_number, confidence)) => (midi_number, confidence),
+    let (midi_number, confidence, rms) = match device.get_pitch() {
+        Ok((midi_number, confidence, rms)) => (midi_number, confidence, rms),
         Err(e) => return cx.throw_error(e.to_string()),
     };
     let js_object = JsObject::new(&mut cx);
     let midi_number = cx.number(midi_number);
     let confidence = cx.number(confidence);
+    let rms = cx.number(rms);
     js_object.set(&mut cx, "midiNumber", midi_number)?;
     js_object.set(&mut cx, "confidence", confidence)?;
+    js_object.set(&mut cx, "rms", rms)?;
     Ok(js_object)
 }
 

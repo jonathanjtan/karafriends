@@ -37,6 +37,12 @@ type Query {
   # room can be mixed through external hardware instead; pitch tracking is
   # unaffected either way, so scoring and the piano roll keep working.
   micOutputEnabled: Boolean!
+  # Whether quiet mic signal is ignored for pitch tracking (an absolute RMS
+  # floor). For setups where an external mixer's FX return (echo/reverb of
+  # every mic) bleeds into the per-mic channels: the bleed is quiet but
+  # periodic, so without the gate an idle mic ghost-draws the active singer's
+  # melody on the piano roll. Off by default (the historical behavior).
+  micRmsGateEnabled: Boolean!
   nicoVideoInfo(videoId: String): NicoVideoInfoResult!
   # Whether the big screen uses the dark OLED-friendly theme. Synced so the
   # remocon can toggle it on the TV remotely.
@@ -135,6 +141,7 @@ type Mutation {
   setBreakMessage(text: String, author: String): Boolean!
   setGuideMelodyVolume(volume: Float!): Boolean!
   setMicOutputEnabled(enabled: Boolean!): Boolean!
+  setMicRmsGateEnabled(enabled: Boolean!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
   setPianoRollSize(size: Float!): Boolean!
@@ -157,6 +164,7 @@ type Subscription {
   guideMelodyVolumeChanged: Float!
   joysoundRomajiWordSegmentationChanged: Boolean!
   micOutputEnabledChanged: Boolean!
+  micRmsGateEnabledChanged: Boolean!
   oledFriendlyChanged: Boolean!
   pianoRollOpacityChanged: Float!
   pianoRollSizeChanged: Float!

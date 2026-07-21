@@ -423,10 +423,19 @@ impl InputDevice {
             .store(enabled, AtomicOrdering::Relaxed);
     }
 
-    pub fn get_pitch(&mut self) -> Result<(f32, f32)> {
+    pub fn get_pitch(&mut self) -> Result<(f32, f32, f32)> {
         let mut samples = vec![0.0; self.pitch_sample_count];
-        self.pitch_rx.pop_slice(&mut samples);
-        Ok(self.pitch_detector.detect(samples))
+        let popped = self.pitch_rx.pop_slice(&mut samples);
+        // RMS over only the samples actually captured this window: the poll
+        // and the input callback aren't synchronized, so a partially-filled
+        // window would otherwise understate the level (zeros diluting it) and
+        // make an absolute-level gate flap on loud singing. YIN itself is
+        // amplitude-invariant, so callers need this to tell a singer from
+        // quiet-but-periodic bleed (e.g. a mixer's FX return on an idle
+        // channel).
+        let level = rms(&samples[..popped]);
+        let (midi_number, confidence) = self.pitch_detector.detect(samples);
+        Ok((midi_number, confidence, level))
     }
 
     pub fn stop(&self) -> Result<()> {
@@ -566,6 +575,13 @@ impl InputDevice {
                 .for_each(|(sample, float_sample)| *sample = Sample::from_sample(float_sample));
         })
     }
+}
+
+fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
 }
 
 fn compare_configs(
@@ -814,6 +830,18 @@ mod tests {
         assert!(output_samples.iter().any(|s| s.abs() > 0.01));
 
         Ok(())
+    }
+
+    #[test]
+    fn test_rms() {
+        assert_eq!(rms(&[]), 0.0);
+        assert_eq!(rms(&[0.0; 512]), 0.0);
+        // A full-scale sine has an RMS of 1/sqrt(2).
+        let sine_samples = wf!(f32, 44100.0, sine!(441.0))
+            .iter()
+            .take(4410)
+            .collect::<Vec<_>>();
+        assert!((rms(&sine_samples) - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.001);
     }
 
     #[test]

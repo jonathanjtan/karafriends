@@ -1351,6 +1351,7 @@ type NotARealDb = {
   idToAdhocLyrics: Record<string, string[]>;
   joysoundRomajiWordSegmentation: boolean;
   micOutputEnabled: boolean;
+  micRmsGateEnabled: boolean;
   oledFriendly: boolean;
   pianoRollOpacity: number;
   pianoRollSize: number;
@@ -1383,6 +1384,7 @@ enum SubscriptionEvent {
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
   JoysoundRomajiWordSegmentationChanged = "JoysoundRomajiWordSegmentationChanged",
   MicOutputEnabledChanged = "MicOutputEnabledChanged",
+  MicRmsGateEnabledChanged = "MicRmsGateEnabledChanged",
   OledFriendlyChanged = "OledFriendlyChanged",
   PianoRollOpacityChanged = "PianoRollOpacityChanged",
   PianoRollSizeChanged = "PianoRollSizeChanged",
@@ -1429,6 +1431,7 @@ let db: NotARealDb = {
   idToAdhocLyrics: {},
   joysoundRomajiWordSegmentation: false,
   micOutputEnabled: true,
+  micRmsGateEnabled: false,
   oledFriendly: false,
   pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
   pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
@@ -1500,6 +1503,7 @@ function loadDb(): NotARealDb {
     idToAdhocLyrics: {},
     joysoundRomajiWordSegmentation: false,
     micOutputEnabled: true,
+    micRmsGateEnabled: false,
     oledFriendly: false,
     pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
     pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
@@ -2396,6 +2400,7 @@ const resolvers = {
     guideMelodyVolume: () => db.guideMelodyVolume,
     joysoundRomajiWordSegmentation: () => db.joysoundRomajiWordSegmentation,
     micOutputEnabled: () => db.micOutputEnabled,
+    micRmsGateEnabled: () => db.micRmsGateEnabled,
     oledFriendly: () => db.oledFriendly,
     pianoRollOpacity: () => db.pianoRollOpacity,
     pianoRollSize: () => db.pianoRollSize,
@@ -2796,6 +2801,14 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setMicRmsGateEnabled: (_: any, args: { enabled: boolean }): boolean => {
+      db.micRmsGateEnabled = args.enabled;
+      pubsub.publish(SubscriptionEvent.MicRmsGateEnabledChanged, {
+        micRmsGateEnabledChanged: db.micRmsGateEnabled,
+      });
+      saveDb();
+      return true;
+    },
     setOledFriendly: (_: any, args: { oledFriendly: boolean }): boolean => {
       db.oledFriendly = args.oledFriendly;
       pubsub.publish(SubscriptionEvent.OledFriendlyChanged, {
@@ -2940,6 +2953,12 @@ const resolvers = {
       subscribe: () =>
         pubsub.asyncIterableIterator([
           SubscriptionEvent.MicOutputEnabledChanged,
+        ]),
+    },
+    micRmsGateEnabledChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.MicRmsGateEnabledChanged,
         ]),
     },
     oledFriendlyChanged: {

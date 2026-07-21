@@ -17,6 +17,7 @@ import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
 import useJoysoundRomajiWordSegmentation from "../common/hooks/useJoysoundRomajiWordSegmentation";
 import useMicOutputEnabled from "../common/hooks/useMicOutputEnabled";
+import useMicRmsGateEnabled from "../common/hooks/useMicRmsGateEnabled";
 import useOledFriendly from "../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
@@ -190,6 +191,7 @@ function App(props: {
   const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
     useQueueIntermissionEnabled();
   const { micOutputEnabled, setMicOutputEnabled } = useMicOutputEnabled();
+  const { micRmsGateEnabled, setMicRmsGateEnabled } = useMicRmsGateEnabled();
   const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
   // Break length is a per-screen choice; only the break itself is synced.
   const [breakMinutes, setBreakMinutes] = useState(5);
@@ -557,6 +559,23 @@ function App(props: {
                       type="checkbox"
                       checked={micOutputEnabled}
                       onChange={(e) => setMicOutputEnabled(e.target.checked)}
+                    />
+                    <span className="lever"></span>
+                  </label>
+                </div>
+                <span
+                  className="settingLabel settingLabelClickable"
+                  title="On ignores quiet mic signal for pitch tracking. Use when a mixer's echo/reverb bleeds into the mic channels and idle mics ghost-draw the active singer's melody."
+                  onClick={() => setMicRmsGateEnabled(!micRmsGateEnabled)}
+                >
+                  Pitch Gate
+                </span>
+                <div className="switch settingControlWide">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={micRmsGateEnabled}
+                      onChange={(e) => setMicRmsGateEnabled(e.target.checked)}
                     />
                     <span className="lever"></span>
                   </label>

@@ -7,11 +7,13 @@ import getNormals from "polyline-normals";
 import React, { useEffect, useRef, useState } from "react";
 
 import {
+  MIC_RMS_GATE_THRESHOLD,
   PIANO_ROLL_CURSOR_FRACTION as CURSOR_FRACTION,
   PIANO_ROLL_LOOKAHEAD_SECS,
   PIANO_ROLL_TIME_WIDTH_SECS as TIME_WIDTH_SECS,
   PIANO_ROLL_TOP_FRACTION,
 } from "../common/constants";
+import useMicRmsGateEnabled from "../common/hooks/useMicRmsGateEnabled";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { parseScoringData } from "../common/scoringData";
@@ -470,6 +472,14 @@ export default function PianoRoll(props: {
   const { pianoRollOpacity } = usePianoRollOpacity();
   const { pianoRollSize } = usePianoRollSize();
 
+  // Read through a ref inside pollPitch: the GL effect's deps only cover
+  // props identity, so its closures would otherwise capture a stale value
+  // (and adding it to the deps would rebuild the whole GL pipeline mid-song
+  // on every toggle).
+  const { micRmsGateEnabled } = useMicRmsGateEnabled();
+  const micRmsGateEnabledRef = useRef(false);
+  micRmsGateEnabledRef.current = micRmsGateEnabled;
+
   useEffect(() => {
     const video = props.videoRef.current;
     if (!video) return;
@@ -533,7 +543,19 @@ export default function PianoRoll(props: {
 
     function pollPitch(mic: InputDevice | null, buffer: PitchDetectionBuffer) {
       if (!mic || !props.videoRef.current) return;
-      const { midiNumber, confidence } = mic.getPitch();
+      const { midiNumber, confidence, rms } = mic.getPitch();
+      // Confidence can't catch quiet-but-periodic bleed (YIN normalizes
+      // amplitude away), so the gate is an absolute level floor instead.
+      // rms is undefined when the addon behind us predates it (Parcel can
+      // reuse a cached index.node); the gate is then inert rather than
+      // gating everything.
+      if (
+        micRmsGateEnabledRef.current &&
+        typeof rms === "number" &&
+        rms < MIC_RMS_GATE_THRESHOLD
+      ) {
+        return;
+      }
       if (
         confidence >= 0.8 &&
         midiNumber !== 0 &&

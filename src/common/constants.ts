@@ -17,3 +17,11 @@ export const PIANO_ROLL_TIME_WIDTH_SECS = 7.0;
 export const PIANO_ROLL_CURSOR_FRACTION = 0.3;
 export const PIANO_ROLL_LOOKAHEAD_SECS =
   PIANO_ROLL_TIME_WIDTH_SECS * (1 - PIANO_ROLL_CURSOR_FRACTION);
+
+// Absolute RMS floor (linear full-scale) below which pitch frames are
+// discarded while the Pitch Gate setting is on. 0.02 ≈ -34 dBFS: singing
+// into a properly gained mic runs around -20..-12 dBFS RMS, while a mixer's
+// FX-return bleed on an idle channel sits well below its dry source. The
+// pitch detector is amplitude-invariant, so this floor — not confidence —
+// is what separates the two.
+export const MIC_RMS_GATE_THRESHOLD = 0.02;
