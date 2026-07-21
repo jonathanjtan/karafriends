@@ -10,6 +10,11 @@
   opacity: 0.45;
 }
 
+// Oricon rows have no yomi, so they can't use WeebText's bold span.
+.oriconName {
+  font-weight: bold;
+}
+
 .rank {
   flex-shrink: 0;
   min-width: 34px;

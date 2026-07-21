@@ -17,6 +17,8 @@ import JoysoundRankingPage from "./pages/JoysoundRankingPage";
 import JoysoundSongPage from "./pages/JoysoundSongPage";
 import JoysoundSongSearchPage from "./pages/JoysoundSongSearchPage";
 import NiconicoPage from "./pages/NiconicoPage";
+import OriconRankingPage from "./pages/OriconRankingPage";
+import OriconSongPage from "./pages/OriconSongPage";
 import ProfilePage from "./pages/ProfilePage";
 import SongPage from "./pages/SongPage";
 import SongSearchPage from "./pages/SongSearchPage";
@@ -96,6 +98,14 @@ const App = () => {
               <Route
                 path="/ranking/dam/:category?/:period?"
                 element={<DamRankingPage />}
+              />
+              <Route
+                path="/ranking/oricon/:year?"
+                element={<OriconRankingPage />}
+              />
+              <Route
+                path="/search/oricon/:query/:artist?"
+                element={<OriconSongPage />}
               />
               <Route path="/history" element={<HistoryPage />} />
               <Route path="/profile" element={<ProfilePage />} />

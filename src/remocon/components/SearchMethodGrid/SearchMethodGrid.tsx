@@ -5,14 +5,15 @@ import React from "react";
 import damLogo from "url:../../images/dam-logo.png";
 // tslint:disable-next-line:no-submodule-imports no-implicit-dependencies
 import joysoundLogo from "url:../../images/joysound-logo.svg";
+import OriconGridItem from "./OriconGridItem";
 import RankingGridItem from "./RankingGridItem";
 import * as styles from "./SearchMethodGrid.module.scss";
 import SearchMethodGridItem from "./SearchMethodGridItem";
 
 // Each service gets a thin vertical brand banner running down the left of
 // its section, spanning both the Title/Artist row and the TOP 100 row. The
-// YouTube/Niconico section has no banner — an empty spacer keeps its squares
-// on the same columns.
+// last section has no banner and no catalog behind it — Oricon, YouTube and
+// Niconico share a full-width row of three.
 const SearchMethodGrid = () => (
   <div>
     <h2>Find a song</h2>
@@ -35,8 +36,8 @@ const SearchMethodGrid = () => (
         <div className={styles.rankingRowSizer} aria-hidden="true" />
         <RankingGridItem service="dam" />
       </div>
-      <div className={styles.serviceSection}>
-        <div aria-hidden="true" />
+      <div className={styles.mediaSection}>
+        <OriconGridItem />
         <SearchMethodGridItem method="youtube" text="YouTube" />
         <SearchMethodGridItem method="niconico" text="Niconico" />
       </div>

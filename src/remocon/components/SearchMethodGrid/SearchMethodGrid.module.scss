@@ -14,6 +14,7 @@ $search-method-colors: (
   joysoundArtist: #f77403,
   youtube: #e79ca1,
   niconico: #ababab,
+  oricon: #b39ddb,
   joysound: $ranking-gold,
   dam: $ranking-platinum,
 );
@@ -45,6 +46,35 @@ $banner-width: 30px;
     text-decoration: none;
     display: block;
     height: 100%;
+  }
+}
+
+// Oricon/YouTube/Niconico aren't searchable catalogs, so they get no brand
+// banner — the row spans the full width as three equal columns instead of the
+// services' banner + two.
+.mediaSection {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+
+  a {
+    text-decoration: none;
+    display: block;
+    height: 100%;
+  }
+
+  // Grid items default to min-width:auto, so the widest label ("Niconico")
+  // would hold the third column open past the viewport and scroll the page
+  // sideways.
+  > div {
+    min-width: 0;
+  }
+
+  // "Oricon Top 10" wraps to two lines in a third-width tile; the tightened
+  // leading keeps both inside the button on narrow (320px) phones.
+  .text {
+    font-size: 22px;
+    line-height: 1.05;
   }
 }
 
