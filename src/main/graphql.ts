@@ -54,6 +54,8 @@ import {
   getJoysoundArtistRanking,
   getJoysoundRanking,
   getJoysoundRankingMonths,
+  getOriconWeeklyRanking,
+  OriconWeeklyChart,
   primeRankings,
   RankingArtistEntry,
   RankingCategory,
@@ -1898,6 +1900,11 @@ const resolvers = {
       }),
     joysoundRankingMonths: (): Promise<RankingMonth[]> =>
       getJoysoundRankingMonths(),
+    // No reading prime here, unlike the DAM/JOYSOUND charts: Oricon rows
+    // aren't catalog entries, so priming them would spend a DAM search per
+    // row on names we never link by id anyway.
+    oriconWeeklyRanking: (): Promise<OriconWeeklyChart> =>
+      getOriconWeeklyRanking(),
     joysoundSongDetail: (
       _: any,
       args: { id: string },

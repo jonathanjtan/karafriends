@@ -31,6 +31,21 @@ export interface RankingArtistEntry {
   readonly name: string;
 }
 
+// One entry of Oricon's karaoke chart. No id field: Oricon is a third-party
+// chart with its own title/artist spellings, so nothing here maps onto a
+// catalog until it's searched for.
+export interface OriconChartEntry {
+  readonly rank: number;
+  readonly name: string;
+  readonly artistName: string;
+}
+
+export interface OriconWeeklyChart {
+  // Which week this chart covers (YYYY-MM-DD), as Oricon dates it.
+  readonly date: string;
+  readonly songs: ReadonlyArray<OriconChartEntry>;
+}
+
 // One option in the JOYSOUND monthly month-picker. `value` is a YYYYMM archive
 // or null for the current (latest) month; `label` is the site's own button
 // text (e.g. "6月").
@@ -152,6 +167,28 @@ async function fetchPage(url: string): Promise<string> {
   }
 
   return resp.text();
+}
+
+// Oricon serves Shift_JIS, unlike joysound.com and clubdam.com — resp.text()
+// would mangle every Japanese title, so its pages are decoded explicitly.
+// The final URL comes back too: the dateless weekly URL redirects to the
+// newest week, and that's how we learn which week we got.
+async function fetchOriconPage(
+  url: string,
+): Promise<{ html: string; finalUrl: string }> {
+  const resp = await nodeFetch(url, {
+    agent: tunnelAgent,
+    headers: { "User-Agent": USER_AGENT },
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Ranking fetch for ${url} failed: HTTP ${resp.status}`);
+  }
+
+  return {
+    html: new TextDecoder("sjis").decode(await resp.arrayBuffer()),
+    finalUrl: resp.url,
+  };
 }
 
 // DAM song titles/artists arrive as HTML text nodes; JOYSOUND's come out of
@@ -714,6 +751,82 @@ export function getDamArtistRanking(
       return entries.slice(0, 100);
     },
   );
+}
+
+// Oricon's chart pages — weekly and yearly alike — render each entry as a
+// <section class="box-rank-entry"> holding the rank, title and artist. No
+// catalog ids anywhere: it's a third-party chart, so rows are mapped onto
+// singable songs later, by search.
+function parseOriconRanking(html: string): OriconChartEntry[] {
+  const entries: OriconChartEntry[] = [];
+  const blocks =
+    html.match(/<section class="box-rank-entry[\s\S]*?<\/section>/g) || [];
+
+  for (const block of blocks) {
+    const pick = (pattern: RegExp): string | null => {
+      const matched = block.match(pattern);
+      return matched
+        ? decodeHtmlEntities(matched[1].replace(/<[^>]+>/g, "")).trim()
+        : null;
+    };
+
+    const rank = pick(/<p class="num[^"]*"[^>]*>([\s\S]*?)<\/p>/);
+    const name = pick(/<h2 class="title[^"]*"[^>]*>([\s\S]*?)<\/h2>/);
+    const artistName = pick(/<p class="name[^"]*"[^>]*>([\s\S]*?)<\/p>/);
+
+    if (!rank || !name) continue;
+
+    entries.push({
+      rank: Number(rank.replace(/\D/g, "")),
+      name,
+      artistName: artistName || "",
+    });
+  }
+
+  return entries;
+}
+
+// Oricon publishes karaoke charts weekly and yearly only — there is no
+// /rank/ko/m/ monthly page (404). Past years are paywalled and immutable, so
+// they're a static table in common/oriconChart.ts; only the current week has
+// to be fetched. The dateless /rank/ko/w/ redirects to the newest week, so
+// this needs no date arithmetic — which week we landed on is read back off
+// the final URL.
+//
+// The weekly chart is a Top 20 split over two pages (…/ and …/p/2/), unlike
+// the yearly one, which really is a Top 10 — /y/<year>/p/2/ 404s. Page 2 is
+// best-effort: a chart of 10 beats erroring out of the whole thing.
+//
+// Cached with weekly freshness, so this is two fetches per calendar week —
+// which is what keeps a rate-limit-happy site at arm's length.
+export function getOriconWeeklyRanking(): Promise<OriconWeeklyChart> {
+  return withRankingCache<OriconWeeklyChart>(
+    "oricon:WEEKLY",
+    "WEEKLY",
+    async () => {
+      const { html, finalUrl } = await fetchOriconPage(
+        "https://www.oricon.co.jp/rank/ko/w/",
+      );
+      const songs = parseOriconRanking(html);
+
+      if (songs.length === 0) {
+        throw new Error(
+          "Failed to parse any songs out of the Oricon weekly ranking",
+        );
+      }
+
+      try {
+        const second = await fetchOriconPage(`${finalUrl}p/2/`);
+        songs.push(...parseOriconRanking(second.html));
+      } catch (error) {
+        console.warn("Oricon weekly ranking page 2 failed:", error);
+      }
+
+      const dated = finalUrl.match(/\/w\/(\d{4}-\d{2}-\d{2})\//);
+
+      return [{ date: dated ? dated[1] : "", songs: songs.slice(0, 20) }];
+    },
+  ).then(([chart]) => chart);
 }
 
 // The month-picker options are the same across all JOYSOUND monthly charts, so

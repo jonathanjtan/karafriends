@@ -27,7 +27,9 @@ const OriconRankingList = ({ songs, linkBase }: Props) => (
   <List>
     {songs.map((song) => (
       <Link
-        key={song.rank}
+        // Rank alone isn't unique — charts tie (JOYSOUND's weekly currently
+        // has two songs at 84), and a duplicate key lets React drop a row.
+        key={`${song.rank}-${song.name}`}
         to={`${linkBase}/${encodeURIComponent(
           song.name,
         )}/${encodeURIComponent(song.artistName)}`}

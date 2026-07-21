@@ -15,7 +15,7 @@ const OriconGridItem = () => (
         <span className={styles.icon}>
           <FaChartBar />
         </span>
-        <span className={styles.text}>Oricon Top 10</span>
+        <span className={styles.text}>Oricon Top N</span>
       </div>
     </Link>
   </div>

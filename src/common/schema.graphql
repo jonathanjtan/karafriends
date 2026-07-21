@@ -89,6 +89,11 @@ type Query {
   # Months JOYSOUND offers for its monthly charts (current + ~5 archives),
   # newest first, for the remocon's month picker.
   joysoundRankingMonths: [RankingMonth!]!
+  # Oricon's current-week karaoke Top 20 (oricon.co.jp), which the site splits
+  # over two pages. Past years are paywalled, never change, and are only ever a
+  # Top 10, so those ship as a static table in common/oriconChart.ts — the live
+  # week is the only part that needs fetching.
+  oriconWeeklyRanking: OriconWeeklyChart!
   # Whether JOYSOUND romaji lyrics are segmented at word boundaries (kuromoji
   # tokenization, e.g. あるもの -> "aru mono") instead of only at script-class
   # boundaries (e.g. "arumono"). Synced so it can be A/B toggled live from the
@@ -338,6 +343,25 @@ type RankingArtist {
   artistId: ID
   name: String!
   nameYomi: String!
+}
+
+# One entry of Oricon's karaoke chart. Unlike RankingSong there is no id of
+# any kind: Oricon is a third-party chart that spells titles and artists its
+# own way, so a row only becomes singable once it's searched for on DAM or
+# JOYSOUND. (Also keeps Relay from normalizing rows across charts — see the
+# note on RankingSong.songId.)
+type OriconChartSong {
+  rank: Int!
+  name: String!
+  artistName: String!
+}
+
+# Oricon's current-week chart, plus the week it covers (YYYY-MM-DD). The week
+# isn't chosen by the caller: the dateless chart URL redirects to the newest
+# week, and this reports which one that turned out to be.
+type OriconWeeklyChart {
+  date: String!
+  songs: [OriconChartSong!]!
 }
 
 # One option in JOYSOUND's monthly month-picker. `value` is a YYYYMM archive,
