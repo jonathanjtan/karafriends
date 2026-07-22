@@ -11,13 +11,11 @@
      resizing the codes can't leave the text reservation behind.
 
      --qr-size is the whole box (border-box — Materialize sets it globally),
-     so the code itself renders at size - 2*--qr-quiet. At 26vh on a 1080p
-     projector that's a 259px code, ~7px per module, which stays scannable
-     from across a room; 16vh gave 4.1px per module and only read from a
-     few feet away. */
+     and the canvas fills it edge to edge. At 26vh on a 1080p projector that's
+     a 281px code, ~7.6px per module, which stays scannable from across a
+     room; 16vh gave 4.1px per module and only read from a few feet away. */
   --qr-size: 26vh;
   --qr-offset: 3vh;
-  --qr-quiet: 1vh;
   /* Reserve the codes' footprint (offset + box; the quiet zone is inside the
      box) plus 1vh of clearance, so text never runs underneath. max() falls
      back to the original 6vw on wide screens where that's already bigger. */
@@ -60,16 +58,26 @@
   }
 }
 
-/* QR codes need a background and quiet zone to scan reliably against the dark
-   overlay. The two corners are identical apart from their background and which
-   edge they hang off, so everything else lives here. */
+/* QR codes need a quiet zone to scan reliably against the dark overlay. The
+   canvas already renders one — qrcode's default 4-module margin, drawn in the
+   variant's own light colour — so this box deliberately has NO padding: adding
+   any would stack a second quiet zone on top of the first and shrink the
+   modules for no benefit (it cost ~8% of the code's size before). The
+   background is only a fallback for the frame before the canvas paints.
+
+   The two corners are identical apart from that background and which edge they
+   hang off, so everything else lives here. */
 .queueIntermissionQr,
 .queueIntermissionQrInverted {
   position: absolute;
   right: var(--qr-offset);
   width: var(--qr-size);
-  padding: var(--qr-quiet);
   border-radius: 1vh;
+  /* Round off the canvas's square corners to match the frame. This only
+     nibbles the quiet zone diagonally, leaving well over the 4 modules the
+     spec asks for along the edges that matter. */
+  overflow: hidden;
+  line-height: 0;
 }
 
 .queueIntermissionQr {
@@ -78,7 +86,8 @@
 }
 
 /* Second copy in the opposite corner, inverted (white modules on black) so it
-   blends into the dark overlay; the padding doubles as its dark quiet zone. */
+   blends into the dark overlay; its canvas renders a matching black quiet
+   zone. */
 .queueIntermissionQrInverted {
   bottom: var(--qr-offset);
   background: black;
