@@ -14,11 +14,11 @@
   background: linear-gradient(160deg, #101020 0%, #1a1a35 60%, #101020 100%);
   color: white;
   /* Keep durations in sync with QUEUE_INTERMISSION_FADE_MS in Player.tsx. */
-  animation: queueIntermissionFadeIn 3000ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: queueIntermissionFadeIn 4500ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .queueIntermissionHiding {
-  animation: queueIntermissionFadeOut 3000ms cubic-bezier(0.7, 0, 0.84, 0) both;
+  animation: queueIntermissionFadeOut 4500ms cubic-bezier(0.7, 0, 0.84, 0) both;
 }
 
 /* A slow, cinematic dissolve: the screen drifts in from a slight zoom with a

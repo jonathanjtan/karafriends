@@ -15,11 +15,11 @@
   background: linear-gradient(160deg, #0d0d1c 0%, #191933 60%, #0d0d1c 100%);
   color: white;
   /* Keep durations in sync with SCORE_CARD_FADE_MS in Player.tsx. */
-  animation: scoreCardFadeIn 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: scoreCardFadeIn 1400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .scoreCardHiding {
-  animation: scoreCardFadeOut 700ms cubic-bezier(0.7, 0, 0.84, 0) both;
+  animation: scoreCardFadeOut 1400ms cubic-bezier(0.7, 0, 0.84, 0) both;
 }
 
 @keyframes scoreCardFadeIn {
@@ -89,6 +89,24 @@
   text-shadow: 0 0 4vh currentColor;
 }
 
+/* The S ladder shares the gold family, brightening as it climbs, so the tier
+   reads at a glance from across the room. */
+/* .scoreCardBand is sized for a single glyph; shrink the multi-letter tiers
+   so SSS occupies about the same width as a lone S. */
+.scoreCardBandSSS {
+  font-size: 14vh;
+  color: #fff3b0;
+  text-shadow:
+    0 0 3vh #fff3b0,
+    0 0 7vh #ffd34d;
+}
+.scoreCardBandSS {
+  font-size: 18vh;
+  color: #ffe27a;
+  text-shadow:
+    0 0 3vh #ffe27a,
+    0 0 6vh #ffc93d;
+}
 .scoreCardBandS {
   color: #ffd34d;
 }

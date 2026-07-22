@@ -44,13 +44,19 @@ const COVERAGE_WEIGHT = 0.3;
 // A song needs this much reference material for a score to mean anything.
 const MIN_SCOREABLE_NOTES = 24;
 
-export type ScoreBand = "S" | "A" | "B" | "C" | "D";
+export type ScoreBand = "SSS" | "SS" | "S" | "A" | "B" | "C" | "D";
 
+// Calibrated against real singing rather than a theoretical 100%: a solid
+// full-voice take on this formula lands around 0.75, so A starts at 0.70 and
+// the S ladder sits above it. The headline percentage stays a true 0..1 --
+// the bands, not the number, carry "you did well".
 const BAND_THRESHOLDS: [ScoreBand, number][] = [
-  ["S", 0.9],
-  ["A", 0.8],
-  ["B", 0.65],
-  ["C", 0.45],
+  ["SSS", 0.95],
+  ["SS", 0.9],
+  ["S", 0.8],
+  ["A", 0.7],
+  ["B", 0.55],
+  ["C", 0.4],
   ["D", 0],
 ];
 

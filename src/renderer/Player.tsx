@@ -91,18 +91,18 @@ const NON_DAM_GAIN = 0.8;
 const MAX_HLS_FATAL_ERROR_RETRIES = 2;
 // How long the between-songs queue screen stays up before the next song
 // starts (when queueIntermissionEnabled is on).
-const QUEUE_INTERMISSION_MS = 6 * 1000;
+const QUEUE_INTERMISSION_MS = 12 * 1000;
 // Fade duration for the intermission screen; keep in sync with the
 // animation durations in QueueIntermission.css.
-const QUEUE_INTERMISSION_FADE_MS = 3000;
+const QUEUE_INTERMISSION_FADE_MS = 4500;
 
 // EXPERIMENTAL scoring. Keep in sync with the animation durations in
 // ScoreCard.css.
-const SCORE_CARD_FADE_MS = 700;
+const SCORE_CARD_FADE_MS = 1400;
 // How long the score card holds before dissolving into the queue screen.
 // Must stay comfortably inside QUEUE_INTERMISSION_MS so it is gone before the
 // next song pops; a pop also force-clears it as a hard guarantee.
-const SCORE_CARD_HOLD_MS = 4500;
+const SCORE_CARD_HOLD_MS = 9000;
 // The card's whole life, hold plus fade. When a song ends with nothing queued
 // behind it there is no intermission hold to sit inside, so the queue is held
 // off by exactly this long instead — otherwise pollQueue's clearScoreCard
