@@ -140,9 +140,12 @@ function Player(props: {
     useState<boolean>(false);
 
   // EXPERIMENTAL scoring. The accumulator lives here rather than in PianoRoll
-  // because PianoRoll's GL effect rebuilds on every render of this component,
-  // which would discard the performance mid-song. It is fed from PianoRoll's
-  // poll loop and read once, on "ended".
+  // because "ended" is handled here and PianoRoll's GL effect still rebuilds
+  // whenever the song (or mic list, or pitch shift) changes, which would
+  // discard the performance. It used to rebuild on every render of this
+  // component too -- that was a bug in PianoRoll's effect deps, since fixed;
+  // it was silently erasing the sung-pitch trail mid-song. It is fed from
+  // PianoRoll's poll loop and read once, on "ended".
   const scoreAccumulatorRef = useRef<ScoreAccumulator | null>(null);
   // Who sang what, captured at pop time: the "ended" handler is wired up once
   // on mount and can't close over per-song state.

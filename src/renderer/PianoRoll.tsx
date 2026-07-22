@@ -511,7 +511,11 @@ export default function PianoRoll(props: {
     onTimeUpdate();
     video.addEventListener("timeupdate", onTimeUpdate);
     return () => video.removeEventListener("timeupdate", onTimeUpdate);
-  }, [props]);
+    // Only what the effect actually reads. Depending on `props` wholesale
+    // would re-run this on every Player render, since the props object is a
+    // fresh literal each time -- see the effect below, where that was
+    // silently wiping the sung-pitch trail mid-song.
+  }, [props.scoringData, props.videoRef]);
 
   useEffect(() => {
     if (!canvasRef.current || !props.videoRef.current) return;
@@ -695,7 +699,20 @@ export default function PianoRoll(props: {
         );
       }
     };
-  }, [props]);
+    // Only what the effect actually reads -- NOT `props` wholesale. The props
+    // object is a fresh literal on every Player render, so depending on it
+    // tore down and rebuilt this whole effect (new PitchDetectionBuffers, so
+    // an empty `positions`) whenever any unrelated Player state changed.
+    // `ducked` flips on every instrumental break via onBreakActiveChange, so
+    // in practice the sung-pitch trail was erased several times a song, at
+    // section boundaries, while the singer was mid-phrase.
+  }, [
+    props.scoringData,
+    props.videoRef,
+    props.mics,
+    props.pitchShiftSemis,
+    props.scoreAccumulatorRef,
+  ]);
 
   return (
     // Size 0 ("Off") hides the canvas with CSS rather than unmounting it:
