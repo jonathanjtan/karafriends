@@ -7,6 +7,7 @@ import useBgmTrack from "../../../common/hooks/useBgmTrack";
 import useBgmVolume from "../../../common/hooks/useBgmVolume";
 import useBreakEndsAt from "../../../common/hooks/useBreakEndsAt";
 import useBreakMessage from "../../../common/hooks/useBreakMessage";
+import useExperimentalScoringEnabled from "../../../common/hooks/useExperimentalScoringEnabled";
 import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import useJoysoundRomajiWordSegmentation from "../../../common/hooks/useJoysoundRomajiWordSegmentation";
 import useMicOutputEnabled from "../../../common/hooks/useMicOutputEnabled";
@@ -48,6 +49,8 @@ const VolumeControls = () => {
     useQueueIntermissionEnabled();
   const { micOutputEnabled, setMicOutputEnabled } = useMicOutputEnabled();
   const { micRmsGateEnabled, setMicRmsGateEnabled } = useMicRmsGateEnabled();
+  const { experimentalScoringEnabled, setExperimentalScoringEnabled } =
+    useExperimentalScoringEnabled();
   const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
   const { setBreakMessage } = useBreakMessage();
   // Break length is a per-phone choice; only the break itself is synced.
@@ -151,13 +154,8 @@ const VolumeControls = () => {
             className={styles.recheckButton}
             onClick={() => setMicOutputEnabled(!micOutputEnabled)}
           >
-            Mic Output: {micOutputEnabled ? "On" : "Off"}
+            Software Echo: {micOutputEnabled ? "On" : "Off"}
           </button>
-          <div className={styles.hint}>
-            Off mutes the mics in the karaoke machine's own speakers, for
-            running them through an external mixer. Pitch tracking and scoring
-            keep working either way.
-          </div>
         </div>
         <div>
           <button
@@ -167,9 +165,21 @@ const VolumeControls = () => {
             Pitch Gate: {micRmsGateEnabled ? "On" : "Off"}
           </button>
           <div className={styles.hint}>
-            On ignores quiet mic signal for pitch tracking. Use when a mixer's
-            echo/reverb bleeds into the mic channels and an idle mic ghost-draws
-            the active singer's melody on the piano roll.
+            Use when a mixer's echo/reverb bleeds into the mic channels and an
+            idle mic ghost-draws the active singer's melody on the piano roll.
+          </div>
+        </div>
+        <div>
+          <button
+            className={styles.recheckButton}
+            onClick={() =>
+              setExperimentalScoringEnabled(!experimentalScoringEnabled)
+            }
+          >
+            Scoring (experimental): {experimentalScoringEnabled ? "On" : "Off"}
+          </button>
+          <div className={styles.hint}>
+            Score for JOYSOUND/DAM and show a card when the song ends.
           </div>
         </div>
         <div className={styles.sectionHeader}>Piano Roll</div>

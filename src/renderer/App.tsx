@@ -548,10 +548,9 @@ function App(props: {
                 <span className="settingSubheader">Options</span>
                 <span
                   className="settingLabel settingLabelClickable"
-                  title="Off mutes the mics in this app's speakers (for use with an external mixer). Pitch tracking and scoring keep working either way."
                   onClick={() => setMicOutputEnabled(!micOutputEnabled)}
                 >
-                  Mic Output
+                  Software Echo
                 </span>
                 <div className="switch settingControlWide">
                   <label>
@@ -565,7 +564,7 @@ function App(props: {
                 </div>
                 <span
                   className="settingLabel settingLabelClickable"
-                  title="On ignores quiet mic signal for pitch tracking. Use when a mixer's echo/reverb bleeds into the mic channels and idle mics ghost-draw the active singer's melody."
+                  title="Use when a mixer's echo/reverb bleeds into the mic channels and idle mics ghost-draw the active singer's melody."
                   onClick={() => setMicRmsGateEnabled(!micRmsGateEnabled)}
                 >
                   Pitch Gate

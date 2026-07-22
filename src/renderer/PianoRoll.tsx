@@ -16,6 +16,7 @@ import {
 import useMicRmsGateEnabled from "../common/hooks/useMicRmsGateEnabled";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
+import { ScoreAccumulator } from "../common/scoring";
 import { parseScoringData } from "../common/scoringData";
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
@@ -452,6 +453,12 @@ export default function PianoRoll(props: {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   mics: InputDevice[];
   pitchShiftSemis: number;
+  // EXPERIMENTAL scoring. Owned by Player (which knows the song boundaries)
+  // and merely fed from here, because the GL effect below rebuilds on every
+  // parent render and would otherwise discard the accumulated performance.
+  // Null when the experimental flag is off or the song has no usable
+  // reference melody.
+  scoreAccumulatorRef?: React.MutableRefObject<ScoreAccumulator | null>;
   // Gates the fade-in so the roll doesn't cover a JOYSOUND title card.
   visible: boolean;
   // Dims the roll during an announced instrumental break so it doesn't
@@ -575,6 +582,14 @@ export default function PianoRoll(props: {
           currentMidiNumber,
           props.videoRef.current.currentTime,
         );
+        // Every open mic feeds one accumulator -- whoever is singing counts.
+        // Duplicate samples from mic bleed are deduplicated by frame slot
+        // inside addSample, so extra mics can't inflate coverage.
+        props.scoreAccumulatorRef?.current?.addSample(
+          props.videoRef.current.currentTime,
+          midiNumber,
+          props.pitchShiftSemis,
+        );
       }
     }
 
@@ -658,6 +673,10 @@ export default function PianoRoll(props: {
     function clearPitchDetectionBuffers() {
       currentNoteIndex = 0;
       pitchPollers.forEach(([buffer, _1, _2]) => buffer.clear());
+      // A seek invalidates the accumulator's forward-only note cursor, and a
+      // performance that skipped part of the song can't be scored honestly
+      // against the whole melody anyway, so start the tally over.
+      props.scoreAccumulatorRef?.current?.reset();
     }
 
     props.videoRef.current.addEventListener(

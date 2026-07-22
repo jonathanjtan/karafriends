@@ -1354,6 +1354,7 @@ type NotARealDb = {
   joysoundRomajiWordSegmentation: boolean;
   micOutputEnabled: boolean;
   micRmsGateEnabled: boolean;
+  experimentalScoringEnabled: boolean;
   oledFriendly: boolean;
   pianoRollOpacity: number;
   pianoRollSize: number;
@@ -1387,6 +1388,7 @@ enum SubscriptionEvent {
   JoysoundRomajiWordSegmentationChanged = "JoysoundRomajiWordSegmentationChanged",
   MicOutputEnabledChanged = "MicOutputEnabledChanged",
   MicRmsGateEnabledChanged = "MicRmsGateEnabledChanged",
+  ExperimentalScoringEnabledChanged = "ExperimentalScoringEnabledChanged",
   OledFriendlyChanged = "OledFriendlyChanged",
   PianoRollOpacityChanged = "PianoRollOpacityChanged",
   PianoRollSizeChanged = "PianoRollSizeChanged",
@@ -1434,6 +1436,7 @@ let db: NotARealDb = {
   joysoundRomajiWordSegmentation: false,
   micOutputEnabled: true,
   micRmsGateEnabled: false,
+  experimentalScoringEnabled: false,
   oledFriendly: false,
   pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
   pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
@@ -1506,6 +1509,7 @@ function loadDb(): NotARealDb {
     joysoundRomajiWordSegmentation: false,
     micOutputEnabled: true,
     micRmsGateEnabled: false,
+    experimentalScoringEnabled: false,
     oledFriendly: false,
     pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
     pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
@@ -2408,6 +2412,7 @@ const resolvers = {
     joysoundRomajiWordSegmentation: () => db.joysoundRomajiWordSegmentation,
     micOutputEnabled: () => db.micOutputEnabled,
     micRmsGateEnabled: () => db.micRmsGateEnabled,
+    experimentalScoringEnabled: () => db.experimentalScoringEnabled,
     oledFriendly: () => db.oledFriendly,
     pianoRollOpacity: () => db.pianoRollOpacity,
     pianoRollSize: () => db.pianoRollSize,
@@ -2816,6 +2821,17 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setExperimentalScoringEnabled: (
+      _: any,
+      args: { enabled: boolean },
+    ): boolean => {
+      db.experimentalScoringEnabled = args.enabled;
+      pubsub.publish(SubscriptionEvent.ExperimentalScoringEnabledChanged, {
+        experimentalScoringEnabledChanged: db.experimentalScoringEnabled,
+      });
+      saveDb();
+      return true;
+    },
     setOledFriendly: (_: any, args: { oledFriendly: boolean }): boolean => {
       db.oledFriendly = args.oledFriendly;
       pubsub.publish(SubscriptionEvent.OledFriendlyChanged, {
@@ -2966,6 +2982,12 @@ const resolvers = {
       subscribe: () =>
         pubsub.asyncIterableIterator([
           SubscriptionEvent.MicRmsGateEnabledChanged,
+        ]),
+    },
+    experimentalScoringEnabledChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.ExperimentalScoringEnabledChanged,
         ]),
     },
     oledFriendlyChanged: {

@@ -11,11 +11,13 @@ import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.gra
 import environment from "../common/graphqlEnvironment";
 import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import useBreakMessage from "../common/hooks/useBreakMessage";
+import useExperimentalScoringEnabled from "../common/hooks/useExperimentalScoringEnabled";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import useQueue from "../common/hooks/useQueue";
 import useQueueIntermissionEnabled from "../common/hooks/useQueueIntermissionEnabled";
 import { KuroshiroSingleton } from "../common/joysoundParser";
+import { isScoreable, ScoreAccumulator } from "../common/scoring";
 import {
   findInstrumentalBreaks,
   parseScoringData,
@@ -27,6 +29,7 @@ import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
 import "./Player.css";
 import QueueIntermission from "./QueueIntermission";
+import ScoreCard, { ScoredPerformance } from "./ScoreCard";
 import KarafriendsAudio from "./webAudio";
 
 const popSongMutation = graphql`
@@ -43,6 +46,10 @@ const popSongMutation = graphql`
         streamingUrlIdx
         name
         artistName
+        userIdentity {
+          nickname
+          profilePictureUrl
+        }
       }
       ... on JoysoundQueueItem {
         __typename
@@ -53,6 +60,10 @@ const popSongMutation = graphql`
         isRomaji
         youtubeVideoId
         scoringData
+        userIdentity {
+          nickname
+          profilePictureUrl
+        }
       }
       ... on YoutubeQueueItem {
         __typename
@@ -85,6 +96,14 @@ const QUEUE_INTERMISSION_MS = 6 * 1000;
 // animation durations in QueueIntermission.css.
 const QUEUE_INTERMISSION_FADE_MS = 3000;
 
+// EXPERIMENTAL scoring. Keep in sync with the animation durations in
+// ScoreCard.css.
+const SCORE_CARD_FADE_MS = 700;
+// How long the score card holds before dissolving into the queue screen.
+// Must stay comfortably inside QUEUE_INTERMISSION_MS so it is gone before the
+// next song pops; a pop also force-clears it as a hard guarantee.
+const SCORE_CARD_HOLD_MS = 4500;
+
 function Player(props: {
   mics: InputDevice[];
   kuroshiro: KuroshiroSingleton;
@@ -114,6 +133,29 @@ function Player(props: {
   );
   const [shouldShowAdhocLyrics, setShouldShowAdhocLyrics] =
     useState<boolean>(false);
+
+  // EXPERIMENTAL scoring. The accumulator lives here rather than in PianoRoll
+  // because PianoRoll's GL effect rebuilds on every render of this component,
+  // which would discard the performance mid-song. It is fed from PianoRoll's
+  // poll loop and read once, on "ended".
+  const scoreAccumulatorRef = useRef<ScoreAccumulator | null>(null);
+  // Who sang what, captured at pop time: the "ended" handler is wired up once
+  // on mount and can't close over per-song state.
+  const scoredSongMetaRef = useRef<Omit<ScoredPerformance, "result"> | null>(
+    null,
+  );
+  const [scoredPerformance, setScoredPerformance] =
+    useState<ScoredPerformance | null>(null);
+  const [scoreCardVisible, setScoreCardVisible] = useState(false);
+  const scoreCardTimersRef = useRef<NodeJS.Timeout[]>([]);
+  // Read through a ref by the once-on-mount "ended" handler. Songs always
+  // accumulate (the cost is a map insert per poll), and only the reveal
+  // consults the toggle -- so switching scoring on part-way through a song
+  // still produces a card for the whole performance, and switching it off
+  // suppresses one immediately.
+  const { experimentalScoringEnabled } = useExperimentalScoringEnabled();
+  const experimentalScoringEnabledRef = useRef(false);
+  experimentalScoringEnabledRef.current = experimentalScoringEnabled;
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
   const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -243,6 +285,61 @@ function Player(props: {
   useEffect(() => {
     if (!videoRef.current) return;
 
+    const clearScoreCard = () => {
+      scoreCardTimersRef.current.forEach(clearTimeout);
+      scoreCardTimersRef.current = [];
+      setScoreCardVisible(false);
+      setScoredPerformance(null);
+      scoreAccumulatorRef.current = null;
+      scoredSongMetaRef.current = null;
+    };
+
+    // Arm scoring for a song that carries usable reference notes. DAM's blob
+    // and Joysound's extracted melody share a layout, so both arrive here.
+    // Deliberately not gated on the toggle -- see the ref above. A melody too
+    // thin to judge leaves scoring disarmed, which is also what keeps
+    // Youtube/Nico (no reference data at all) from ever showing a card.
+    const armScoring = (
+      songScoringData: readonly number[],
+      meta: Omit<ScoredPerformance, "result">,
+    ) => {
+      const { notes, lyricsIntervals } = parseScoringData(songScoringData);
+      if (!isScoreable(notes)) return;
+
+      scoreAccumulatorRef.current = new ScoreAccumulator(
+        notes,
+        lyricsIntervals,
+      );
+      scoredSongMetaRef.current = meta;
+    };
+
+    // Finalize whatever the accumulator collected and put the card up. Always
+    // consumes the accumulator, so a song that ends without a scoreable
+    // result can't leak into the next one.
+    const revealScoreCard = () => {
+      const accumulator = scoreAccumulatorRef.current;
+      const meta = scoredSongMetaRef.current;
+      scoreAccumulatorRef.current = null;
+      scoredSongMetaRef.current = null;
+      if (accumulator === null || meta === null) return;
+      if (!experimentalScoringEnabledRef.current) return;
+
+      const result = accumulator.finalize();
+      if (result === null) return;
+
+      scoreCardTimersRef.current.forEach(clearTimeout);
+      scoreCardTimersRef.current = [];
+      setScoredPerformance({ ...meta, result });
+      setScoreCardVisible(true);
+      scoreCardTimersRef.current.push(
+        setTimeout(() => setScoreCardVisible(false), SCORE_CARD_HOLD_MS),
+        setTimeout(
+          () => setScoredPerformance(null),
+          SCORE_CARD_HOLD_MS + SCORE_CARD_FADE_MS,
+        ),
+      );
+    };
+
     const pollQueue = (force: boolean = false) => {
       // On break: don't start anything. Keep checking so playback resumes
       // shortly after the break ends or is cancelled. An explicit skip
@@ -262,6 +359,8 @@ function Player(props: {
       // fade-out renders the pre-pop state no matter when the queue
       // subscription update lands.
       frozenQueueRef.current = queueRef.current;
+      // A new song must never come up underneath a lingering score card.
+      clearScoreCard();
       setPopPending(true);
       commitMutation<PlayerPopSongMutation>(environment, {
         mutation: popSongMutation,
@@ -315,6 +414,13 @@ function Player(props: {
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
               setScoringData(popSong.scoringData);
+
+              armScoring(popSong.scoringData, {
+                songName: popSong.name,
+                nickname: popSong.userIdentity.nickname,
+                profilePictureUrl:
+                  popSong.userIdentity.profilePictureUrl ?? null,
+              });
 
               // DAM streams carry no audible guide melody; synthesize one
               // from the scoring notes, at the shared guide melody volume.
@@ -431,6 +537,13 @@ function Player(props: {
               setScoringData(popSong.scoringData ?? []);
               setShouldShowJoysound(true);
               setShouldShowAdhocLyrics(false);
+
+              armScoring(popSong.scoringData ?? [], {
+                songName: popSong.name,
+                nickname: popSong.userIdentity.nickname,
+                profilePictureUrl:
+                  popSong.userIdentity.profilePictureUrl ?? null,
+              });
 
               props.audio.gain(NON_DAM_GAIN);
 
@@ -565,6 +678,11 @@ function Player(props: {
     };
 
     videoRef.current.onended = () => {
+      // EXPERIMENTAL scoring: read the performance before anything else
+      // touches the queue. No-op when the flag is off, when the song had no
+      // reference melody, or when a seek reset the tally below scoreable.
+      revealScoreCard();
+
       // With the intermission enabled, cut to the queue screen when a song
       // ends. Songs waiting: hold it for a few seconds, then pop the next
       // song. Queue empty: it doubles as the idle screen ("waiting for
@@ -650,6 +768,9 @@ function Player(props: {
         damGuideSynthRef.current.dispose();
         damGuideSynthRef.current = null;
       }
+
+      scoreCardTimersRef.current.forEach(clearTimeout);
+      scoreCardTimersRef.current = [];
     };
   }, []);
 
@@ -727,6 +848,7 @@ function Player(props: {
           pitchShiftSemis={pitchShiftSemis}
           visible={pianoRollTitleCleared}
           ducked={pianoRollDucked}
+          scoreAccumulatorRef={scoreAccumulatorRef}
         />
       ) : null}
       <video
@@ -740,6 +862,9 @@ function Player(props: {
         <track ref={trackRef} kind="subtitles" src="" default />
       </video>
       {shouldShowAdhocLyrics ? <AdhocLyrics /> : null}
+      {scoredPerformance !== null ? (
+        <ScoreCard performance={scoredPerformance} hiding={!scoreCardVisible} />
+      ) : null}
       {intermissionMounted ? (
         <QueueIntermission
           queue={

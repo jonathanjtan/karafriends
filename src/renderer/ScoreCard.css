@@ -1,0 +1,148 @@
+.scoreCard {
+  position: absolute;
+  inset: 0;
+  /* Above the queue intermission (z-index 10): the score is the first thing
+     shown when a song ends, and the intermission carries on underneath it. */
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2vh;
+  /* Symmetric, unlike QueueIntermission: this screen has no QR codes to keep
+     text clear of, so it centers properly. */
+  padding: 4vh 6vw;
+  background: linear-gradient(160deg, #0d0d1c 0%, #191933 60%, #0d0d1c 100%);
+  color: white;
+  /* Keep durations in sync with SCORE_CARD_FADE_MS in Player.tsx. */
+  animation: scoreCardFadeIn 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.scoreCardHiding {
+  animation: scoreCardFadeOut 700ms cubic-bezier(0.7, 0, 0.84, 0) both;
+}
+
+@keyframes scoreCardFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes scoreCardFadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
+/* The numbers here come from a formula that is still being tuned and match
+   no commercial machine, so the card says so rather than implying authority. */
+.scoreCardExperimentalTag {
+  position: absolute;
+  top: 3vh;
+  left: 3vh;
+  padding: 0.4vh 1.2vh;
+  border: 0.2vh solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.6vh;
+  font-size: 1.6vh;
+  letter-spacing: 0.3vh;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.scoreCardSinger {
+  display: flex;
+  align-items: center;
+  gap: 1.5vh;
+  font-size: 3vh;
+}
+
+.scoreCardPortrait {
+  width: 8vh;
+  height: 8vh;
+  image-rendering: pixelated;
+}
+
+.scoreCardSongName {
+  font-size: 2.4vh;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  max-width: 60vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreCardBand {
+  font-size: 22vh;
+  line-height: 1;
+  font-weight: bold;
+  text-shadow: 0 0 4vh currentColor;
+}
+
+.scoreCardBandS {
+  color: #ffd34d;
+}
+.scoreCardBandA {
+  color: #6ee36e;
+}
+.scoreCardBandB {
+  color: #63c6ff;
+}
+.scoreCardBandC {
+  color: #c79cff;
+}
+.scoreCardBandD {
+  color: #9aa0b0;
+}
+
+.scoreCardOverall {
+  font-size: 5vh;
+  font-weight: bold;
+}
+
+.scoreCardBreakdown {
+  display: flex;
+  gap: 5vh;
+  font-size: 2.2vh;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.scoreCardBreakdownValue {
+  font-weight: bold;
+  color: white;
+}
+
+/* 24 buckets, matching the grid DAM uses for its own end-of-song graph. */
+.scoreCardGraph {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4vh;
+  height: 12vh;
+  width: min(60vw, 80vh);
+}
+
+.scoreCardBar {
+  flex: 1;
+  border-radius: 0.3vh 0.3vh 0 0;
+  background: linear-gradient(to top, #3a6ea5, #63c6ff);
+  min-height: 0.3vh;
+}
+
+/* A window the singer sat out entirely -- an instrumental break, or a phrase
+   nobody took. Distinct from a bar at zero, which means they sang and missed. */
+.scoreCardBarEmpty {
+  flex: 1;
+  height: 0.3vh;
+  border-radius: 0.3vh;
+  background: rgba(255, 255, 255, 0.15);
+}

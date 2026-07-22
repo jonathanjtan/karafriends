@@ -43,6 +43,11 @@ type Query {
   # periodic, so without the gate an idle mic ghost-draws the active singer's
   # melody on the piano roll. Off by default (the historical behavior).
   micRmsGateEnabled: Boolean!
+  # EXPERIMENTAL: whether sung performances are scored against the guide
+  # melody and a card is shown when a song ends. Off by default. The formula
+  # is still being tuned and its numbers match no commercial machine; only
+  # DAM and JOYSOUND songs carry the reference melody it needs.
+  experimentalScoringEnabled: Boolean!
   nicoVideoInfo(videoId: String): NicoVideoInfoResult!
   # Whether the big screen uses the dark OLED-friendly theme. Synced so the
   # remocon can toggle it on the TV remotely.
@@ -147,6 +152,7 @@ type Mutation {
   setGuideMelodyVolume(volume: Float!): Boolean!
   setMicOutputEnabled(enabled: Boolean!): Boolean!
   setMicRmsGateEnabled(enabled: Boolean!): Boolean!
+  setExperimentalScoringEnabled(enabled: Boolean!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
   setPianoRollSize(size: Float!): Boolean!
@@ -170,6 +176,7 @@ type Subscription {
   joysoundRomajiWordSegmentationChanged: Boolean!
   micOutputEnabledChanged: Boolean!
   micRmsGateEnabledChanged: Boolean!
+  experimentalScoringEnabledChanged: Boolean!
   oledFriendlyChanged: Boolean!
   pianoRollOpacityChanged: Float!
   pianoRollSizeChanged: Float!
