@@ -103,6 +103,11 @@ const SCORE_CARD_FADE_MS = 700;
 // Must stay comfortably inside QUEUE_INTERMISSION_MS so it is gone before the
 // next song pops; a pop also force-clears it as a hard guarantee.
 const SCORE_CARD_HOLD_MS = 4500;
+// The card's whole life, hold plus fade. When a song ends with nothing queued
+// behind it there is no intermission hold to sit inside, so the queue is held
+// off by exactly this long instead — otherwise pollQueue's clearScoreCard
+// wipes the card in the same tick it was revealed and it never paints.
+const SCORE_CARD_TOTAL_MS = SCORE_CARD_HOLD_MS + SCORE_CARD_FADE_MS;
 
 function Player(props: {
   mics: InputDevice[];
@@ -315,17 +320,22 @@ function Player(props: {
 
     // Finalize whatever the accumulator collected and put the card up. Always
     // consumes the accumulator, so a song that ends without a scoreable
-    // result can't leak into the next one.
-    const revealScoreCard = () => {
+    // result can't leak into the next one. Returns whether a card actually
+    // went up, so the caller knows to hold the queue off while it plays.
+    const revealScoreCard = (): boolean => {
       const accumulator = scoreAccumulatorRef.current;
       const meta = scoredSongMetaRef.current;
       scoreAccumulatorRef.current = null;
       scoredSongMetaRef.current = null;
-      if (accumulator === null || meta === null) return;
-      if (!experimentalScoringEnabledRef.current) return;
+      if (accumulator === null || meta === null) return false;
+      if (!experimentalScoringEnabledRef.current) return false;
 
       const result = accumulator.finalize();
-      if (result === null) return;
+      if (result === null) return false;
+      // Nobody sang against a single note — a skipped song (the skip seeks to
+      // the end, and a seek resets the tally) or an empty room. Scoring that
+      // as a D is worse than staying quiet.
+      if (result.notesAttempted === 0) return false;
 
       scoreCardTimersRef.current.forEach(clearTimeout);
       scoreCardTimersRef.current = [];
@@ -333,11 +343,10 @@ function Player(props: {
       setScoreCardVisible(true);
       scoreCardTimersRef.current.push(
         setTimeout(() => setScoreCardVisible(false), SCORE_CARD_HOLD_MS),
-        setTimeout(
-          () => setScoredPerformance(null),
-          SCORE_CARD_HOLD_MS + SCORE_CARD_FADE_MS,
-        ),
+        setTimeout(() => setScoredPerformance(null), SCORE_CARD_TOTAL_MS),
       );
+
+      return true;
     };
 
     const pollQueue = (force: boolean = false) => {
@@ -681,7 +690,14 @@ function Player(props: {
       // EXPERIMENTAL scoring: read the performance before anything else
       // touches the queue. No-op when the flag is off, when the song had no
       // reference melody, or when a seek reset the tally below scoreable.
-      revealScoreCard();
+      //
+      // Whether a card went up decides how long the queue waits: every path
+      // out of here ends in pollQueue, whose first act is clearScoreCard, so
+      // a synchronous call would blow the card away in the tick it appeared.
+      // holdIntermission is the delay mechanism rather than a bare setTimeout
+      // because it parks the handle the skip path cancels and the poll
+      // watchdog checks — a raw timer would let a skip mid-card double-pop.
+      const scoreCardShown = revealScoreCard();
 
       // With the intermission enabled, cut to the queue screen when a song
       // ends. Songs waiting: hold it for a few seconds, then pop the next
@@ -692,9 +708,15 @@ function Player(props: {
         setIntermissionVisible(true);
         if (queueLengthRef.current > 0) {
           holdIntermission(Date.now() + QUEUE_INTERMISSION_MS);
+        } else if (scoreCardShown) {
+          holdIntermission(Date.now() + SCORE_CARD_TOTAL_MS);
         } else {
           pollQueue();
         }
+        return;
+      }
+      if (scoreCardShown) {
+        holdIntermission(Date.now() + SCORE_CARD_TOTAL_MS);
         return;
       }
       pollQueue();
