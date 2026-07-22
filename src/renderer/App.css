@@ -176,6 +176,28 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
   color: #222;
 }
 
+/* Same story for the switch knob: Materialize parks an off switch at #F1F1F1,
+   which inverts to near-black and vanishes into the sidebar. Author it dark so
+   it inverts back to a light knob. The elevation shadow has to go with it —
+   a cast shadow exists to lift a light object off a light surface, so once
+   inverted it's a dark halo around an already-dark knob (black on black). On a
+   black surface elevation reads through fill, not shadow. The :checked teal
+   survives the filter untouched (invert + hue-rotate(180deg) round-trips a
+   saturated hue back to roughly itself), so this must NOT catch the on-state:
+   matching on `:not(:checked)` is load-bearing, not decoration. The obvious
+   `.switch label .lever:after` spelling ties Materialize's own
+   `input:checked + .lever:after` at (0,4,3) and, being later in the cascade,
+   silently wins it — repainting the teal knob dark grey. */
+html.oledFriendly
+  .appSidebar
+  .switch
+  label
+  input[type="checkbox"]:not(:checked)
+  + .lever:after {
+  background-color: #3a3a3a;
+  box-shadow: none;
+}
+
 .settingsHeader {
   display: flex;
   align-items: center;
