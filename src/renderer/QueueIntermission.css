@@ -6,11 +6,22 @@
   flex-direction: column;
   justify-content: center;
   gap: 2vh;
-  /* Reserve extra room on the right so text never runs under the top/bottom-
-     right QR codes (footprint ~21vh: 3vh offset + 16vh width + 1vh*2
-     padding); max() falls back to the original 6vw on wide screens where
-     that's already bigger. */
-  padding: 4vh max(6vw, 22vh) 4vh 6vw;
+  /* Single source of truth for the corner QR codes: both boxes below and the
+     right-hand padding that keeps text clear of them derive from these, so
+     resizing the codes can't leave the text reservation behind.
+
+     --qr-size is the whole box (border-box — Materialize sets it globally),
+     so the code itself renders at size - 2*--qr-quiet. At 26vh on a 1080p
+     projector that's a 259px code, ~7px per module, which stays scannable
+     from across a room; 16vh gave 4.1px per module and only read from a
+     few feet away. */
+  --qr-size: 26vh;
+  --qr-offset: 3vh;
+  --qr-quiet: 1vh;
+  /* Reserve the codes' footprint (offset + box; the quiet zone is inside the
+     box) plus 1vh of clearance, so text never runs underneath. max() falls
+     back to the original 6vw on wide screens where that's already bigger. */
+  padding: 4vh max(6vw, calc(var(--qr-offset) + var(--qr-size) + 1vh)) 4vh 6vw;
   background: linear-gradient(160deg, #101020 0%, #1a1a35 60%, #101020 100%);
   color: white;
   /* Keep durations in sync with QUEUE_INTERMISSION_FADE_MS in Player.tsx. */
@@ -49,28 +60,28 @@
   }
 }
 
-/* QR codes need a light background and quiet zone to scan reliably against
-   the dark overlay. */
-.queueIntermissionQr {
+/* QR codes need a background and quiet zone to scan reliably against the dark
+   overlay. The two corners are identical apart from their background and which
+   edge they hang off, so everything else lives here. */
+.queueIntermissionQr,
+.queueIntermissionQrInverted {
   position: absolute;
-  top: 3vh;
-  right: 3vh;
-  width: 16vh;
-  padding: 1vh;
-  background: white;
+  right: var(--qr-offset);
+  width: var(--qr-size);
+  padding: var(--qr-quiet);
   border-radius: 1vh;
+}
+
+.queueIntermissionQr {
+  top: var(--qr-offset);
+  background: white;
 }
 
 /* Second copy in the opposite corner, inverted (white modules on black) so it
    blends into the dark overlay; the padding doubles as its dark quiet zone. */
 .queueIntermissionQrInverted {
-  position: absolute;
-  bottom: 3vh;
-  right: 3vh;
-  width: 16vh;
-  padding: 1vh;
+  bottom: var(--qr-offset);
   background: black;
-  border-radius: 1vh;
 }
 
 /* Same OLED burn-in mitigation as the sidebar QR code (App.css) — reuses its
