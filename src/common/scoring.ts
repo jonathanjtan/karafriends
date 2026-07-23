@@ -36,6 +36,35 @@ const COVERAGE_WEIGHT = 0.3;
 // A song needs this much reference material for a score to mean anything.
 const MIN_SCOREABLE_NOTES = 24;
 
+// A note's accuracy is the better of its flat frame-average and how well the
+// singer *sustained* the pitch, so a short note they clearly hit isn't dragged
+// down by the boundary frames where the 25ms detector window blends it with
+// its neighbours. Measured on real takes: 150-300ms notes were hit ~88% of the
+// time but scored 65-70% on the flat average; crediting the best sustained
+// stretch recovers them, while long notes (already high) barely move.
+// "Sustained" means holding on-pitch across at least this fraction of the
+// note's slots for full credit; a shorter run scales down proportionally, so a
+// single lucky frame earns little.
+const SUSTAIN_FRACTION = 0.5;
+
+// Longest run of consecutive on-pitch slots within one note. Slots are keyed
+// by absolute slot index, so "consecutive" is index n immediately followed by
+// n+1 (a gap, whether silent or off-pitch, breaks the run).
+function longestOnPitchRun(slots: Map<number, number>): number {
+  const indices = [...slots.keys()].sort((a, b) => a - b);
+  let best = 0;
+  let run = 0;
+  let prev: number | null = null;
+  for (const idx of indices) {
+    const onPitch = (slots.get(idx) as number) <= ON_PITCH_TOLERANCE_SEMIS;
+    run =
+      onPitch && prev !== null && idx === prev + 1 ? run + 1 : onPitch ? 1 : 0;
+    best = Math.max(best, run);
+    prev = idx;
+  }
+  return best;
+}
+
 export type ScoreBand = "SSS" | "SS" | "S" | "A" | "B" | "C" | "D";
 
 // Calibrated against real singing rather than a theoretical 100%: a solid
@@ -56,8 +85,9 @@ export interface ScoreResult {
   // 0..1, the blended headline figure.
   overall: number;
   band: ScoreBand;
-  // 0..1, of the frames where they sang inside a note, how many were within
-  // tolerance.
+  // 0..1, how on-pitch the sung frames were, per note the better of the flat
+  // frame-average and the best sustained on-pitch stretch (see
+  // SUSTAIN_FRACTION), then pooled across notes weighted by voiced frames.
   accuracy: number;
   // 0..1, of the reference note time, how much received any voiced input.
   coverage: number;
@@ -226,10 +256,21 @@ export class ScoreAccumulator {
       if (slots === undefined) continue;
       notesAttempted++;
 
-      let noteOnPitch = 0;
+      let frameOnPitch = 0;
       for (const deviation of slots.values()) {
-        if (deviation <= ON_PITCH_TOLERANCE_SEMIS) noteOnPitch++;
+        if (deviation <= ON_PITCH_TOLERANCE_SEMIS) frameOnPitch++;
       }
+      // Credit the note by whichever is kinder: its flat frame-average, or how
+      // well the pitch was sustained (see SUSTAIN_FRACTION). creditedOnPitch is
+      // the equivalent on-pitch frame count -- feeding it to both the headline
+      // accuracy and the per-bucket graph keeps the two in agreement.
+      const frameAccuracy = frameOnPitch / slots.size;
+      const sustainSlots = Math.max(1, Math.ceil(expected * SUSTAIN_FRACTION));
+      const stretchCredit = Math.min(
+        1,
+        longestOnPitchRun(slots) / sustainSlots,
+      );
+      const noteOnPitch = Math.max(frameAccuracy, stretchCredit) * slots.size;
 
       voicedFrames += slots.size;
       onPitchFrames += noteOnPitch;
