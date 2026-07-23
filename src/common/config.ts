@@ -52,6 +52,11 @@ export interface KarafriendsConfig {
   // scripts/measureMicLatency.mjs (its answer minus the ~25ms live output
   // term) and set it here. 0 disables scoring compensation entirely.
   micLatencyCalibrationMs: number;
+  // Log one PROBE_PITCH line per accepted pitch sample during scoring, for
+  // recalibrating micLatencyCalibrationMs with scripts/measureMicLatency.mjs.
+  // Off in normal use (a line per sample is ~40/s of log spam). Turn it on
+  // here, run the app capturing stdout, sing a song, then turn it back off.
+  pitchProbeEnabled: boolean;
 }
 
 const DEFAULT_CONFIG: KarafriendsConfig = {
@@ -76,6 +81,7 @@ const DEFAULT_CONFIG: KarafriendsConfig = {
   // the ~25ms live output term). Re-measure per machine; a wrong value here
   // only skews scoring, never playback.
   micLatencyCalibrationMs: 80,
+  pitchProbeEnabled: false,
 };
 
 function applyEnvironmentOverrides(config: KarafriendsConfig) {

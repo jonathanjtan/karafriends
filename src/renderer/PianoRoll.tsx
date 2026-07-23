@@ -521,9 +521,17 @@ export default function PianoRoll(props: {
     if (!canvasRef.current || !props.videoRef.current) return;
 
     // Read once, not per sample: the pitch-probe capture is a calibration aid,
-    // and the poll loop is hot. Toggle with localStorage.pitchProbe (an env
-    // var wouldn't work -- Parcel inlines process.env at build time).
-    const pitchProbeEnabled = localStorage.getItem("pitchProbe") !== null;
+    // and the poll loop is hot. Toggle with config.yaml's pitchProbeEnabled --
+    // the renderer is the big-screen window, so a config flag is far easier to
+    // reach than its devtools localStorage, and it lives beside the
+    // micLatencyCalibrationMs the capture is used to set.
+    const pitchProbeEnabled =
+      window.karafriends.karafriendsConfig().pitchProbeEnabled === true;
+    if (pitchProbeEnabled) {
+      // Startup breadcrumb so anyone calibrating can confirm the flag took
+      // effect before singing a whole song for nothing.
+      console.log("PROBE_PITCH capture enabled (config.pitchProbeEnabled)");
+    }
 
     const {
       notes: rawNotes,
@@ -591,7 +599,7 @@ export default function PianoRoll(props: {
           currentMidiNumber,
           props.videoRef.current.currentTime,
         );
-        // Latency-calibration capture, off unless localStorage.pitchProbe is
+        // Latency-calibration capture, off unless config.pitchProbeEnabled is
         // set (checked once when this effect ran, see pitchProbeEnabled). Each
         // accepted sample is logged as PROBE_PITCH <videoTime> <midi> <shift>;
         // sing a song with it on, then feed the log to

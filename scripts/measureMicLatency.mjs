@@ -16,11 +16,12 @@
 // detector's window centre, anything unenumerated -- because the singer's
 // alignment against the guide melody is the only thing being optimised.
 //
-// Capturing a take: set localStorage.pitchProbe = "1" in the renderer's
-// devtools console, sing one song full-voice without seeking, and let it end.
-// Each accepted pitch sample is logged as PROBE_PITCH <videoTime> <midi>
-// <shift>; capture the run's stdout to a file and pass it as --log. The melody
-// is the cached karafriends_tmp/joysound-<songId>-melody.bin for that song.
+// Capturing a take: set pitchProbeEnabled: true in config.yaml, run the app
+// capturing stdout (e.g. `... run-dev 2>&1 | tee /tmp/run.log`), sing one song
+// full-voice without seeking, and let it end. Each accepted pitch sample is
+// logged as PROBE_PITCH <videoTime> <midi> <shift>; pass that log as --log.
+// The melody is the cached karafriends_tmp/joysound-<songId>-melody.bin for
+// that song. Turn the flag back off afterwards.
 //
 // Accuracy, measured against synthetic traces with a known lateness baked in
 // (0 / 60 / 120ms, real melody, 25ms polling): the estimate came back 8.75ms
@@ -36,7 +37,7 @@
 //   node scripts/measureMicLatency.mjs --log <electron.log> --melody <melody.bin>
 //
 // The log is anything containing the PROBE_PITCH lines PianoRoll's pollPitch
-// emits when localStorage.pitchProbe is set; the melody is the cached
+// emits when config.pitchProbeEnabled is set; the melody is the cached
 // karafriends_tmp/joysound-<songId>-melody.bin for the song that was sung.
 
 import { execFileSync } from "child_process";
