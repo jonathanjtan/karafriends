@@ -63,7 +63,7 @@ function parseArgs() {
   }
   if (!out.log || !out.melody) {
     console.error(
-      "usage: node scripts/measureMicLatency.mjs --log <electron.log> --melody <melody.bin>",
+      "usage: node scripts/measureMicLatency.mjs --log <electron.log> --melody <melody.bin> [--song <songId>]",
     );
     process.exit(1);
   }
@@ -109,16 +109,31 @@ function compileScoring() {
   return outDir;
 }
 
-function readSamples(logPath) {
-  const samples = [];
-  const shifts = new Set();
+// Reads PROBE_PITCH lines, grouped by the songId tag each carries. A single
+// probe log can hold several songs (the flag can be left on all session), so
+// samples must be split by song before scoring against one song's melody.
+// Also accepts the older, untagged format (PROBE_PITCH <t> <midi> <shift>) so
+// pre-tag logs still work -- those land under the "" song key.
+function readSamplesBySong(logPath) {
+  const bySong = new Map(); // songId -> { samples: [], shifts: Set }
   for (const line of fs.readFileSync(logPath, "utf8").split("\n")) {
-    const m = line.match(/PROBE_PITCH (-?[\d.]+) (-?[\d.]+) (-?\d+)/);
-    if (!m) continue;
-    samples.push({ t: parseFloat(m[1]), midi: parseFloat(m[2]) });
-    shifts.add(parseInt(m[3], 10));
+    let m = line.match(/PROBE_PITCH ([\w-]+) (-?[\d.]+) (-?[\d.]+) (-?\d+)/);
+    let songId, t, midi, shift;
+    if (m) {
+      [, songId, t, midi, shift] = m;
+    } else {
+      m = line.match(/PROBE_PITCH (-?[\d.]+) (-?[\d.]+) (-?\d+)/);
+      if (!m) continue;
+      songId = "";
+      [, t, midi, shift] = m;
+    }
+    if (!bySong.has(songId))
+      bySong.set(songId, { samples: [], shifts: new Set() });
+    const g = bySong.get(songId);
+    g.samples.push({ t: parseFloat(t), midi: parseFloat(midi) });
+    g.shifts.add(parseInt(shift, 10));
   }
-  return { samples, shifts: [...shifts] };
+  return bySong;
 }
 
 const args = parseArgs();
@@ -126,11 +141,35 @@ const outDir = compileScoring();
 const { ScoreAccumulator } = await import(path.join(outDir, "scoring.js"));
 const { parseScoringData } = await import(path.join(outDir, "scoringData.js"));
 
-const { samples, shifts } = readSamples(args.log);
-if (samples.length === 0) {
+const bySong = readSamplesBySong(args.log);
+if (bySong.size === 0) {
   console.error(`No PROBE_PITCH lines in ${args.log}.`);
   process.exit(1);
 }
+
+// Pick the song to analyse. One song -> use it. Several -> require --song, and
+// list what's available so the caller can choose.
+let songId = args.song;
+if (songId === undefined) {
+  if (bySong.size === 1) {
+    songId = [...bySong.keys()][0];
+  } else {
+    console.error(
+      `Log holds ${bySong.size} songs; pass --song <songId>. Found:`,
+    );
+    for (const [id, g] of bySong)
+      console.error(`  ${id || "(untagged)"}: ${g.samples.length} samples`);
+    process.exit(1);
+  }
+}
+if (!bySong.has(songId)) {
+  console.error(
+    `--song ${songId} not in the log. Found: ${[...bySong.keys()].join(", ")}`,
+  );
+  process.exit(1);
+}
+const { samples, shifts: shiftSet } = bySong.get(songId);
+const shifts = [...shiftSet];
 if (shifts.length > 1) {
   console.error(
     `Pitch shift changed mid-song (${shifts.join(", ")}); the sweep assumes one value.`,
@@ -144,7 +183,8 @@ const { notes, lyricsIntervals } = parseScoringData(
 );
 
 console.log(
-  `${samples.length} samples spanning ${samples[0].t.toFixed(1)}-${samples[samples.length - 1].t.toFixed(1)}s`,
+  `song ${songId || "(untagged)"}: ${samples.length} samples spanning ` +
+    `${samples[0].t.toFixed(1)}-${samples[samples.length - 1].t.toFixed(1)}s`,
 );
 console.log(
   `${notes.length} reference notes, pitchShiftSemis=${pitchShiftSemis}\n`,

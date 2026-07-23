@@ -119,6 +119,10 @@ function Player(props: {
   const videoRef = useRef<HTMLVideoElement>(null);
   const trackRef = useRef<HTMLTrackElement>(null);
   const [scoringData, setScoringData] = useState<readonly number[]>([]);
+  // The current song's id, passed to PianoRoll only so the latency-probe
+  // capture can tag each sample -- lets a multi-song probe log be split by
+  // song later. Not used for scoring itself.
+  const [scoringSongId, setScoringSongId] = useState<string>("");
 
   const [joysoundTelop, setJoysoundTelop] = useState<ArrayBuffer | null>(null);
   const [shouldShowJoysound, setShouldShowJoysound] = useState<boolean>(false);
@@ -456,6 +460,7 @@ function Player(props: {
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
               setScoringData(popSong.scoringData);
+              setScoringSongId(popSong.songId);
 
               armScoring(popSong.scoringData, {
                 songName: popSong.name,
@@ -577,6 +582,7 @@ function Player(props: {
               setPianoRollTitleCleared(false);
               setPianoRollDucked(false);
               setScoringData(popSong.scoringData ?? []);
+              setScoringSongId(popSong.songId);
               setShouldShowJoysound(true);
               setShouldShowAdhocLyrics(false);
 
@@ -898,6 +904,7 @@ function Player(props: {
       {shouldShowPianoRoll ? (
         <PianoRoll
           scoringData={scoringData}
+          songId={scoringSongId}
           videoRef={videoRef}
           mics={props.mics}
           pitchShiftSemis={pitchShiftSemis}

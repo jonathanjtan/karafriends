@@ -450,6 +450,9 @@ function midiNumberToYCoord(midiNumber: number, medianMidiNumber: number) {
 
 export default function PianoRoll(props: {
   scoringData: readonly number[];
+  // Only consumed by the latency-probe capture, to tag each sample so a
+  // multi-song probe log can be split by song (see pitchProbeEnabled).
+  songId: string;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   mics: InputDevice[];
   pitchShiftSemis: number;
@@ -527,10 +530,15 @@ export default function PianoRoll(props: {
     // micLatencyCalibrationMs the capture is used to set.
     const pitchProbeEnabled =
       window.karafriends.karafriendsConfig().pitchProbeEnabled === true;
+    // Captured here (not read per sample): this effect rebuilds per song, in
+    // lockstep with scoringData, so props.songId is constant for its lifetime.
+    const probeSongId = props.songId;
     if (pitchProbeEnabled) {
       // Startup breadcrumb so anyone calibrating can confirm the flag took
       // effect before singing a whole song for nothing.
-      console.log("PROBE_PITCH capture enabled (config.pitchProbeEnabled)");
+      console.log(
+        `PROBE_PITCH capture enabled (config.pitchProbeEnabled), song ${probeSongId}`,
+      );
     }
 
     const {
@@ -601,12 +609,13 @@ export default function PianoRoll(props: {
         );
         // Latency-calibration capture, off unless config.pitchProbeEnabled is
         // set (checked once when this effect ran, see pitchProbeEnabled). Each
-        // accepted sample is logged as PROBE_PITCH <videoTime> <midi> <shift>;
-        // sing a song with it on, then feed the log to
-        // scripts/measureMicLatency.mjs to re-measure micLatencyCalibrationMs.
+        // accepted sample is logged as
+        //   PROBE_PITCH <songId> <videoTime> <midi> <shift>
+        // -- the songId tag lets a multi-song log be split by song. Sing with
+        // it on, then feed the log to scripts/measureMicLatency.mjs.
         if (pitchProbeEnabled) {
           console.log(
-            `PROBE_PITCH ${props.videoRef.current.currentTime.toFixed(4)} ${midiNumber.toFixed(3)} ${props.pitchShiftSemis}`,
+            `PROBE_PITCH ${probeSongId} ${props.videoRef.current.currentTime.toFixed(4)} ${midiNumber.toFixed(3)} ${props.pitchShiftSemis}`,
           );
         }
         // Every open mic feeds one accumulator -- whoever is singing counts.
@@ -731,6 +740,7 @@ export default function PianoRoll(props: {
     // section boundaries, while the singer was mid-phrase.
   }, [
     props.scoringData,
+    props.songId,
     props.videoRef,
     props.mics,
     props.pitchShiftSemis,
