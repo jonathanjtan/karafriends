@@ -520,6 +520,11 @@ export default function PianoRoll(props: {
   useEffect(() => {
     if (!canvasRef.current || !props.videoRef.current) return;
 
+    // Read once, not per sample: the pitch-probe capture is a calibration aid,
+    // and the poll loop is hot. Toggle with localStorage.pitchProbe (an env
+    // var wouldn't work -- Parcel inlines process.env at build time).
+    const pitchProbeEnabled = localStorage.getItem("pitchProbe") !== null;
+
     const {
       notes: rawNotes,
       freeTimeIntervals,
@@ -586,6 +591,16 @@ export default function PianoRoll(props: {
           currentMidiNumber,
           props.videoRef.current.currentTime,
         );
+        // Latency-calibration capture, off unless localStorage.pitchProbe is
+        // set (checked once when this effect ran, see pitchProbeEnabled). Each
+        // accepted sample is logged as PROBE_PITCH <videoTime> <midi> <shift>;
+        // sing a song with it on, then feed the log to
+        // scripts/measureMicLatency.mjs to re-measure micLatencyCalibrationMs.
+        if (pitchProbeEnabled) {
+          console.log(
+            `PROBE_PITCH ${props.videoRef.current.currentTime.toFixed(4)} ${midiNumber.toFixed(3)} ${props.pitchShiftSemis}`,
+          );
+        }
         // Every open mic feeds one accumulator -- whoever is singing counts.
         // Duplicate samples from mic bleed are deduplicated by frame slot
         // inside addSample, so extra mics can't inflate coverage.

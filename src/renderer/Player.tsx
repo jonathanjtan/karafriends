@@ -302,6 +302,21 @@ function Player(props: {
       scoredSongMetaRef.current = null;
     };
 
+    // Total mic-to-score latency compensation, read fresh per song. The
+    // config value covers the input/ADC/USB path (measured with the sweep;
+    // macOS/cpal cannot report it truthfully), and live outputLatency covers
+    // the playback path the singer is reacting to -- that one genuinely
+    // changes at runtime (wired speakers vs Bluetooth swing it by tens of ms),
+    // so it is read here rather than folded into the constant. outputLatency
+    // is unset on some backends; treat a missing value as 0.
+    const micLatencyCompensationMs = (): number => {
+      const calibrationMs =
+        window.karafriends.karafriendsConfig().micLatencyCalibrationMs;
+      const outputLatencyMs =
+        (props.audio.audioContext.outputLatency || 0) * 1000;
+      return calibrationMs + outputLatencyMs;
+    };
+
     // Arm scoring for a song that carries usable reference notes. DAM's blob
     // and Joysound's extracted melody share a layout, so both arrive here.
     // Deliberately not gated on the toggle -- see the ref above. A melody too
@@ -317,6 +332,7 @@ function Player(props: {
       scoreAccumulatorRef.current = new ScoreAccumulator(
         notes,
         lyricsIntervals,
+        micLatencyCompensationMs(),
       );
       scoredSongMetaRef.current = meta;
     };

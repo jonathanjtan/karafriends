@@ -27,14 +27,6 @@ const ON_PITCH_TOLERANCE_SEMIS = 1.0;
 // and inflates coverage.
 const SAMPLE_SLOT_MS = 25;
 
-// The singer reacts to audio that has already been through output latency,
-// and each reading is up to one poll interval stale, so samples arrive
-// systematically *late* relative to video.currentTime. Positive values shift
-// samples earlier. Left at 0 until measured on real hardware -- it differs
-// between CoreAudio and the ASIO path, so it wants calibrating per machine
-// rather than a guessed constant baked in here.
-const MIC_LATENCY_COMPENSATION_MS = 0;
-
 // Accuracy answers "when they sang, were they on the note"; coverage answers
 // "did they sing the song at all". Scoring accuracy alone gives a full score
 // to someone who nails four notes and mumbles the rest, so both must count.
@@ -142,12 +134,21 @@ export class ScoreAccumulator {
   // note index -> (frame slot -> best absolute deviation seen in that slot)
   private hits: Map<number, Map<number, number>> = new Map();
   private cursor = 0;
+  private compensationMs: number;
 
+  // compensationMs shifts every sample back before it is placed against a
+  // note, correcting the mic-to-score latency (the singer hears through the
+  // output path and is recorded through the input path, so a sung pitch
+  // arrives late). The caller supplies it -- config calibration plus live
+  // output latency in the renderer; the offline sweep leaves it 0 and applies
+  // its own trial offset -- so this class stays pure and dependency-free.
   constructor(
     notes: readonly ScoringNote[],
     lyricsIntervals: readonly ScoringInterval[],
+    compensationMs: number = 0,
   ) {
     this.notes = notes;
+    this.compensationMs = compensationMs;
     const bounds = scoreWindowBounds(notes, lyricsIntervals);
     this.windowStart = bounds?.startTime ?? 0;
     this.windowEnd = bounds?.endTime ?? 0;
@@ -159,7 +160,7 @@ export class ScoreAccumulator {
   // can change mid-song, and the accumulator outlives the piano roll's GL
   // effect (which rebuilds on every parent render).
   addSample(timeSecs: number, midiNumber: number, pitchShiftSemis: number) {
-    const t = timeSecs - MIC_LATENCY_COMPENSATION_MS / 1000;
+    const t = timeSecs - this.compensationMs / 1000;
 
     // Advance past notes that have already finished. The cursor only moves
     // forward; a seek resets it via reset().
