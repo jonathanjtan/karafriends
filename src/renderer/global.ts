@@ -5,6 +5,11 @@ declare global {
     karafriends: {
       ipAddresses(): string[];
       karafriendsConfig(): KarafriendsConfig;
+      saveScoreCard(meta: {
+        songName: string;
+        band: string;
+        overall: number;
+      }): Promise<string | null>;
       nativeAudio: {
         inputDevices: () => [string, number][];
         outputDevices: () => string[];

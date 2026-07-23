@@ -43,6 +43,7 @@ import inspector from "inspector";
 // Start a debug server if we don't have one already. If we already have one, this would throw.
 if (inspector.url() === undefined) inspector.open();
 
+import fs from "fs";
 import path from "path";
 
 import compression from "compression";
@@ -178,6 +179,46 @@ function createWindow() {
     console.log("Sending config over ipc");
     event.returnValue = karafriendsConfig;
   });
+
+  // Save a PNG of the renderer window (the score card overlaid on the video)
+  // to Pictures/karafriends. The renderer asks once per revealed card; keep
+  // this best-effort and never throw across the IPC boundary, so a failed
+  // grab (window gone, disk full) can't take down a scoring path.
+  ipcMain.handle(
+    "save-score-card",
+    async (
+      _event,
+      meta: { songName: string; band: string; overall: number },
+    ): Promise<string | null> => {
+      if (!rendererWindow) return null;
+      try {
+        const image = await rendererWindow.webContents.capturePage();
+        const dir = path.join(app.getPath("pictures"), "karafriends");
+        fs.mkdirSync(dir, { recursive: true });
+
+        // Sortable timestamp + a filesystem-safe slug of the song, so a night
+        // of songs lands in chronological order and stays recognizable.
+        const stamp = new Date()
+          .toISOString()
+          .slice(0, 19)
+          .replace(/:/g, "")
+          .replace("T", "_");
+        const slug =
+          meta.songName.replace(/[^\p{L}\p{N}]+/gu, "_").slice(0, 40) || "song";
+        const file = path.join(
+          dir,
+          `${stamp}_${slug}_${meta.band}_${meta.overall}.png`,
+        );
+
+        fs.writeFileSync(file, image.toPNG());
+        console.log(`Saved score card to ${file}`);
+        return file;
+      } catch (err) {
+        console.error("Failed to save score card screenshot:", err);
+        return null;
+      }
+    },
+  );
 }
 
 app.on("ready", createWindow);

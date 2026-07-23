@@ -361,6 +361,20 @@ function Player(props: {
       setScoredPerformance({ ...meta, result });
       setScoreCardVisible(true);
       scoreCardTimersRef.current.push(
+        // Screenshot once the fade-in has finished, so the saved PNG catches
+        // the card crisp rather than mid-dissolve. Fire-and-forget: the main
+        // handler never rejects, and a failed grab must not disturb playback.
+        setTimeout(() => {
+          window.karafriends
+            .saveScoreCard({
+              songName: meta.songName,
+              band: result.band,
+              overall: Math.round(result.overall * 100),
+            })
+            .catch((err) =>
+              console.error("Score card screenshot request failed:", err),
+            );
+        }, SCORE_CARD_FADE_MS + 200),
         setTimeout(() => setScoreCardVisible(false), SCORE_CARD_HOLD_MS),
         setTimeout(() => setScoredPerformance(null), SCORE_CARD_TOTAL_MS),
       );
