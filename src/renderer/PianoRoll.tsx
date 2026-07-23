@@ -533,12 +533,25 @@ export default function PianoRoll(props: {
     // Captured here (not read per sample): this effect rebuilds per song, in
     // lockstep with scoringData, so props.songId is constant for its lifetime.
     const probeSongId = props.songId;
+    // Samples are batched here and flushed via main to the per-day probe log
+    // in the app's data dir (probe-logs/, beside config.yaml), rather than
+    // console.logged: that way calibration data collects from the packaged app
+    // just by enabling the flag -- no terminal or stdout capture, which a
+    // Finder-launched .app has no way to provide.
+    const probeBuffer: string[] = [];
+    let probeFlushInterval: ReturnType<typeof setInterval> | null = null;
+    const flushProbeBuffer = () => {
+      if (probeBuffer.length > 0) {
+        window.karafriends.appendProbeLog(probeBuffer.splice(0));
+      }
+    };
     if (pitchProbeEnabled) {
       // Startup breadcrumb so anyone calibrating can confirm the flag took
       // effect before singing a whole song for nothing.
       console.log(
         `PROBE_PITCH capture enabled (config.pitchProbeEnabled), song ${probeSongId}`,
       );
+      probeFlushInterval = setInterval(flushProbeBuffer, 2000);
     }
 
     const {
@@ -609,12 +622,12 @@ export default function PianoRoll(props: {
         );
         // Latency-calibration capture, off unless config.pitchProbeEnabled is
         // set (checked once when this effect ran, see pitchProbeEnabled). Each
-        // accepted sample is logged as
+        // accepted sample is buffered as
         //   PROBE_PITCH <songId> <videoTime> <midi> <shift>
-        // -- the songId tag lets a multi-song log be split by song. Sing with
-        // it on, then feed the log to scripts/measureMicLatency.mjs.
+        // and flushed to probe-logs/probe-<date>.log; the songId tag lets that
+        // log be split by song. Feed it to scripts/measureMicLatency.mjs.
         if (pitchProbeEnabled) {
-          console.log(
+          probeBuffer.push(
             `PROBE_PITCH ${probeSongId} ${props.videoRef.current.currentTime.toFixed(4)} ${midiNumber.toFixed(3)} ${props.pitchShiftSemis}`,
           );
         }
@@ -730,6 +743,10 @@ export default function PianoRoll(props: {
           clearPitchDetectionBuffers,
         );
       }
+      // This effect tears down at each song's end (deps change) -- flush the
+      // song's last samples before they're lost.
+      if (probeFlushInterval !== null) clearInterval(probeFlushInterval);
+      flushProbeBuffer();
     };
     // Only what the effect actually reads -- NOT `props` wholesale. The props
     // object is a fresh literal on every Player render, so depending on it

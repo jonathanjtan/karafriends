@@ -42,24 +42,28 @@ on-pitch stretch)`, pooled across notes by voiced-frame count. The
 
 1. Set `pitchProbeEnabled: true` in config.yaml (macOS dev:
    `~/Library/Application Support/Electron/config.yaml`; packaged:
-   `.../karafriends/config.yaml`).
-2. `ELECTRON_ENABLE_LOGGING=1 corepack yarn run-dev 2>&1 | tee /tmp/run.log`
-3. Confirm `PROBE_PITCH capture enabled` appears once a song starts — that's the
-   breadcrumb that the flag took effect.
-4. Sing one or more songs, full voice, **no seeking** (a seek resets the
-   tally), let each end naturally.
-5. `node scripts/measureMicLatency.mjs --log /tmp/run.log --melody
+   `~/Library/Application Support/karafriends/config.yaml`).
+2. Launch the app however you normally do — Finder double-click is fine for the
+   packaged app. **No terminal capture or `tee` needed**: while the flag is on,
+   the app writes samples itself to `<userData>/probe-logs/probe-<date>.log`
+   (packaged: `~/Library/Application Support/karafriends/probe-logs/`; dev:
+   under `.../Electron/`). A `PROBE_PITCH capture enabled` breadcrumb also
+   prints to the renderer console if you want to confirm the flag took.
+3. Sing one or more songs, full voice, **no seeking** (a seek resets the
+   tally), let each end naturally. A day's songs append to the same dated file.
+4. `node scripts/measureMicLatency.mjs --log <that probe-<date>.log> --melody
 $TMPDIR/karafriends_tmp/joysound-<songId>-melody.bin [--song <songId>]` →
    latency sweep. Each PROBE_PITCH line carries the songId, so a multi-song log
    is split automatically; with several songs the tool lists them and wants
    `--song` to pick one (and the matching `--melody`).
-6. For scoring behaviour (not latency), replay the samples through the real
+5. For scoring behaviour (not latency), replay the samples through the real
    `ScoreAccumulator` at the app's actual compensation, and/or bin per-note by
    duration (throwaway scripts were used this session; not committed).
 
-**Leaving the probe on indefinitely**: fine — performance is one console.log
-per sample, and each line is tagged with its songId, so a whole session's log
-splits cleanly by song afterward.
+**Leaving the probe on indefinitely**: fine — the app writes the log itself (no
+terminal), each line is songId-tagged so a whole session splits cleanly by
+song, and the per-day file is in userData (survives an OS temp sweep). Turn the
+flag off when done collecting to stop the writes.
 
 ## Gotchas (learned the hard way this session)
 
@@ -72,8 +76,9 @@ splits cleanly by song afterward.
 - **Per-machine / per-output-device.** The calibration is specific to this
   machine and its current output. Bluetooth vs wired output alone swings the
   live term tens of ms (that part auto-adjusts; the fixed part doesn't).
-- **Score cards auto-save** to `~/Pictures/karafriends/` as
-  `<timestamp>_<song>_<band>_<score>.png` on every reveal.
+- **Score cards auto-save** to `<userData>/score-cards/` as
+  `<timestamp>_<song>_<band>_<score>.png` on every reveal (packaged:
+  `~/Library/Application Support/karafriends/score-cards/`).
 - Verifying anything scoring-related end-to-end needs a real mic — the model is
   validated offline against captured takes, but a live-sung card has never been
   eyeballed rendering. See open item #3.
@@ -112,7 +117,8 @@ splits cleanly by song afterward.
   card reveal, screenshot trigger.
 - `src/renderer/PianoRoll.tsx` — pitch poll, the PROBE_PITCH capture (gated,
   songId-tagged; songId is passed in from Player purely for this).
-- `src/main/index.ts` — score-card screenshot handler (capturePage → Pictures).
+- `src/main/index.ts` — score-card screenshot handler + probe-log file
+  appender (both write under userData).
 - `native/karafriends-lib/src/lib.rs` — pitch detection, the pitch ring (now
   drops stale audio, not fresh, on a late poll).
 - `scripts/measureMicLatency.mjs` — the latency sweep / calibration tool.

@@ -25,13 +25,19 @@ contextBridge.exposeInMainWorld("karafriends", {
 
     return karafriendsConfig;
   },
-  // Capture the current score card to Pictures/karafriends. Resolves to the
-  // saved path, or null if the grab failed (the main handler swallows errors).
+  // Capture the current score card to the app's data dir (score-cards/).
+  // Resolves to the saved path, or null if the grab failed (the main handler
+  // swallows errors).
   saveScoreCard: (meta: {
     songName: string;
     band: string;
     overall: number;
   }): Promise<string | null> => ipcRenderer.invoke("save-score-card", meta),
+  // Append latency-probe sample lines to the per-day log in the app data dir.
+  // Fire and forget (send, not invoke) -- the caller batches, and a dropped
+  // batch just costs a few samples of calibration data.
+  appendProbeLog: (lines: string[]): void =>
+    ipcRenderer.send("append-probe-log", lines),
   nativeAudio: {
     // Repeatedly asking CPAL for input devices seems to cause unexpected
     // breakages, like the default output device being released. Let's avoid

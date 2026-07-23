@@ -160,6 +160,7 @@ function Player(props: {
     useState<ScoredPerformance | null>(null);
   const [scoreCardVisible, setScoreCardVisible] = useState(false);
   const scoreCardTimersRef = useRef<NodeJS.Timeout[]>([]);
+
   // Read through a ref by the once-on-mount "ended" handler. Songs always
   // accumulate (the cost is a map insert per poll), and only the reveal
   // consults the toggle -- so switching scoring on part-way through a song

@@ -10,6 +10,7 @@ declare global {
         band: string;
         overall: number;
       }): Promise<string | null>;
+      appendProbeLog(lines: string[]): void;
       nativeAudio: {
         inputDevices: () => [string, number][];
         outputDevices: () => string[];

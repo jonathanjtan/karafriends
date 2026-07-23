@@ -181,9 +181,10 @@ function createWindow() {
   });
 
   // Save a PNG of the renderer window (the score card overlaid on the video)
-  // to Pictures/karafriends. The renderer asks once per revealed card; keep
-  // this best-effort and never throw across the IPC boundary, so a failed
-  // grab (window gone, disk full) can't take down a scoring path.
+  // to the app's data dir (score-cards/, beside config.yaml). The renderer
+  // asks once per revealed card; keep this best-effort and never throw across
+  // the IPC boundary, so a failed grab (window gone, disk full) can't take down
+  // a scoring path.
   ipcMain.handle(
     "save-score-card",
     async (
@@ -193,7 +194,7 @@ function createWindow() {
       if (!rendererWindow) return null;
       try {
         const image = await rendererWindow.webContents.capturePage();
-        const dir = path.join(app.getPath("pictures"), "karafriends");
+        const dir = path.join(app.getPath("userData"), "score-cards");
         fs.mkdirSync(dir, { recursive: true });
 
         // Sortable timestamp + a filesystem-safe slug of the song, so a night
@@ -219,6 +220,29 @@ function createWindow() {
       }
     },
   );
+
+  // Append a batch of latency-probe sample lines to a per-day log under the
+  // app's own data dir (next to config.yaml), so scoring calibration data can
+  // be collected from the packaged app just by turning pitchProbeEnabled on --
+  // no terminal or stdout capture needed (a Finder-launched .app has nowhere to
+  // tee). userData rather than a temp dir so a night's captures survive an OS
+  // temp sweep. The renderer only sends batches while the flag is on.
+  // Best-effort: a failed write is logged and dropped, never thrown across the
+  // boundary.
+  ipcMain.on("append-probe-log", (_event, lines: string[]) => {
+    if (!Array.isArray(lines) || lines.length === 0) return;
+    try {
+      const dir = path.join(app.getPath("userData"), "probe-logs");
+      fs.mkdirSync(dir, { recursive: true });
+      const day = new Date().toISOString().slice(0, 10);
+      fs.appendFileSync(
+        path.join(dir, `probe-${day}.log`),
+        lines.join("\n") + "\n",
+      );
+    } catch (err) {
+      console.error("Failed to append probe log:", err);
+    }
+  });
 }
 
 app.on("ready", createWindow);
