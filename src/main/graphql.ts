@@ -49,6 +49,19 @@ import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
 import { getJoysoundScoringData } from "./joysoundMelody";
 import memoizeWithFailureEviction from "./memoizeWithFailureEviction";
 import {
+  claimPerson,
+  createPerson,
+  deletePerson,
+  flushPeople,
+  listPeople,
+  loadPeople,
+  Person,
+  personByDevice,
+  resolvePerson,
+  touchPerson,
+  updatePersonProfile,
+} from "./people";
+import {
   getDamArtistRanking,
   getDamRanking,
   getJoysoundArtistRanking,
@@ -211,6 +224,9 @@ export function flushReadingCacheOnShutdown(): void {
     damPrimeMarkerSaveTimer = null;
   }
   writeDamPrimeMarkersToDisk();
+  // And the people registry, whose lastSeenAt bumps are debounced the same
+  // way. Losing one only misorders the picker, but it's a one-line flush.
+  flushPeople();
 }
 
 function cacheReading(name: string, yomi: string, canonical: boolean): void {
@@ -1195,6 +1211,9 @@ export interface UserIdentity {
   // PMD dialogue-portrait frame around the picture: "male" (blue) or
   // "female" (pink). Absent/null means male.
   readonly profilePictureFrame?: string | null;
+  // The singer this device is acting as. Absent on pre-registry clients and
+  // on queue items persisted before the registry existed.
+  readonly personId?: string | null;
 }
 
 interface QueueItemInterface {
@@ -1399,6 +1418,7 @@ enum SubscriptionEvent {
   SidebarCollapsedChanged = "SidebarCollapsedChanged",
   QueueAdded = "QueueAdded",
   QueueChanged = "QueueChanged",
+  PeopleChanged = "PeopleChanged",
 }
 
 // 1.0 = the standard 3.0-to-stereo downmix level Joysound's guide melody has
@@ -1558,26 +1578,70 @@ interface WatchData {
   };
 }
 
-function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
-  // Not very efficient, but surely the queue won't ever get so big that this would be considered expensive
-  const songsQueuedByUser: number = db.songQueue.filter(
-    (x) => x.userIdentity.deviceId === userIdentity.deviceId,
-  ).length;
+// The identity a queue item should carry: the person's current name/avatar,
+// stamped with their personId, but keeping the device that actually queued
+// it. Replaces the old session-scoped latestIdentityByDevice map — the
+// registry is the source of truth now, and it survives a relaunch.
+function identityFromPerson(person: Person, deviceId: string): UserIdentity {
+  return {
+    deviceId,
+    nickname: person.displayName,
+    profilePictureUrl: person.profilePictureUrl,
+    profilePictureFrame: person.profilePictureFrame,
+    personId: person.personId,
+  };
+}
 
-  const songsDownloadingByUser: number = db.downloadQueue.filter(
-    (x) => x.userIdentity.deviceId === userIdentity.deviceId,
-  ).length;
+function publishPeopleChanged(): void {
+  pubsub.publish(SubscriptionEvent.PeopleChanged, {
+    peopleChanged: listPeople(),
+  });
+}
+
+// Whether a queue/download item belongs to this singer. personId is the real
+// key; the deviceIds fallback covers items persisted before the registry
+// existed, which carry no personId at all.
+function itemBelongsToPerson(
+  itemIdentity: UserIdentity,
+  person: Person,
+): boolean {
+  if (itemIdentity.personId) return itemIdentity.personId === person.personId;
+  return person.deviceIds.includes(itemIdentity.deviceId);
+}
+
+function isAdmin(person: Person, userIdentity: UserIdentity): boolean {
+  return (
+    karafriendsConfig.adminNicks.includes(person.displayName) ||
+    karafriendsConfig.adminNicks.includes(userIdentity.nickname) ||
+    person.deviceIds.some((deviceId) =>
+      karafriendsConfig.adminDeviceIds.includes(deviceId),
+    ) ||
+    karafriendsConfig.adminDeviceIds.includes(userIdentity.deviceId)
+  );
+}
+
+function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
+  const person = resolvePerson(userIdentity);
+  // Counted per person, not per device: one singer on a phone and a laptop
+  // used to get double the limit, and two singers sharing a phone had to
+  // split one.
+  const owns = (x: { userIdentity: UserIdentity }) =>
+    itemBelongsToPerson(x.userIdentity, person);
+
+  // Not very efficient, but surely the queue won't ever get so big that this would be considered expensive
+  const songsQueuedByUser: number = db.songQueue.filter(owns).length;
+
+  const songsDownloadingByUser: number = db.downloadQueue.filter(owns).length;
 
   console.log(
-    `hasMaxSongsInQueue: user ${userIdentity.nickname} has ${songsQueuedByUser}, ${songsDownloadingByUser} downloading`,
+    `hasMaxSongsInQueue: user ${person.displayName} has ${songsQueuedByUser}, ${songsDownloadingByUser} downloading`,
   );
   console.log(
     `adminNicks=${karafriendsConfig.adminNicks}, adminDeviceIds=${karafriendsConfig.adminDeviceIds}`,
   );
 
   return (
-    !karafriendsConfig.adminNicks.includes(userIdentity.nickname) &&
-    !karafriendsConfig.adminDeviceIds.includes(userIdentity.deviceId) &&
+    !isAdmin(person, userIdentity) &&
     karafriendsConfig.paxSongQueueLimit > 0 &&
     songsQueuedByUser + songsDownloadingByUser >=
       karafriendsConfig.paxSongQueueLimit
@@ -1585,18 +1649,8 @@ function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
 }
 
 function canPushToHeadOfQueue(userIdentity: UserIdentity): boolean {
-  return (
-    karafriendsConfig.adminNicks.includes(userIdentity.nickname) ||
-    karafriendsConfig.adminDeviceIds.includes(userIdentity.deviceId)
-  );
+  return isAdmin(resolvePerson(userIdentity), userIdentity);
 }
-
-// Latest identity seen from each device via updateUserIdentity. Songs that
-// are still downloading when a profile edit lands were captured with the old
-// identity at queue time; pushSongToQueue consults this so they arrive in the
-// queue with the edit applied. Session-scoped on purpose — persisted queue
-// items are rewritten directly by updateUserIdentity.
-const latestIdentityByDevice = new Map<string, UserIdentity>();
 
 function pushSongToQueue(
   queueItem: QueueItem,
@@ -1607,11 +1661,16 @@ function pushSongToQueue(
   // canonical DAM reading even across an app restart, and a later cache change
   // can't retroactively alter an already-queued song's romaji. Falls back to
   // the cache/kuromoji in nameYomiResolvers when nothing is cached yet.
+  // Resolving through the registry both stamps the personId attribution hangs
+  // off and picks up any profile edit made since this song was requested (a
+  // song still downloading when someone renames themselves used to arrive
+  // with the stale name).
+  const person = resolvePerson(queueItem.userIdentity);
+  touchPerson(person.personId);
+
   const enrichedItem: QueueItem = {
     ...queueItem,
-    userIdentity:
-      latestIdentityByDevice.get(queueItem.userIdentity.deviceId) ??
-      queueItem.userIdentity,
+    userIdentity: identityFromPerson(person, queueItem.userIdentity.deviceId),
     nameYomi: queueItem.nameYomi ?? getCachedReading(queueItem.name),
     artistNameYomi:
       queueItem.artistNameYomi ?? getCachedReading(queueItem.artistName),
@@ -2203,6 +2262,9 @@ const resolvers = {
     currentSong: () => {
       return db.currentSong;
     },
+    people: (): Person[] => listPeople(),
+    personByDevice: (_: any, args: { deviceId: string }): Person | null =>
+      personByDevice(args.deviceId),
     queue: () => {
       if (!db.songQueue.length) return [];
       return db.songQueue;
@@ -2691,23 +2753,39 @@ const resolvers = {
     },
     updateUserIdentity: (_: any, args: { identity: UserIdentity }): boolean => {
       const { identity } = args;
-      latestIdentityByDevice.set(identity.deviceId, identity);
+      // Write the edit through to the registry first, so a rename sticks
+      // across this person's other devices and across relaunches rather than
+      // living only on the queue items it happened to touch.
+      const person =
+        updatePersonProfile(resolvePerson(identity).personId, {
+          displayName: identity.nickname,
+          profilePictureUrl: identity.profilePictureUrl ?? null,
+          profilePictureFrame: identity.profilePictureFrame ?? null,
+        }) ?? resolvePerson(identity);
+      publishPeopleChanged();
 
+      // Everything this *person* has queued, not just this device — they may
+      // have queued from a phone and renamed themselves on a laptop.
+      const rewritten = (item: QueueItem): QueueItem => ({
+        ...item,
+        userIdentity: identityFromPerson(person, item.userIdentity.deviceId),
+      });
       const needsUpdate = (item: QueueItem) =>
-        item.userIdentity.deviceId === identity.deviceId &&
-        JSON.stringify(item.userIdentity) !== JSON.stringify(identity);
+        itemBelongsToPerson(item.userIdentity, person) &&
+        JSON.stringify(item.userIdentity) !==
+          JSON.stringify(rewritten(item).userIdentity);
 
       let changed = false;
       db.songQueue = db.songQueue.map((item) => {
         if (!needsUpdate(item)) return item;
         changed = true;
-        return { ...item, userIdentity: identity };
+        return rewritten(item);
       });
       // Update the playing song's snapshot too, but only announce it through
       // queueChanged — publishing currentSongChanged would poke the renderer's
       // playback machinery mid-song.
       if (db.currentSong && needsUpdate(db.currentSong)) {
-        db.currentSong = { ...db.currentSong, userIdentity: identity };
+        db.currentSong = rewritten(db.currentSong);
         changed = true;
       }
 
@@ -2721,6 +2799,45 @@ const resolvers = {
         saveDb();
       }
       return changed;
+    },
+    createPerson: (
+      _: any,
+      args: {
+        input: {
+          displayName: string;
+          deviceId: string;
+          profilePictureUrl?: string | null;
+          profilePictureFrame?: string | null;
+        };
+      },
+    ): Person => {
+      const person = createPerson({
+        deviceId: args.input.deviceId,
+        nickname: args.input.displayName,
+        profilePictureUrl: args.input.profilePictureUrl,
+        profilePictureFrame: args.input.profilePictureFrame,
+      });
+      publishPeopleChanged();
+      return person;
+    },
+    claimPerson: (
+      _: any,
+      args: { personId: string; deviceId: string },
+    ): Person => {
+      const person = claimPerson(args.personId, args.deviceId);
+      if (!person) {
+        // The registry was edited out from under this phone (a stale gate
+        // left open across a people.json reset). Throwing sends the client
+        // back through resolution rather than silently attaching nobody.
+        throw new Error(`No such person: ${args.personId}`);
+      }
+      publishPeopleChanged();
+      return person;
+    },
+    deletePerson: (_: any, args: { personId: string }): boolean => {
+      const deleted = deletePerson(args.personId);
+      if (deleted) publishPeopleChanged();
+      return deleted;
     },
     removeSong: (
       _: any,
@@ -2983,6 +3100,10 @@ const resolvers = {
         pubsub.asyncIterableIterator([
           SubscriptionEvent.MicRmsGateEnabledChanged,
         ]),
+    },
+    peopleChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.PeopleChanged]),
     },
     experimentalScoringEnabledChanged: {
       subscribe: () =>
@@ -3320,6 +3441,19 @@ export function applyGraphQLMiddleware(app: Application) {
   const serverCleanup = useServer({ schema }, wsServer);
 
   db = loadDb();
+  // Bootstrap from history the first time only (no people.json yet), so the
+  // room's existing songs keep their attribution instead of everyone showing
+  // up as a stranger. songHistory is newest-first, which is the order
+  // loadPeople wants for picking each device's latest name/avatar.
+  loadPeople(() =>
+    db.songHistory.map(({ song }) => ({
+      deviceId: song.userIdentity.deviceId,
+      nickname: song.userIdentity.nickname,
+      profilePictureUrl: song.userIdentity.profilePictureUrl,
+      profilePictureFrame: song.userIdentity.profilePictureFrame,
+      lastSeenAt: parseInt(song.timestamp, 10) || undefined,
+    })),
+  );
   loadReadingCache();
   loadDamPrimeMarkers();
   loadJoysoundArtistSongCountCache();

@@ -27,6 +27,7 @@ const nowPlayingQuery = graphql`
           nickname
           profilePictureUrl
           profilePictureFrame
+          personId
         }
         hasAdhocLyrics
       }
@@ -43,6 +44,7 @@ const nowPlayingQuery = graphql`
           nickname
           profilePictureUrl
           profilePictureFrame
+          personId
         }
       }
 
@@ -68,6 +70,7 @@ const nowPlayingSubscription = graphql`
           nickname
           profilePictureUrl
           profilePictureFrame
+          personId
         }
         hasAdhocLyrics
       }
@@ -84,6 +87,7 @@ const nowPlayingSubscription = graphql`
           nickname
           profilePictureUrl
           profilePictureFrame
+          personId
         }
       }
 

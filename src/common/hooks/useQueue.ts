@@ -37,6 +37,7 @@ const queueQuery = graphql`
           nickname
           profilePictureUrl
           profilePictureFrame
+          personId
         }
       }
       ... on JoysoundQueueItem {
@@ -71,6 +72,7 @@ const queueSubscription = graphql`
             nickname
             profilePictureUrl
             profilePictureFrame
+            personId
           }
         }
         ... on JoysoundQueueItem {

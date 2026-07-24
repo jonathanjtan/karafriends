@@ -14,6 +14,7 @@ import { Link } from "react-router";
 import icon from "url:../../images/icon.png";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
+import AccountPicker from "../AccountPicker";
 import Collapse from "../Collapse";
 import VolumeControls from "../VolumeControls";
 import * as styles from "./NavBar.module.scss";
@@ -22,7 +23,12 @@ const DARK_MODE_STORAGE_KEY = "darkMode";
 const SHOW_SETTINGS_STORAGE_KEY = "showSettings";
 
 const NavBar = () => {
-  const { profilePictureUrl, profilePictureFrame } = useUserIdentity();
+  const { deviceId, personId, profilePictureUrl, profilePictureFrame } =
+    useUserIdentity();
+  // The handed-around-phone case: tap the avatar, become yourself, queue,
+  // hand it back. Not persisted like the settings drawer — switching is a
+  // one-off action, not a mode you leave open.
+  const [showAccounts, setShowAccounts] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(
     () => localStorage.getItem(DARK_MODE_STORAGE_KEY) === "true",
   );
@@ -62,7 +68,11 @@ const NavBar = () => {
           <Link to="/">
             <FaHome />
           </Link>
-          <Link to="/profile" aria-label="Profile">
+          <button
+            className={styles.iconButton}
+            onClick={() => setShowAccounts(!showAccounts)}
+            aria-label="Switch account"
+          >
             {profilePictureUrl ? (
               <img
                 className={`${styles.avatar}${
@@ -76,7 +86,7 @@ const NavBar = () => {
             ) : (
               <FaUserCircle />
             )}
-          </Link>
+          </button>
         </div>
         <img height={40} src={icon} alt="空" />
         <div className={styles.rightIcons}>
@@ -99,6 +109,27 @@ const NavBar = () => {
           </Link>
         </div>
       </div>
+      <Collapse
+        open={showAccounts}
+        direction="down"
+        className={styles.settingsDrawer}
+      >
+        <div className={styles.accountDrawer}>
+          <AccountPicker
+            deviceId={deviceId}
+            heading="Switch account"
+            currentPersonId={personId}
+            onClaimed={() => setShowAccounts(false)}
+          />
+          <Link
+            className={styles.editProfileLink}
+            to="/profile"
+            onClick={() => setShowAccounts(false)}
+          >
+            Edit profile
+          </Link>
+        </div>
+      </Collapse>
       <Collapse
         open={showSettings}
         direction="down"

@@ -99,6 +99,12 @@ type Query {
   # Top 10, so those ship as a static table in common/oriconChart.ts — the live
   # week is the only part that needs fetching.
   oriconWeeklyRanking: OriconWeeklyChart!
+  # Everyone in the registry, most recently seen first. Drives the identity
+  # gate's picker and the switch-account sheet.
+  people: [Person!]!
+  # The singer this device last claimed, or null if the device is unclaimed —
+  # which is what puts the remocon behind the identity gate.
+  personByDevice(deviceId: String!): Person
   # Whether JOYSOUND romaji lyrics are segmented at word boundaries (kuromoji
   # tokenization, e.g. あるもの -> "aru mono") instead of only at script-class
   # boundaries (e.g. "arumono"). Synced so it can be A/B toggled live from the
@@ -140,8 +146,19 @@ type Mutation {
   removeSong(songId: String!, timestamp: String!): Boolean!
   # Rewrite the identity (nickname/avatar) on everything this device has in
   # the queue, matched by deviceId, so profile edits show up on already-queued
-  # songs. Returns true if anything changed.
+  # songs. Returns true if anything changed. Also writes the edit through to
+  # the person this device is attached to, which is what makes a rename stick
+  # across devices and relaunches.
   updateUserIdentity(identity: UserIdentityInput!): Boolean!
+  # Register a new singer and attach this device to them.
+  createPerson(input: CreatePersonInput!): Person!
+  # Attach this device to an existing singer — the "that's me" tap on the
+  # identity gate, and the switch-account sheet.
+  claimPerson(personId: String!, deviceId: String!): Person!
+  # Remove a singer from the registry (admin cleanup for duplicates and
+  # one-time guests). Their devices fall back to the identity gate; song
+  # history keeps the name/avatar snapshot it already recorded.
+  deletePerson(personId: String!): Boolean!
   moveSong(songId: String!, timestamp: String!, offset: Int!): Boolean!
   clearQueue: Boolean!
   setBgmTrack(track: String): Boolean!
@@ -187,6 +204,9 @@ type Subscription {
   sidebarCollapsedChanged: Boolean!
   queueAdded: QueueItem!
   queueChanged: SubscriptionQueueChanged!
+  # Fires whenever the registry changes, so an open identity gate on one phone
+  # picks up someone joining on another without a reload.
+  peopleChanged: [Person!]!
 }
 
 type SubscriptionQueueChanged {
@@ -399,6 +419,20 @@ type UserIdentity {
   # Which PMD dialogue-portrait frame to draw around the picture: "male"
   # (blue) or "female" (pink). Null means male, matching older clients.
   profilePictureFrame: String
+  # The singer this device is acting as. Null on pre-registry clients and on
+  # queue items from before the registry existed; deviceId is the fallback.
+  personId: String
+}
+
+# A singer. Attribution hangs off personId rather than deviceId so a cleared
+# localStorage, a second device, or a handed-around phone still resolves to
+# the same person. Devices attach to a person via claimPerson.
+type Person {
+  personId: String!
+  displayName: String!
+  profilePictureUrl: String
+  profilePictureFrame: String
+  lastSeenAt: Float!
 }
 
 type BreakMessage {
@@ -409,6 +443,14 @@ type BreakMessage {
 
 input UserIdentityInput {
   nickname: String!
+  deviceId: String!
+  profilePictureUrl: String
+  profilePictureFrame: String
+  personId: String
+}
+
+input CreatePersonInput {
+  displayName: String!
   deviceId: String!
   profilePictureUrl: String
   profilePictureFrame: String

@@ -65,6 +65,24 @@
   max-height: calc(100% - 48px - 56px);
 }
 
+// The switch-account drawer shares the settings drawer's overlay slot, so it
+// needs its own surface — VolumeControls brings its own background.
+.accountDrawer {
+  padding: 16px;
+  background-color: #fff;
+  overflow: auto;
+  max-height: 100%;
+  color: #333;
+}
+
+.editProfileLink {
+  display: block;
+  margin-top: 12px;
+  text-align: center;
+  font-size: 14px;
+  color: #1cb3ff;
+}
+
 .iconButton {
   display: flex;
   align-items: center;

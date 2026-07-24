@@ -66,9 +66,15 @@ const SongQueueItem = ({
 
   // Config finally loaded, let's evaluate things
   if (config !== undefined) {
+    // personId is the real owner key; the nickname/deviceId comparison is the
+    // fallback for items queued before the registry existed. (It used to
+    // compare the item's deviceId against *our nickname*, which never
+    // matched — supervised mode was leaning entirely on the name.)
     const itemOwnedByUser =
-      item.userIdentity!.nickname === identity.nickname ||
-      item.userIdentity!.deviceId === identity.nickname;
+      identity.personId && item.userIdentity!.personId
+        ? item.userIdentity!.personId === identity.personId
+        : item.userIdentity!.nickname === identity.nickname ||
+          item.userIdentity!.deviceId === identity.deviceId;
     canRemove =
       config.adminNicks.includes(identity.nickname) ||
       config.adminDeviceIds.includes(identity.deviceId) ||

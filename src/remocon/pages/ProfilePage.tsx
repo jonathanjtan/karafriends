@@ -43,6 +43,9 @@ const ProfilePage = () => {
           nickname: identity.nickname,
           profilePictureUrl: identity.profilePictureUrl,
           profilePictureFrame: identity.profilePictureFrame,
+          // Carries the edit through to the registry, so a rename here
+          // outlives this device's localStorage.
+          personId: identity.personId,
         },
       },
     });
