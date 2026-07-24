@@ -29,7 +29,15 @@
   position: absolute;
   top: 0;
   left: 0;
-  animation-delay: 3s;
+  // Negative, not positive. A positive delay leaves the span with no
+  // animation-derived style until the delay elapses, so it renders at its
+  // base opacity: 1 — stacked right on top of the equally-opaque English
+  // label for the first half cycle. (animation-fill-mode: backwards doesn't
+  // help; the 0% keyframe is opacity: 1 too.) Starting half a cycle in the
+  // past has it already faded out at t=0, so the crossfade is correct from
+  // the first frame — which matters because this remounts on every
+  // null -> song transition, i.e. at the start of every song.
+  animation-delay: -3s;
 }
 
 .nowPlayingSong {
