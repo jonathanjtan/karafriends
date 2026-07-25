@@ -1717,6 +1717,16 @@ function cleanupAdhocSongLyrics(lyrics: string): string[] {
   return lyrics.split("\n").filter((entry) => entry.trim() !== "");
 }
 
+// The pop path has to fail in seconds, not minutes: the room watches a spinner
+// for as long as popSong is unresolved, the player's wedge watchdog is
+// deliberately suppressed while a pop is in flight, and no skip can land until
+// the mutation comes back. promise-retry's default (10 retries, ~17 minutes of
+// backoff) therefore turned a DAM outage into an app that looked permanently
+// hung, with no way out but a relaunch. A few quick retries still absorb the
+// flakiness these endpoints are known for; anything worse is an outage, and an
+// outage should reach Player.tsx as "unplayable, skip forward" right away.
+const POP_RETRY_OPTIONS = { retries: 3, minTimeout: 500, maxTimeout: 2000 };
+
 const resolvers = {
   JoysoundSong: {
     id(parent: JoysoundSongParent) {
@@ -1867,7 +1877,7 @@ const resolvers = {
     // result as "unplayable, skip forward."
     streamingUrls(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
       return dataSources.minsei
-        .getMusicStreamingUrls(parent.songId)
+        .getMusicStreamingUrls(parent.songId, POP_RETRY_OPTIONS)
         .then((data) =>
           data.list.map((info) => ({
             url: karafriendsConfig.useLowBitrateUrl
@@ -1885,7 +1895,7 @@ const resolvers = {
     },
     scoringData(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
       return dataSources.minsei
-        .getScoringData(parent.songId)
+        .getScoringData(parent.songId, POP_RETRY_OPTIONS)
         .then((data) => Array.from(new Uint8Array(data)))
         .catch((e) => {
           console.error(

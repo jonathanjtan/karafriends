@@ -169,28 +169,32 @@ export class MinseiAPI extends RESTDataSource {
     );
   }
 
-  getScoringData(requestNo: string) {
-    // This endpoint seems to be flaky
-    return promiseRetry((retry) =>
-      this.credsProvider()
-        .then((creds) =>
-          this.post<object | ArrayBuffer>(
-            "/cwa/win/minsei/scoring/GetScoringReferenceData.api",
-            { requestNo, ...creds },
-          ),
-        )
-        .then((body) => {
-          if (!(body instanceof ArrayBuffer)) {
-            return Promise.reject(
-              "Scoring data was not returned in binary format",
-            );
-          }
-          return body;
-        })
-        .catch((err) => {
-          console.error(err);
-          return retry(err);
-        }),
+  getScoringData(requestNo: string, retryOptions?: RetryOptions) {
+    // This endpoint seems to be flaky. As with getMusicStreamingUrls, callers
+    // on a path someone is waiting on can pass tighter retryOptions rather
+    // than sit through the default ~17 minutes of backoff.
+    return promiseRetry(
+      (retry) =>
+        this.credsProvider()
+          .then((creds) =>
+            this.post<object | ArrayBuffer>(
+              "/cwa/win/minsei/scoring/GetScoringReferenceData.api",
+              { requestNo, ...creds },
+            ),
+          )
+          .then((body) => {
+            if (!(body instanceof ArrayBuffer)) {
+              return Promise.reject(
+                "Scoring data was not returned in binary format",
+              );
+            }
+            return body;
+          })
+          .catch((err) => {
+            console.error(err);
+            return retry(err);
+          }),
+      retryOptions,
     );
   }
 }

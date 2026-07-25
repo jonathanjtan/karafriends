@@ -89,6 +89,15 @@ const POLL_INTERVAL_MS = 5 * 1000;
 const DAM_GAIN = 1.0;
 const NON_DAM_GAIN = 0.8;
 const MAX_HLS_FATAL_ERROR_RETRIES = 2;
+// HTMLMediaElement.readyState: below this the element has no frame at all, so
+// it isn't playing and can't be seeked or ended — the signature of a song that
+// never loaded, as opposed to one someone paused with the on-screen controls.
+const HAVE_CURRENT_DATA = 2;
+// Consecutive watchdog ticks (POLL_INTERVAL_MS apart) before it resumes the
+// queue. A stalled-and-paused player is unambiguous; a source that simply
+// hasn't produced a frame yet might still be loading, so it gets longer.
+const WEDGE_TICKS_PAUSED = 2;
+const WEDGE_TICKS_NO_DATA = 5;
 // How long the between-songs queue screen stays up before the next song
 // starts (when queueIntermissionEnabled is on).
 const QUEUE_INTERMISSION_MS = 12 * 1000;
@@ -388,6 +397,16 @@ function Player(props: {
     };
 
     const pollQueue = (force: boolean = false) => {
+      // No poll is in flight once we're inside one, whether this call came
+      // from the timer (whose handle is already spent) or straight from a
+      // media event. Leaving a stale handle parked here silently disabled the
+      // wedge watchdog below for the rest of the session — it requires "no
+      // poll in flight", and nothing on the success path ever nulled this —
+      // and let a pending timer double-pop behind a direct call.
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
       // On break: don't start anything. Keep checking so playback resumes
       // shortly after the break ends or is cancelled. An explicit skip
       // (force) overrides the break.
@@ -499,7 +518,21 @@ function Player(props: {
                     `Fatal hls.js error for DAM song ${popSong.songId} (${data.type}/${data.details}), retry ${hlsFatalErrorRetries}/${MAX_HLS_FATAL_ERROR_RETRIES}`,
                   );
 
-                  if (hlsFatalErrorRetries < MAX_HLS_FATAL_ERROR_RETRIES) {
+                  // A manifest that never loaded at all is not a retryable
+                  // blip: hls.js has no level parsed to resume, so startLoad()
+                  // is a no-op that emits no further events, and the give-up
+                  // path below never runs. DAM's CDN 403s from some exit IPs
+                  // (see CLAUDE.md), which is exactly this case — the song sat
+                  // there with the room staring at a stalled player.
+                  const manifestUnrecoverable =
+                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
+                    data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
+                    data.details === Hls.ErrorDetails.MANIFEST_PARSING_ERROR;
+
+                  if (
+                    !manifestUnrecoverable &&
+                    hlsFatalErrorRetries < MAX_HLS_FATAL_ERROR_RETRIES
+                  ) {
                     hlsFatalErrorRetries++;
 
                     switch (data.type) {
@@ -786,16 +819,29 @@ function Player(props: {
     // currentTime === 0 / ended distinguishes a wedge from someone pausing
     // mid-song with the on-screen video controls (which doesn't go through
     // playbackState and must not trigger a skip).
+    //
+    // "Nothing is playing" is not just video.paused: play() flips paused to
+    // false optimistically, before any data arrives, so a source that never
+    // loads (hls.js on a 403 manifest) leaves paused === false forever and the
+    // watchdog looking the other way. readyState covers that — no frame at all
+    // is never a healthy song, and a hand-paused one has data and a nonzero
+    // currentTime, so the clause below still can't fire on it. SKIPPING counts
+    // as wedgeable for the same reason: it's a transient state, and a skip that
+    // couldn't take effect leaves it stuck there.
     let wedgedTicks = 0;
     const pollWatchdog = setInterval(() => {
       const video = videoRef.current;
+      if (video === null) {
+        wedgedTicks = 0;
+        return;
+      }
       const maybeWedged =
-        video !== null &&
-        playbackStateRef.current === "PLAYING" &&
+        (playbackStateRef.current === "PLAYING" ||
+          playbackStateRef.current === "SKIPPING") &&
         !popPendingRef.current &&
         pollTimeoutRef.current === null &&
         intermissionTimerRef.current === null &&
-        video.paused &&
+        (video.paused || video.readyState < HAVE_CURRENT_DATA) &&
         !video.seeking &&
         (video.currentTime === 0 || video.ended);
       if (!maybeWedged) {
@@ -803,10 +849,18 @@ function Player(props: {
         return;
       }
       wedgedTicks += 1;
-      if (wedgedTicks < 2) return;
+      // A song still loading looks exactly like one that never will, just
+      // earlier — time is the only thing that tells them apart, so a source
+      // that hasn't produced a frame yet gets a longer leash than a player
+      // that's outright paused and stalled.
+      if (
+        wedgedTicks < (video.paused ? WEDGE_TICKS_PAUSED : WEDGE_TICKS_NO_DATA)
+      ) {
+        return;
+      }
       wedgedTicks = 0;
       console.error(
-        "Player watchdog: playbackState is PLAYING but nothing is playing and no pop is in flight; resuming the queue",
+        `Player watchdog: playbackState is ${playbackStateRef.current} but nothing is playing and no pop is in flight; resuming the queue`,
       );
       pollQueue();
     }, POLL_INTERVAL_MS);
@@ -861,8 +915,20 @@ function Player(props: {
           pollQueueRef.current?.(true);
           break;
         }
-        if (isFinite(videoRef.current.duration))
-          videoRef.current.currentTime = videoRef.current.duration;
+        // A song that never actually loaded (DAM CDN 403, missing local file)
+        // has no duration and no data, so seeking to the end can't fire
+        // "ended" and the skip did nothing at all — the queue stayed wedged and
+        // playbackState stuck on SKIPPING, with the remocon's skip button doing
+        // visibly nothing however many times it was pressed. Pop the next song
+        // directly instead; the watchdog above only backstops this.
+        if (
+          !isFinite(videoRef.current.duration) ||
+          videoRef.current.readyState < HAVE_CURRENT_DATA
+        ) {
+          pollQueueRef.current?.(true);
+          break;
+        }
+        videoRef.current.currentTime = videoRef.current.duration;
         videoRef.current.play();
         break;
     }
