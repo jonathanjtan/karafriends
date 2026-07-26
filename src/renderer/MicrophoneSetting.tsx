@@ -1,5 +1,5 @@
 import M from "materialize-css";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import "./global";
 import { MicSelection } from "./settingsPanelBus";
@@ -27,6 +27,13 @@ interface Props {
 export default function MicrophoneSetting({ mic, onChange }: Props) {
   const selectRef = useRef<HTMLSelectElement>(null);
   const value = mic ? `${mic.name}_${mic.channel}` : "";
+  // Bumped on every pick so the effect below re-runs even when `value` itself
+  // doesn't change. The trailing "add a mic" row is always rendered with
+  // mic={null} — picking in it appends a *new* row upstream and leaves this
+  // one on "", so without this the fake dropdown would keep displaying the
+  // device that was just picked while the real <select> is back on the
+  // placeholder.
+  const [pickSeq, setPickSeq] = useState(0);
 
   // Materialize snapshots the <select>'s label into its fake dropdown at init
   // time, so the wrapper has to be rebuilt whenever the value changes — in the
@@ -36,7 +43,7 @@ export default function MicrophoneSetting({ mic, onChange }: Props) {
     if (!selectRef.current) return;
     M.FormSelect.getInstance(selectRef.current)?.destroy();
     M.FormSelect.init(selectRef.current);
-  }, [value]);
+  }, [value, pickSeq]);
 
   return (
     <div className="input-field">
@@ -45,6 +52,7 @@ export default function MicrophoneSetting({ mic, onChange }: Props) {
         value={value}
         onChange={(e) => {
           const dataset = e.target.options[e.target.selectedIndex].dataset;
+          setPickSeq((seq) => seq + 1);
           onChange(dataset.name!, parseInt(dataset.channel!, 10));
         }}
       >
