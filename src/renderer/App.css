@@ -203,7 +203,78 @@ html.oledFriendly
   align-items: center;
   justify-content: center;
   gap: 8px;
+  /* The pop-out/dock button sits at the right end without stealing the
+     header's centered title. */
+  position: relative;
+}
+
+.settingsHeaderTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   cursor: pointer;
+}
+
+.settingsHeaderButton {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.settingsHeaderButton:hover {
+  opacity: 1;
+}
+
+/* Shown in the docked sidebar while the settings live in their own window, so
+   an expanded (but deliberately settings-less) sidebar isn't a mystery. */
+.sidebarPoppedOutNotice {
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+/* The popped-out window: the same sidebar, filling its own window instead of
+   a fixed-width column. */
+.appSidebarWindow {
+  width: 100%;
+  height: 100%;
+}
+
+/* A settings window dragged out to full width would otherwise stretch every
+   slider and segmented button across the whole display. Cap the controls in a
+   centered column (the section headers and the queue still span the window) —
+   the sidebar itself stays the query container, so the wide row layout is
+   still the one that applies. */
+.appSidebarWindow > .section {
+  width: 100%;
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* The QR is sized to the sidebar's full width; in a window that can be
+   dragged out to any size, that's a screenful of QR code. */
+.appSidebarWindow .qrcode {
+  display: block;
+  max-width: 240px;
+  margin: 0 auto;
+}
+
+.settingsPanelConnecting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  opacity: 0.7;
 }
 
 /* Materialize .btn sits flush against the surrounding controls/labels;
@@ -272,6 +343,37 @@ html.oledFriendly
 
 .settingControlWide {
   grid-column: 2 / 4;
+}
+
+/* Block-level controls that don't fit the label|control|value shape at all
+   (the microphone <select>s, "Clear mics") but still belong to a section, so
+   they live in the grid as their own full-width rows. */
+.settingFullRow {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+}
+
+/* Materialize's form fields are spaced for stacked forms; inside the grid the
+   row gap does that job. */
+.settingsGrid .input-field {
+  margin: 4px 0 0;
+}
+
+.settingsGrid .btn {
+  width: 100%;
+  margin: 4px 0;
+}
+
+/* A long device name ("coreaudio:BuiltInMicrophoneDevice (Channel 0)") used to
+   run straight out of the field and under the dropdown caret. */
+.appSidebar .select-wrapper input.select-dropdown {
+  /* Materialize authors its inputs content-box, so the caret gap below would
+     otherwise be added *outside* the 100% width and overflow the sidebar. */
+  box-sizing: border-box;
+  padding-right: 1.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Materialize gives range fields and inputs chunky vertical margins meant for
@@ -393,7 +495,12 @@ html.oledFriendly
     grid-column: 2;
   }
 
+  /* .settingControlWide is `2 / 4` in the wide layout, which in a 2-column
+     grid resolves to an *implicit* third column — the grid then measured ~55px
+     wider than the sidebar and its value column hung off the clipped edge.
+     Whatever a row's wide-layout placement was, in here it spans the row. */
   .settingControl,
+  .settingControlWide,
   .settingsGrid .pianoRollSizeButtons {
     grid-column: 1 / -1;
   }
@@ -422,6 +529,16 @@ html.oledFriendly
   .appSidebar .section table th,
   .appSidebar .section table td {
     padding: 5px 4px;
+    font-size: 0.85rem;
+  }
+
+  /* 14px of padding per side is a lot of a 180px sidebar. */
+  .appSidebar .section {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .settingLabel {
     font-size: 0.85rem;
   }
 }

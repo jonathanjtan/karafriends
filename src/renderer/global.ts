@@ -11,6 +11,14 @@ declare global {
         overall: number;
       }): Promise<string | null>;
       appendProbeLog(lines: string[]): void;
+      // Broadcast bus + window control for the popped-out settings window.
+      // Typed messages live in settingsPanelBus.ts.
+      settingsPanel: {
+        open(): void;
+        close(): void;
+        send(message: unknown): void;
+        subscribe(callback: (message: unknown) => void): () => void;
+      };
       nativeAudio: {
         inputDevices: () => [string, number][];
         outputDevices: () => string[];

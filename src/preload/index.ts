@@ -38,6 +38,24 @@ contextBridge.exposeInMainWorld("karafriends", {
   // batch just costs a few samples of calibration data.
   appendProbeLog: (lines: string[]): void =>
     ipcRenderer.send("append-probe-log", lines),
+  // The popped-out settings window and the big screen are two renderer
+  // processes, so they can't share React state. `send`/`subscribe` are a
+  // broadcast bus between them (main relays each message to the *other*
+  // window): the big screen owns the mic hardware and the hostname, the
+  // panel sends intents and receives snapshots. See settingsPanelBus.ts for
+  // the message shapes.
+  settingsPanel: {
+    open: (): void => ipcRenderer.send("open-settings-panel"),
+    close: (): void => ipcRenderer.send("close-settings-panel"),
+    send: (message: unknown): void =>
+      ipcRenderer.send("settings-panel-message", message),
+    subscribe: (callback: (message: unknown) => void): (() => void) => {
+      const listener = (_event: unknown, message: unknown) => callback(message);
+      ipcRenderer.on("settings-panel-message", listener);
+      return () =>
+        ipcRenderer.removeListener("settings-panel-message", listener);
+    },
+  },
   nativeAudio: {
     // Repeatedly asking CPAL for input devices seems to cause unexpected
     // breakages, like the default output device being released. Let's avoid

@@ -92,25 +92,79 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 let rendererWindow: BrowserWindow | null;
+// The sidebar, detached into its own window (renderer bundle loaded with
+// ?panel=settings). Null whenever it isn't open.
+let settingsPanelWindow: BrowserWindow | null = null;
+
+const rendererWebPreferences = {
+  allowRunningInsecureContent: false,
+  // An occluded/hidden window freezes requestAnimationFrame, which
+  // strands BGM volume fades mid-flight (audio keeps playing at volume 0
+  // and the fade-aware watchdog waits on the frozen fade forever).
+  backgroundThrottling: false,
+  contextIsolation: true,
+  nodeIntegration: false,
+  nodeIntegrationInSubFrames: false,
+  nodeIntegrationInWorker: false,
+  preload: fileURLToPath(preloadUrl),
+  sandbox: false,
+  webSecurity: true,
+};
+
+function rendererUrl(query: string = ""): string {
+  return isDev
+    ? `http://localhost:${karafriendsConfig.devPort}/renderer/${query}`
+    : `file://${path.join(__dirname, "..", "..", "build", "prod", "renderer", "index.html")}${query}`;
+}
+
+// Relay a bus message to every renderer window except the one that sent it.
+// The big screen and the popped-out panel are separate processes; this is the
+// only channel they share (see preload's `settingsPanel`).
+function broadcastSettingsPanelMessage(
+  sender: Electron.WebContents | null,
+  message: unknown,
+) {
+  [rendererWindow, settingsPanelWindow].forEach((win) => {
+    if (win && !win.isDestroyed() && win.webContents !== sender) {
+      win.webContents.send("settings-panel-message", message);
+    }
+  });
+}
+
+function createSettingsPanelWindow() {
+  if (settingsPanelWindow && !settingsPanelWindow.isDestroyed()) {
+    settingsPanelWindow.show();
+    settingsPanelWindow.focus();
+    return;
+  }
+
+  settingsPanelWindow = new BrowserWindow({
+    // Always framed, even in the fullscreen production build: this window
+    // exists to be moved to a second display and closed again.
+    frame: true,
+    title: "karafriends — Settings",
+    width: 420,
+    height: 900,
+    minWidth: 260,
+    minHeight: 320,
+    webPreferences: rendererWebPreferences,
+  });
+
+  settingsPanelWindow.loadURL(rendererUrl("?panel=settings"));
+
+  settingsPanelWindow.on("closed", () => {
+    settingsPanelWindow = null;
+    // The big screen re-shows its docked sidebar when the panel goes away,
+    // and stops publishing mic levels nobody is watching.
+    broadcastSettingsPanelMessage(null, { type: "panelClosed" });
+  });
+}
 
 function createWindow() {
   rendererWindow = new BrowserWindow({
     frame: isDev,
     fullscreen: !isDev,
-    webPreferences: {
-      allowRunningInsecureContent: false,
-      // An occluded/hidden window freezes requestAnimationFrame, which
-      // strands BGM volume fades mid-flight (audio keeps playing at volume 0
-      // and the fade-aware watchdog waits on the frozen fade forever).
-      backgroundThrottling: false,
-      contextIsolation: true,
-      nodeIntegration: false,
-      nodeIntegrationInSubFrames: false,
-      nodeIntegrationInWorker: false,
-      preload: fileURLToPath(preloadUrl),
-      sandbox: false,
-      webSecurity: true,
-    },
+    webPreferences: rendererWebPreferences,
   });
 
   // Ignore CORS when fetching ipcasting HLS and when sending requests to remocon
@@ -168,12 +222,30 @@ function createWindow() {
   // This middleware terminates the request/response cycle and should be applied last
   expressApp.use(remoconReverseProxy(karafriendsConfig.devPort));
 
-  if (rendererWindow)
-    rendererWindow.loadURL(
-      isDev
-        ? `http://localhost:${karafriendsConfig.devPort}/renderer/`
-        : `file://${path.join(__dirname, "..", "..", "build", "prod", "renderer", "index.html")}`,
-    );
+  if (rendererWindow) rendererWindow.loadURL(rendererUrl());
+
+  // A reloaded big screen has no idea the panel window is still open (it would
+  // show its own docked copy of the settings and stop feeding the panel mic
+  // levels). Main is the authority on which windows exist, so it re-announces.
+  rendererWindow.webContents.on("did-finish-load", () => {
+    if (settingsPanelWindow && !settingsPanelWindow.isDestroyed()) {
+      broadcastSettingsPanelMessage(settingsPanelWindow.webContents, {
+        type: "panelOpened",
+      });
+    }
+  });
+
+  ipcMain.on("open-settings-panel", () => createSettingsPanelWindow());
+
+  ipcMain.on("close-settings-panel", () => {
+    if (settingsPanelWindow && !settingsPanelWindow.isDestroyed()) {
+      settingsPanelWindow.close();
+    }
+  });
+
+  ipcMain.on("settings-panel-message", (event: IpcMainEvent, message) =>
+    broadcastSettingsPanelMessage(event.sender, message),
+  );
 
   ipcMain.on("config", (event: IpcMainEvent) => {
     console.log("Sending config over ipc");
@@ -266,14 +338,18 @@ app.on("activate", () => {
 });
 
 function refreshRendererWindow() {
-  if (!rendererWindow) return;
+  // Reload whichever window has focus: the settings panel is a second
+  // renderer window, and reloading the big screen out from under someone who
+  // hit Cmd+R in the panel would interrupt the playing song.
+  const target = BrowserWindow.getFocusedWindow() ?? rendererWindow;
+  if (!target) return;
   if (
-    dialog.showMessageBoxSync(rendererWindow, {
-      message: "Are you sure you want to reload the renderer window?",
+    dialog.showMessageBoxSync(target, {
+      message: "Are you sure you want to reload this window?",
       buttons: ["Reload", "Cancel"],
     }) === 0
   ) {
-    rendererWindow.reload();
+    target.reload();
   }
 }
 

@@ -1,45 +1,33 @@
 import M from "materialize-css";
 import "materialize-css/dist/css/materialize.css"; // tslint:disable-line:no-submodule-imports
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  FaChevronDown,
-  FaChevronLeft,
-  FaChevronRight,
-  FaChevronUp,
-} from "react-icons/fa"; // tslint:disable-line:no-submodule-imports
-import { fetchQuery, graphql, useMutation, useSubscription } from "react-relay";
+import { FaChevronLeft, FaChevronRight } from "react-icons/fa"; // tslint:disable-line:no-submodule-imports
+import { graphql, useMutation, useSubscription } from "react-relay";
 
 import { HOSTNAME } from "../common/constants";
-import environment from "../common/graphqlEnvironment";
 import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
-import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
-import useJoysoundRomajiWordSegmentation from "../common/hooks/useJoysoundRomajiWordSegmentation";
 import useMicOutputEnabled from "../common/hooks/useMicOutputEnabled";
-import useMicRmsGateEnabled from "../common/hooks/useMicRmsGateEnabled";
 import useOledFriendly from "../common/hooks/useOledFriendly";
-import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
-import usePianoRollSize from "../common/hooks/usePianoRollSize";
-import useQueueIntermissionEnabled from "../common/hooks/useQueueIntermissionEnabled";
-import useSettingsCollapsed from "../common/hooks/useSettingsCollapsed";
+import useServiceHealth from "../common/hooks/useServiceHealth";
 import useSidebarCollapsed from "../common/hooks/useSidebarCollapsed";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import "./App.css";
 import BackgroundMusic from "./BackgroundMusic";
-import BackgroundMusicSetting from "./BackgroundMusicSetting";
 import Effects from "./Effects";
-import HostnameSetting from "./HostnameSetting";
-import MicrophoneSetting from "./MicrophoneSetting";
 import { InputDevice } from "./nativeAudio";
 import Player from "./Player";
-import QRCode from "./QRCode";
-import Queue from "./Queue";
+import {
+  MicSelection,
+  openSettingsPanelWindow,
+  sendSettingsPanelMessage,
+  subscribeSettingsPanelMessages,
+} from "./settingsPanelBus";
+import Sidebar from "./Sidebar";
 import KarafriendsAudio from "./webAudio";
 import { AppClearQueueMutation } from "./__generated__/AppClearQueueMutation.graphql";
 import { AppQueueAddedSubscription } from "./__generated__/AppQueueAddedSubscription.graphql";
-import { AppRecheckServiceHealthMutation } from "./__generated__/AppRecheckServiceHealthMutation.graphql";
-import { AppServiceHealthQuery } from "./__generated__/AppServiceHealthQuery.graphql";
 
 // OLED mode used to be renderer-local; it now lives in the main process
 // (synced via useOledFriendly) so the remocon can toggle it too. The key only
@@ -49,13 +37,14 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "sidebarWidth";
 const DEFAULT_SIDEBAR_WIDTH = 320;
 const MIN_SIDEBAR_WIDTH = 180;
 const MAX_SIDEBAR_WIDTH = 640;
-// Mirror the remocon's Piano Roll Size presets so both surfaces match.
-const PIANO_ROLL_SIZE_PRESETS: { label: string; size: number }[] = [
-  { label: "Off", size: 0 },
-  { label: "S", size: 0.2 },
-  { label: "M", size: 0.3 },
-  { label: "L", size: 0.4 },
-];
+// However narrow the window gets, leave this much of it for the video. Without
+// it a shrunk window ends up narrower than the sidebar, which then hangs off
+// the right edge with its controls clipped.
+const MIN_PLAYER_WIDTH = 200;
+// How often the big screen ships mic levels to the popped-out window. The
+// meters do their own attack/release smoothing on top, so this only has to be
+// fast enough to look continuous.
+const MIC_LEVEL_PUBLISH_INTERVAL_MS = 66;
 // Volumes and the BGM track used to be renderer-local; they now live in the
 // main process (synced via useBgmVolume/useGuideMelodyVolume/useBgmTrack) so
 // the remocon can control them too. These keys only remain for the one-time
@@ -67,6 +56,14 @@ const LEGACY_GUIDE_MELODY_VOLUME_STORAGE_KEY = "guideMelodyVolume";
 interface SavedMic {
   name: string;
   channel: number;
+}
+
+function clampSidebarWidth(width: number): number {
+  return Math.min(
+    Math.max(width, MIN_SIDEBAR_WIDTH),
+    MAX_SIDEBAR_WIDTH,
+    Math.max(window.innerWidth - MIN_PLAYER_WIDTH, MIN_SIDEBAR_WIDTH),
+  );
 }
 
 // Default the remocon address to a private LAN IPv4 (what a phone on the same
@@ -96,45 +93,20 @@ const songAddedSubscription = graphql`
   }
 `;
 
-const serviceHealthQuery = graphql`
-  query AppServiceHealthQuery {
-    serviceHealth {
-      damAvailable
-      joysoundAvailable
-      checkedAt
-    }
-  }
-`;
-
-const recheckServiceHealthMutation = graphql`
-  mutation AppRecheckServiceHealthMutation {
-    recheckServiceHealth {
-      damAvailable
-      joysoundAvailable
-      checkedAt
-    }
-  }
-`;
-
 const clearQueueMutation = graphql`
   mutation AppClearQueueMutation {
     clearQueue
   }
 `;
 
-const SERVICE_HEALTH_POLL_INTERVAL_MS = 30 * 1000;
-
-interface ServiceHealthState {
-  damAvailable: boolean;
-  joysoundAvailable: boolean;
-  checkedAt: string;
-}
-
 function App(props: {
   kuroshiro: KuroshiroSingleton;
   audio: KarafriendsAudio;
 }) {
   const [mics, _setMics] = useState<InputDevice[]>([]);
+  // Latest RMS per mic, written by PianoRoll's pitch poller and read by the
+  // settings-panel meters. A ref so 40Hz-per-mic updates never re-render App.
+  const micLevelsRef = useRef<number[]>([]);
   const [hostname, setHostname] = useState(defaultHostname);
   // Sidebar visibility is synced through the main process (like the Settings
   // section) so the remocon can fullscreen the TV's playing song remotely.
@@ -142,6 +114,9 @@ function App(props: {
   const sidebarVisible = !sidebarCollapsed;
   // The floating collapse/expand tab auto-hides; mouse movement reveals it.
   const [controlsVisible, setControlsVisible] = useState(false);
+  // True while the sidebar is detached into its own window. The docked copy
+  // stays collapsed for as long as it is.
+  const [settingsPoppedOut, setSettingsPoppedOut] = useState(false);
   // Canonical name of the BGM track currently audible, for the intermission
   // screen's "Now Playing" line.
   const [bgmNowPlaying, setBgmNowPlaying] = useState<string | null>(null);
@@ -149,14 +124,22 @@ function App(props: {
   // display-fit preference, not a room-wide synced setting.
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
-    return Number.isFinite(stored) && stored > 0
-      ? Math.min(Math.max(stored, MIN_SIDEBAR_WIDTH), MAX_SIDEBAR_WIDTH)
-      : DEFAULT_SIDEBAR_WIDTH;
+    return clampSidebarWidth(
+      Number.isFinite(stored) && stored > 0 ? stored : DEFAULT_SIDEBAR_WIDTH,
+    );
   });
   // Width changes from collapse/expand animate; drag-resize must not (a
   // transition would make the sidebar lag behind the cursor), so the
   // transition is suspended while a drag is in progress.
   const [sidebarResizing, setSidebarResizing] = useState(false);
+
+  // Shrinking the window re-clamps the sidebar (the stored width is kept, so
+  // widening the window restores it).
+  useEffect(() => {
+    const onResize = () => setSidebarWidth(clampSidebarWidth(sidebarWidth));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [sidebarWidth]);
 
   const startSidebarResize = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -166,10 +149,7 @@ function App(props: {
     document.body.style.cursor = "col-resize";
 
     const onMove = (moveEvent: MouseEvent) => {
-      latestWidth = Math.min(
-        Math.max(window.innerWidth - moveEvent.clientX, MIN_SIDEBAR_WIDTH),
-        MAX_SIDEBAR_WIDTH,
-      );
+      latestWidth = clampSidebarWidth(window.innerWidth - moveEvent.clientX);
       setSidebarWidth(latestWidth);
     };
     const onUp = () => {
@@ -183,35 +163,12 @@ function App(props: {
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
+
   const { bgmTrack, setBgmTrack } = useBgmTrack();
   const { bgmVolume, setBgmVolume } = useBgmVolume();
   const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
-  const { pianoRollOpacity, setPianoRollOpacity } = usePianoRollOpacity();
-  const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
-  const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
-    useQueueIntermissionEnabled();
-  const { micOutputEnabled, setMicOutputEnabled } = useMicOutputEnabled();
-  const { micRmsGateEnabled, setMicRmsGateEnabled } = useMicRmsGateEnabled();
-  const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
-  // Break length is a per-screen choice; only the break itself is synced.
-  const [breakMinutes, setBreakMinutes] = useState(5);
-  const breakActive = breakEndsAt !== null;
-  // Tick while a break is active so the End Break countdown stays live.
-  // breakNow only refreshes here, so a stale value can otherwise sit around
-  // between one break ending and the next starting; without the immediate
-  // refresh below, a newly-started break's remaining time would briefly be
-  // computed against that stale timestamp (jumping to an inflated value
-  // before the first 1s tick corrects it).
-  const [breakNow, setBreakNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!breakActive) return;
-    setBreakNow(Date.now());
-    const timer = setInterval(() => setBreakNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [breakActive]);
-  const breakRemainingSecs = breakActive
-    ? Math.max(Math.round((breakEndsAt - breakNow) / 1000), 0)
-    : 0;
+  const { micOutputEnabled } = useMicOutputEnabled();
+  const { oledFriendly, setOledFriendly } = useOledFriendly();
 
   useEffect(() => {
     const storedBgmVolume = localStorage.getItem(LEGACY_BGM_VOLUME_STORAGE_KEY);
@@ -250,10 +207,6 @@ function App(props: {
     mics.forEach((mic) => mic.setMicOutputEnabled(micOutputEnabled));
   }, [mics, micOutputEnabled]);
 
-  const { oledFriendly, setOledFriendly } = useOledFriendly();
-  const { joysoundRomajiWordSegmentation, setJoysoundRomajiWordSegmentation } =
-    useJoysoundRomajiWordSegmentation();
-
   useEffect(() => {
     if (localStorage.getItem(LEGACY_OLED_FRIENDLY_STORAGE_KEY) === "true") {
       setOledFriendly(true);
@@ -261,31 +214,21 @@ function App(props: {
     localStorage.removeItem(LEGACY_OLED_FRIENDLY_STORAGE_KEY);
   }, []);
 
-  // Collapse the Settings section so the big screen shows only the Queue
-  // during regular operation. Synced through the main process so the remocon
-  // can toggle it on the TV remotely.
-  const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
-
   useEffect(() => {
     const html = document.documentElement;
     html.classList.toggle("oledFriendly", oledFriendly);
     return () => html.classList.remove("oledFriendly");
   }, [oledFriendly]);
 
-  const [serviceHealth, setServiceHealth] = useState<ServiceHealthState | null>(
-    null,
-  );
-  const wasServiceUnhealthyRef = useRef(false);
+  // The big screen is the surface that warns the room about a service
+  // dropping out, so it's the one that toasts.
+  const { serviceHealth, isRechecking, recheck } = useServiceHealth({
+    onTransition: (health, unhealthy) => {
+      if (!unhealthy) {
+        M.toast({ html: "<span>✅ DAM & Joysound reachable again</span>" });
+        return;
+      }
 
-  const applyServiceHealth = (health: ServiceHealthState) => {
-    setServiceHealth(health);
-
-    const isUnhealthy = !health.damAvailable || !health.joysoundAvailable;
-
-    if (isUnhealthy === wasServiceUnhealthyRef.current) return;
-    wasServiceUnhealthyRef.current = isUnhealthy;
-
-    if (isUnhealthy) {
       const unavailable = [
         !health.damAvailable && "DAM",
         !health.joysoundAvailable && "Joysound",
@@ -293,36 +236,10 @@ function App(props: {
       M.toast({
         html: `<span>⚠️ ${unavailable.join(" & ")} unreachable — try cycling your VPN and relaunching</span>`,
       });
-    } else {
-      M.toast({ html: "<span>✅ DAM & Joysound reachable again</span>" });
-    }
-  };
-
-  // Polling Query.serviceHealth is just a fast local read of whatever the
-  // main process last computed, not a real check in progress — only the
-  // manual recheck mutation actually awaits a live check, so that's the
-  // only case worth showing a spinner for.
-  const [commitRecheckServiceHealth, isRecheckingServiceHealth] =
-    useMutation<AppRecheckServiceHealthMutation>(recheckServiceHealthMutation);
+    },
+  });
   const [commitClearQueue, isClearingQueue] =
     useMutation<AppClearQueueMutation>(clearQueueMutation);
-
-  useEffect(() => {
-    const poll = () =>
-      fetchQuery<AppServiceHealthQuery>(
-        environment,
-        serviceHealthQuery,
-        {},
-      ).subscribe({
-        next: ({ serviceHealth: freshServiceHealth }) =>
-          applyServiceHealth(freshServiceHealth),
-      });
-
-    poll();
-    const interval = setInterval(poll, SERVICE_HEALTH_POLL_INTERVAL_MS);
-
-    return () => clearInterval(interval);
-  }, []);
 
   const setMics = (newMics: InputDevice[]) => {
     const micsToSave = newMics.map((mic) => ({
@@ -331,6 +248,27 @@ function App(props: {
     }));
     localStorage.setItem("mics", JSON.stringify(micsToSave));
     _setMics(newMics);
+  };
+
+  const micSelections: MicSelection[] = mics.map((mic) => ({
+    name: mic.name,
+    channel: mic.channelSelection,
+  }));
+
+  const selectMic = (index: number, name: string, channel: number) => {
+    const updatedMics = [...mics];
+    const oldMic = updatedMics.splice(
+      index,
+      1,
+      new InputDevice(name, channel),
+    )[0];
+    if (oldMic) oldMic.stop();
+    setMics(updatedMics);
+  };
+
+  const clearMics = () => {
+    mics.forEach((mic) => mic.stop());
+    setMics([]);
   };
 
   // Reveal the floating sidebar toggle on mouse movement, then fade it back
@@ -385,6 +323,65 @@ function App(props: {
     };
   }, [sidebarCollapsed]);
 
+  // The popped-out settings window can't own the mics or the hostname (see
+  // settingsPanelBus.ts), so this window answers its intents and keeps it
+  // supplied with snapshots. Re-subscribing whenever the owned state changes
+  // keeps the handlers free of stale closures.
+  useEffect(() => {
+    const publishOwnerState = () =>
+      sendSettingsPanelMessage({
+        type: "ownerState",
+        mics: micSelections,
+        hostname,
+      });
+
+    const unsubscribe = subscribeSettingsPanelMessages((message) => {
+      switch (message.type) {
+        case "panelOpened":
+          setSettingsPoppedOut(true);
+          // Hand the whole screen to the video: the settings live in the
+          // other window now.
+          setSidebarCollapsed(true);
+          publishOwnerState();
+          break;
+        case "panelClosed":
+          setSettingsPoppedOut(false);
+          setSidebarCollapsed(false);
+          break;
+        case "requestOwnerState":
+          publishOwnerState();
+          break;
+        case "setMic":
+          selectMic(message.index, message.name, message.channel);
+          break;
+        case "clearMics":
+          clearMics();
+          break;
+        case "setHostname":
+          setHostname(message.hostname);
+          break;
+      }
+    });
+
+    if (settingsPoppedOut) publishOwnerState();
+
+    return unsubscribe;
+  }, [mics, hostname, settingsPoppedOut]);
+
+  // Mic levels are only published while somebody is looking at them.
+  useEffect(() => {
+    if (!settingsPoppedOut) return;
+    const interval = setInterval(
+      () =>
+        sendSettingsPanelMessage({
+          type: "micLevels",
+          levels: micLevelsRef.current.slice(0, mics.length),
+        }),
+      MIC_LEVEL_PUBLISH_INTERVAL_MS,
+    );
+    return () => clearInterval(interval);
+  }, [settingsPoppedOut, mics.length]);
+
   useSubscription<AppQueueAddedSubscription>(
     useMemo(
       () => ({
@@ -401,18 +398,6 @@ function App(props: {
     ),
   );
 
-  const onChangeMic = (index: number, newMic: InputDevice) => {
-    const updatedMics = [...mics];
-    const oldMic = updatedMics.splice(index, 1, newMic)[0];
-    if (oldMic) oldMic.stop();
-    setMics(updatedMics);
-  };
-
-  const clearMics = () => {
-    mics.forEach((mic) => mic.stop());
-    setMics([]);
-  };
-
   return (
     <div className="appMainContainer black">
       <div
@@ -426,6 +411,7 @@ function App(props: {
       <div className="appPlayer valign-wrapper">
         <Player
           mics={mics}
+          micLevelsRef={micLevelsRef}
           kuroshiro={props.kuroshiro}
           audio={props.audio}
           hostname={hostname}
@@ -447,311 +433,28 @@ function App(props: {
         }`}
         style={{ width: sidebarVisible ? sidebarWidth : 0 }}
       >
-        <div
-          className="appSidebar grey lighten-3"
+        <Sidebar
+          variant="docked"
           style={{ width: sidebarWidth }}
-        >
-          <div
-            className="sidebarResizeHandle"
-            title="Drag to resize"
-            onMouseDown={startSidebarResize}
-          />
-          <QRCode hostname={hostname} oledFriendly={oledFriendly} />
-          <nav
-            className="center-align settingsHeader"
-            onClick={() => setSettingsCollapsed(!settingsCollapsed)}
-          >
-            <span>Settings</span>
-            {settingsCollapsed ? <FaChevronDown /> : <FaChevronUp />}
-          </nav>
-          {!settingsCollapsed && (
-            <div className="section center-align">
-              <HostnameSetting hostname={hostname} onChange={setHostname} />
-              {mics.map((mic, i) => (
-                <MicrophoneSetting
-                  key={mic.deviceId}
-                  onChange={onChangeMic.bind(null, i)}
-                  mic={mic}
-                />
-              ))}
-              <MicrophoneSetting
-                onChange={onChangeMic.bind(null, mics.length)}
-                mic={null}
-              />
-              <button className="btn" onClick={clearMics}>
-                Clear mics
-              </button>
-              <BackgroundMusicSetting
-                selected={bgmTrack}
-                onChange={setBgmTrack}
-              />
-              <div className="settingsGrid">
-                <span className="settingSubheader">Volume</span>
-                <span className="settingLabel">BGM</span>
-                <span className="settingValue">
-                  {Math.round(bgmVolume * 100)}%
-                </span>
-                <span className="range-field settingControl">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Math.round(bgmVolume * 100)}
-                    onChange={(e) => setBgmVolume(Number(e.target.value) / 100)}
-                  />
-                </span>
-                <span className="settingLabel">Guide</span>
-                <span className="settingValue">
-                  {Math.round(guideMelodyVolume * 100)}%
-                </span>
-                <span className="range-field settingControl">
-                  <input
-                    type="range"
-                    min="0"
-                    max="150"
-                    value={Math.round(guideMelodyVolume * 100)}
-                    onChange={(e) =>
-                      setGuideMelodyVolume(Number(e.target.value) / 100)
-                    }
-                  />
-                </span>
-                <span className="settingSubheader">Piano Roll</span>
-                <span className="settingLabel">Opacity</span>
-                <span className="settingValue">
-                  {Math.round(pianoRollOpacity * 100)}%
-                </span>
-                <span className="range-field settingControl">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Math.round(pianoRollOpacity * 100)}
-                    onChange={(e) =>
-                      setPianoRollOpacity(Number(e.target.value) / 100)
-                    }
-                  />
-                </span>
-                <span className="settingLabel">Size</span>
-                <div className="pianoRollSizeButtons settingControlWide">
-                  {PIANO_ROLL_SIZE_PRESETS.map(({ label, size }) => (
-                    <button
-                      key={label}
-                      className={`btn-small ${
-                        Math.abs(pianoRollSize - size) < 0.001 ? "" : "grey"
-                      }`}
-                      onClick={() => setPianoRollSize(size)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <span className="settingSubheader">Options</span>
-                <span
-                  className="settingLabel settingLabelClickable"
-                  onClick={() => setMicOutputEnabled(!micOutputEnabled)}
-                >
-                  Software Echo
-                </span>
-                <div className="switch settingControlWide">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={micOutputEnabled}
-                      onChange={(e) => setMicOutputEnabled(e.target.checked)}
-                    />
-                    <span className="lever"></span>
-                  </label>
-                </div>
-                <span
-                  className="settingLabel settingLabelClickable"
-                  title="Use when a mixer's echo/reverb bleeds into the mic channels and idle mics ghost-draw the active singer's melody."
-                  onClick={() => setMicRmsGateEnabled(!micRmsGateEnabled)}
-                >
-                  Pitch Gate
-                </span>
-                <div className="switch settingControlWide">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={micRmsGateEnabled}
-                      onChange={(e) => setMicRmsGateEnabled(e.target.checked)}
-                    />
-                    <span className="lever"></span>
-                  </label>
-                </div>
-                <span
-                  className="settingLabel settingLabelClickable"
-                  onClick={() =>
-                    setQueueIntermissionEnabled(!queueIntermissionEnabled)
-                  }
-                >
-                  Intermission
-                </span>
-                <div className="switch settingControlWide">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={queueIntermissionEnabled}
-                      onChange={(e) =>
-                        setQueueIntermissionEnabled(e.target.checked)
-                      }
-                    />
-                    <span className="lever"></span>
-                  </label>
-                </div>
-                <span className="settingLabel">Request Break</span>
-                <div className="pianoRollSizeButtons breakButtons settingControlWide">
-                  <button
-                    className="btn-small grey"
-                    onClick={() =>
-                      breakActive
-                        ? setBreakEndsAt(
-                            Math.max(breakEndsAt! - 60 * 1000, Date.now()),
-                          )
-                        : setBreakMinutes(Math.max(breakMinutes - 1, 1))
-                    }
-                  >
-                    −
-                  </button>
-                  <button
-                    className={
-                      breakActive
-                        ? "btn-small breakActionButton breakActionButtonActive"
-                        : "btn-small breakActionButton"
-                    }
-                    onClick={() => {
-                      const now = Date.now();
-                      setBreakNow(now);
-                      setBreakEndsAt(
-                        breakActive ? null : now + breakMinutes * 60 * 1000,
-                      );
-                    }}
-                  >
-                    {breakActive
-                      ? `${Math.floor(breakRemainingSecs / 60)}:${String(
-                          breakRemainingSecs % 60,
-                        ).padStart(2, "0")}`
-                      : `${breakMinutes}:00`}
-                  </button>
-                  <button
-                    className="btn-small grey"
-                    onClick={() =>
-                      breakActive
-                        ? setBreakEndsAt(breakEndsAt! + 60 * 1000)
-                        : setBreakMinutes(breakMinutes + 1)
-                    }
-                  >
-                    +
-                  </button>
-                </div>
-                <span
-                  className="settingLabel settingLabelClickable"
-                  onClick={() => setOledFriendly(!oledFriendly)}
-                >
-                  OLED Mode
-                </span>
-                <div className="switch settingControlWide">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={oledFriendly}
-                      onChange={(e) => setOledFriendly(e.target.checked)}
-                    />
-                    <span className="lever"></span>
-                  </label>
-                </div>
-                <span
-                  className="settingLabel settingLabelClickable"
-                  onClick={() =>
-                    setJoysoundRomajiWordSegmentation(
-                      !joysoundRomajiWordSegmentation,
-                    )
-                  }
-                >
-                  EZ Romaji
-                </span>
-                <div className="switch settingControlWide">
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={joysoundRomajiWordSegmentation}
-                      onChange={(e) =>
-                        setJoysoundRomajiWordSegmentation(e.target.checked)
-                      }
-                    />
-                    <span className="lever"></span>
-                  </label>
-                </div>
-              </div>
-              <table className="centered">
-                <thead>
-                  <tr>
-                    <th>Service</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>DAM</td>
-                    <td>
-                      <span className="serviceHealthIndicator">
-                        {isRecheckingServiceHealth ? (
-                          <span className="serviceHealthSpinner" />
-                        ) : serviceHealth?.damAvailable === false ? (
-                          "⚠️"
-                        ) : (
-                          "✅"
-                        )}
-                      </span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>Joysound</td>
-                    <td>
-                      <span className="serviceHealthIndicator">
-                        {isRecheckingServiceHealth ? (
-                          <span className="serviceHealthSpinner" />
-                        ) : serviceHealth?.joysoundAvailable === false ? (
-                          "⚠️"
-                        ) : (
-                          "✅"
-                        )}
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <button
-                className="btn"
-                disabled={isRecheckingServiceHealth}
-                onClick={() =>
-                  commitRecheckServiceHealth({
-                    variables: {},
-                    onCompleted: ({ recheckServiceHealth }) =>
-                      applyServiceHealth(recheckServiceHealth),
-                  })
-                }
-              >
-                Check now
-              </button>
-              <button
-                className="btn red"
-                disabled={isClearingQueue}
-                onClick={() => {
-                  if (
-                    window.confirm("Clear the queue and skip the current song?")
-                  ) {
-                    commitClearQueue({ variables: {} });
-                  }
-                }}
-              >
-                Clear Queue
-              </button>
-            </div>
-          )}
-          <nav className="center-align">Queue</nav>
-          <Queue />
-        </div>
+          onResizeHandleMouseDown={startSidebarResize}
+          hostname={hostname}
+          onHostnameChange={setHostname}
+          mics={micSelections}
+          onSelectMic={selectMic}
+          onClearMics={clearMics}
+          micLevelsRef={micLevelsRef}
+          serviceHealth={serviceHealth}
+          isRecheckingServiceHealth={isRechecking}
+          onRecheckServiceHealth={recheck}
+          isClearingQueue={isClearingQueue}
+          onClearQueue={() => {
+            if (window.confirm("Clear the queue and skip the current song?")) {
+              commitClearQueue({ variables: {} });
+            }
+          }}
+          onPopOut={openSettingsPanelWindow}
+          poppedOut={settingsPoppedOut}
+        />
       </div>
     </div>
   );

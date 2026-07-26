@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchQuery, graphql, useMutation } from "react-relay";
 
-import environment from "../../common/graphqlEnvironment";
+import environment from "../graphqlEnvironment";
 import { useServiceHealthQuery } from "./__generated__/useServiceHealthQuery.graphql";
 import { useServiceHealthRecheckMutation } from "./__generated__/useServiceHealthRecheckMutation.graphql";
 
@@ -36,12 +36,35 @@ export interface ServiceHealthState {
   checkedAt: string;
 }
 
-export default function useServiceHealth() {
+// `onTransition` fires whenever reachability flips healthy⇄unhealthy, so a
+// surface can announce it (the big screen toasts the room). It's opt-in
+// because the renderer bundle runs in two windows and the remocon in as many
+// phones as there are guests — they'd otherwise all announce the same flip.
+export default function useServiceHealth({
+  onTransition,
+}: {
+  onTransition?: (health: ServiceHealthState, unhealthy: boolean) => void;
+} = {}) {
   const [serviceHealth, setServiceHealth] = useState<ServiceHealthState | null>(
     null,
   );
+  const wasUnhealthyRef = useRef(false);
   const [commitRecheck, isRechecking] =
     useMutation<useServiceHealthRecheckMutation>(recheckServiceHealthMutation);
+
+  // A ref so the polling effect below can stay mounted for the component's
+  // lifetime without capturing a stale callback.
+  const onTransitionRef = useRef(onTransition);
+  onTransitionRef.current = onTransition;
+
+  const apply = (fresh: ServiceHealthState) => {
+    setServiceHealth(fresh);
+
+    const unhealthy = !fresh.damAvailable || !fresh.joysoundAvailable;
+    if (unhealthy === wasUnhealthyRef.current) return;
+    wasUnhealthyRef.current = unhealthy;
+    onTransitionRef.current?.(fresh, unhealthy);
+  };
 
   useEffect(() => {
     const poll = () =>
@@ -50,7 +73,7 @@ export default function useServiceHealth() {
         serviceHealthQuery,
         {},
       ).subscribe({
-        next: ({ serviceHealth: fresh }) => setServiceHealth(fresh),
+        next: ({ serviceHealth: fresh }) => apply(fresh),
       });
 
     poll();
@@ -62,8 +85,7 @@ export default function useServiceHealth() {
   const recheck = () =>
     commitRecheck({
       variables: {},
-      onCompleted: ({ recheckServiceHealth }) =>
-        setServiceHealth(recheckServiceHealth),
+      onCompleted: ({ recheckServiceHealth }) => apply(recheckServiceHealth),
     });
 
   return { serviceHealth, isRechecking, recheck };

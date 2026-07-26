@@ -365,6 +365,32 @@ hook, relay-compile. Persistence is automatic via the `...db` spread.
   "Check now"). Gate the per-song trigger on a **real** song transition — the
   Player polls `popSong` every ~5s while idle, which will otherwise hammer the
   services.
+- **The renderer sidebar, and its pop-out window** (`renderer/Sidebar.tsx`):
+  the QR + Settings + Queue column is one component rendered in two places —
+  docked beside the video (`variant="docked"`, drag-resizable, collapsible)
+  and in a **second BrowserWindow** (`variant="window"`), opened by the
+  pop-out button in the Settings header. That window loads the _same renderer
+  bundle_ with `?panel=settings`; `renderer/index.tsx` routes on it and mounts
+  `SettingsPanel` instead of `App` (no audio graph, no kuromoji dictionary,
+  no Player). While it's open the docked sidebar stays collapsed, so the big
+  screen is all video.
+  - Every setting in there is a **synced setting**, so both windows just talk
+    to the main process over GraphQL and need no coordination. The two
+    exceptions are **mic selection** and the **mic level meters**:
+    `InputDevice`s are created through the preload's native binding and are
+    owned by the process whose PianoRoll polls them, so the big screen owns
+    them and the panel drives them over a small IPC bus
+    (`renderer/settingsPanelBus.ts` + preload's `settingsPanel` + the relay in
+    `main/index.ts`). The panel sends intents ("select this mic") and renders
+    the snapshots it gets back; levels are published at ~15Hz only while the
+    panel is open. **Don't create an InputDevice in the panel window** — it
+    would be a second, silent capture stream that scores nothing.
+  - Narrow-sidebar layout is a **`@container sidebar` query** on `.appSidebar`
+    (it reflows against the sidebar's dragged width, not the window's).
+    Placements from the wide 3-column grid must be re-stated in there: a
+    leftover `grid-column: 2 / 4` in a 2-column grid silently creates an
+    _implicit_ third column, which is what used to push the value column off
+    the clipped edge at 180px.
 - **BGM**: bundled tracks in `src/common/bgmTracks.ts` (normalized to −20
   LUFS; see the file header for the re-encode recipe). Track selection and
   volume are synced settings; the renderer plays them between songs.

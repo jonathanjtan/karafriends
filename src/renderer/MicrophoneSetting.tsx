@@ -1,8 +1,8 @@
 import M from "materialize-css";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 
 import "./global";
-import { InputDevice } from "./nativeAudio";
+import { MicSelection } from "./settingsPanelBus";
 
 const MicrophoneSettingOption = ({
   name,
@@ -17,28 +17,35 @@ const MicrophoneSettingOption = ({
 );
 
 interface Props {
-  mic: InputDevice | null;
-  onChange: (mic: InputDevice) => void;
+  mic: MicSelection | null;
+  // Only a *selection* comes back out: the InputDevice itself has to be
+  // created in whichever renderer process owns the mics (see
+  // settingsPanelBus.ts), which isn't necessarily this one.
+  onChange: (name: string, channel: number) => void;
 }
 
 export default function MicrophoneSetting({ mic, onChange }: Props) {
-  useEffect(() => {
-    M.AutoInit();
-  }, []);
+  const selectRef = useRef<HTMLSelectElement>(null);
+  const value = mic ? `${mic.name}_${mic.channel}` : "";
 
-  console.log(window.karafriends.nativeAudio.inputDevices());
+  // Materialize snapshots the <select>'s label into its fake dropdown at init
+  // time, so the wrapper has to be rebuilt whenever the value changes — in the
+  // popped-out window the current selection arrives asynchronously over the
+  // bus, well after mount.
+  useEffect(() => {
+    if (!selectRef.current) return;
+    M.FormSelect.getInstance(selectRef.current)?.destroy();
+    M.FormSelect.init(selectRef.current);
+  }, [value]);
 
   return (
     <div className="input-field">
       <select
-        value={mic ? `${mic.name}_${mic.channelSelection}` : ""}
+        ref={selectRef}
+        value={value}
         onChange={(e) => {
           const dataset = e.target.options[e.target.selectedIndex].dataset;
-          const newMic = new InputDevice(
-            dataset.name!,
-            parseInt(dataset.channel!, 10)
-          );
-          onChange(newMic);
+          onChange(dataset.name!, parseInt(dataset.channel!, 10));
         }}
       >
         <option value="" disabled={true}>
@@ -53,10 +60,12 @@ export default function MicrophoneSetting({ mic, onChange }: Props) {
                 name={name}
                 channel={i}
               />
-            ))
+            )),
           )}
       </select>
-      <label>Microphone</label>
+      {/* "Input" rather than "Microphone": these now sit under a MICROPHONE
+          section header, one row per mic. */}
+      <label>Input</label>
     </div>
   );
 }
