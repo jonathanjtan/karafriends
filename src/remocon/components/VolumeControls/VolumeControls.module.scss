@@ -34,7 +34,11 @@
 }
 
 .sectionHeader {
-  padding-top: 8px;
+  // Asymmetric on purpose: padding-top holds the title off the section rule,
+  // padding-bottom (on top of the 8px .body row gap) keeps the section's first
+  // control from crowding the title.
+  padding-top: 12px;
+  padding-bottom: 4px;
   border-top: 1px solid rgba(28, 179, 255, 0.2);
   font-size: 12px;
   font-weight: bold;

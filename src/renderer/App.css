@@ -315,8 +315,11 @@ html.oledFriendly
    narrow. */
 .settingSubheader {
   grid-column: 1 / -1;
-  margin-top: 8px;
-  padding-bottom: 2px;
+  /* Asymmetric on purpose: the gap above separates it from the previous
+     section, the one below keeps its own first row from crowding the rule. */
+  margin-top: 16px;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.09em;

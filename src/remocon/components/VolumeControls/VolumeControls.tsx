@@ -158,6 +158,10 @@ const VolumeControls = () => {
             onChange={(e) => setGuideMelodyVolume(Number(e.target.value) / 100)}
           />
         </div>
+        {/* Mirrors the TV settings panel's MICROPHONE section — mic selection
+            itself is TV-only (the InputDevices live in that process), but
+            everything else about the mics is settable from here. */}
+        <div className={styles.sectionHeader}>Microphone</div>
         <div>
           <button
             className={styles.recheckButton}
