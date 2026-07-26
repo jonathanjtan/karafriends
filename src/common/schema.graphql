@@ -43,6 +43,10 @@ type Query {
   # periodic, so without the gate an idle mic ghost-draws the active singer's
   # melody on the piano roll. Off by default (the historical behavior).
   micRmsGateEnabled: Boolean!
+  # The RMS floor the Pitch Gate applies, linear full-scale (0.02 ~= -34
+  # dBFS). Tunable rather than fixed because how far the FX-return bleed sits
+  # below the dry signal depends on the mixer's gain staging and FX send.
+  micRmsGateThreshold: Float!
   # EXPERIMENTAL: whether sung performances are scored against the guide
   # melody and a card is shown when a song ends. Off by default. The formula
   # is still being tuned and its numbers match no commercial machine; only
@@ -169,6 +173,7 @@ type Mutation {
   setGuideMelodyVolume(volume: Float!): Boolean!
   setMicOutputEnabled(enabled: Boolean!): Boolean!
   setMicRmsGateEnabled(enabled: Boolean!): Boolean!
+  setMicRmsGateThreshold(threshold: Float!): Boolean!
   setExperimentalScoringEnabled(enabled: Boolean!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
@@ -193,6 +198,7 @@ type Subscription {
   joysoundRomajiWordSegmentationChanged: Boolean!
   micOutputEnabledChanged: Boolean!
   micRmsGateEnabledChanged: Boolean!
+  micRmsGateThresholdChanged: Float!
   experimentalScoringEnabledChanged: Boolean!
   oledFriendlyChanged: Boolean!
   pianoRollOpacityChanged: Float!

@@ -3,6 +3,12 @@ import React, { useEffect, useState } from "react";
 import { graphql, useMutation } from "react-relay";
 
 import { BGM_TRACKS, SHUFFLE_VALUE } from "../../../common/bgmTracks";
+import {
+  dbfsToLinear,
+  linearToDbfs,
+  MAX_MIC_RMS_GATE_THRESHOLD,
+  MIN_MIC_RMS_GATE_THRESHOLD,
+} from "../../../common/constants";
 import useBgmTrack from "../../../common/hooks/useBgmTrack";
 import useBgmVolume from "../../../common/hooks/useBgmVolume";
 import useBreakEndsAt from "../../../common/hooks/useBreakEndsAt";
@@ -12,6 +18,7 @@ import useGuideMelodyVolume from "../../../common/hooks/useGuideMelodyVolume";
 import useJoysoundRomajiWordSegmentation from "../../../common/hooks/useJoysoundRomajiWordSegmentation";
 import useMicOutputEnabled from "../../../common/hooks/useMicOutputEnabled";
 import useMicRmsGateEnabled from "../../../common/hooks/useMicRmsGateEnabled";
+import useMicRmsGateThreshold from "../../../common/hooks/useMicRmsGateThreshold";
 import useOledFriendly from "../../../common/hooks/useOledFriendly";
 import usePianoRollOpacity from "../../../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../../../common/hooks/usePianoRollSize";
@@ -49,6 +56,8 @@ const VolumeControls = () => {
     useQueueIntermissionEnabled();
   const { micOutputEnabled, setMicOutputEnabled } = useMicOutputEnabled();
   const { micRmsGateEnabled, setMicRmsGateEnabled } = useMicRmsGateEnabled();
+  const { micRmsGateThreshold, setMicRmsGateThreshold } =
+    useMicRmsGateThreshold();
   const { experimentalScoringEnabled, setExperimentalScoringEnabled } =
     useExperimentalScoringEnabled();
   const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
@@ -169,6 +178,29 @@ const VolumeControls = () => {
             idle mic ghost-draws the active singer's melody on the piano roll.
           </div>
         </div>
+        {micRmsGateEnabled && (
+          <div>
+            <div className={styles.labelRow}>
+              <span>Gate Threshold</span>
+              <span>{Math.round(linearToDbfs(micRmsGateThreshold))} dB</span>
+            </div>
+            <input
+              className={styles.slider}
+              type="range"
+              min={Math.round(linearToDbfs(MIN_MIC_RMS_GATE_THRESHOLD))}
+              max={Math.round(linearToDbfs(MAX_MIC_RMS_GATE_THRESHOLD))}
+              value={Math.round(linearToDbfs(micRmsGateThreshold))}
+              onChange={(e) =>
+                setMicRmsGateThreshold(dbfsToLinear(Number(e.target.value)))
+              }
+            />
+            <div className={styles.hint}>
+              Raise until the idle mic stops drawing, then stop — too high and
+              it starts cutting quiet singing too. Takes effect immediately, so
+              it can be dialled in mid-song.
+            </div>
+          </div>
+        )}
         <div>
           <button
             className={styles.recheckButton}

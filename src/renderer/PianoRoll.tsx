@@ -7,13 +7,14 @@ import getNormals from "polyline-normals";
 import React, { useEffect, useRef, useState } from "react";
 
 import {
-  MIC_RMS_GATE_THRESHOLD,
+  DEFAULT_MIC_RMS_GATE_THRESHOLD,
   PIANO_ROLL_CURSOR_FRACTION as CURSOR_FRACTION,
   PIANO_ROLL_LOOKAHEAD_SECS,
   PIANO_ROLL_TIME_WIDTH_SECS as TIME_WIDTH_SECS,
   PIANO_ROLL_TOP_FRACTION,
 } from "../common/constants";
 import useMicRmsGateEnabled from "../common/hooks/useMicRmsGateEnabled";
+import useMicRmsGateThreshold from "../common/hooks/useMicRmsGateThreshold";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { ScoreAccumulator } from "../common/scoring";
@@ -462,6 +463,13 @@ export default function PianoRoll(props: {
   // Null when the experimental flag is off or the song has no usable
   // reference melody.
   scoreAccumulatorRef?: React.MutableRefObject<ScoreAccumulator | null>;
+  // Latest RMS per mic, indexed like `mics`, for the settings-panel level
+  // meters. This has to be published from here rather than polled separately:
+  // getPitch() *pops* the native ring buffer, so a second poller would steal
+  // samples from this one and degrade pitch detection for everyone. A ref
+  // rather than state — it updates at 40Hz per mic and must not re-render
+  // the big screen.
+  micLevelsRef?: React.MutableRefObject<number[]>;
   // Gates the fade-in so the roll doesn't cover a JOYSOUND title card.
   visible: boolean;
   // Dims the roll during an announced instrumental break so it doesn't
@@ -489,6 +497,12 @@ export default function PianoRoll(props: {
   const { micRmsGateEnabled } = useMicRmsGateEnabled();
   const micRmsGateEnabledRef = useRef(false);
   micRmsGateEnabledRef.current = micRmsGateEnabled;
+  // Same reasoning, and doubly so here: the threshold is meant to be dialled
+  // in mid-song against a live room, so it has to take effect without waiting
+  // for the next song to rebuild the pipeline.
+  const { micRmsGateThreshold } = useMicRmsGateThreshold();
+  const micRmsGateThresholdRef = useRef(DEFAULT_MIC_RMS_GATE_THRESHOLD);
+  micRmsGateThresholdRef.current = micRmsGateThreshold;
 
   useEffect(() => {
     const video = props.videoRef.current;
@@ -586,9 +600,18 @@ export default function PianoRoll(props: {
       )
       .flat();
 
-    function pollPitch(mic: InputDevice | null, buffer: PitchDetectionBuffer) {
+    function pollPitch(
+      mic: InputDevice | null,
+      buffer: PitchDetectionBuffer,
+      micIndex: number,
+    ) {
       if (!mic || !props.videoRef.current) return;
       const { midiNumber, confidence, rms } = mic.getPitch();
+      // Publish the level before the gate can discard the frame — the whole
+      // point of the meter is to show what the gate is rejecting.
+      if (props.micLevelsRef && typeof rms === "number") {
+        props.micLevelsRef.current[micIndex] = rms;
+      }
       // Confidence can't catch quiet-but-periodic bleed (YIN normalizes
       // amplitude away), so the gate is an absolute level floor instead.
       // rms is undefined when the addon behind us predates it (Parcel can
@@ -597,7 +620,7 @@ export default function PianoRoll(props: {
       if (
         micRmsGateEnabledRef.current &&
         typeof rms === "number" &&
-        rms < MIC_RMS_GATE_THRESHOLD
+        rms < micRmsGateThresholdRef.current
       ) {
         return;
       }
@@ -658,7 +681,7 @@ export default function PianoRoll(props: {
               .rgb([(360 / props.mics.length) * i, 30, 100])
               .map((channel) => channel / 255) as [number, number, number],
           ),
-          setInterval(() => pollPitch(mic, buffer), 25),
+          setInterval(() => pollPitch(mic, buffer, i), 25),
         ];
       });
 
@@ -735,6 +758,9 @@ export default function PianoRoll(props: {
 
     return () => {
       pitchPollers.forEach(([_1, _2, interval]) => clearInterval(interval));
+      // Nothing polls the mics between songs, so leaving the last values in
+      // place would freeze the meters at whatever the final note read.
+      props.micLevelsRef?.current.fill(0);
       cancelAnimationFrame(animationFrameRequestRef.current);
       resizeObserver.disconnect();
       if (props.videoRef.current) {

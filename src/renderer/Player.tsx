@@ -120,6 +120,9 @@ const SCORE_CARD_TOTAL_MS = SCORE_CARD_HOLD_MS + SCORE_CARD_FADE_MS;
 
 function Player(props: {
   mics: InputDevice[];
+  // Passed straight through to PianoRoll, which is the only thing that may
+  // poll the mics (getPitch pops the native ring buffer).
+  micLevelsRef?: React.MutableRefObject<number[]>;
   kuroshiro: KuroshiroSingleton;
   audio: KarafriendsAudio;
   hostname: string;
@@ -978,6 +981,7 @@ function Player(props: {
           visible={pianoRollTitleCleared}
           ducked={pianoRollDucked}
           scoreAccumulatorRef={scoreAccumulatorRef}
+          micLevelsRef={props.micLevelsRef}
         />
       ) : null}
       <video

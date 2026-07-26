@@ -33,6 +33,11 @@ import rawSchema from "inline-string:../common/schema.graphql";
 import { BGM_TRACKS, SHUFFLE_VALUE } from "../common/bgmTracks";
 import karafriendsConfig, { KarafriendsConfig } from "../common/config";
 import {
+  DEFAULT_MIC_RMS_GATE_THRESHOLD,
+  MAX_MIC_RMS_GATE_THRESHOLD,
+  MIN_MIC_RMS_GATE_THRESHOLD,
+} from "../common/constants";
+import {
   decodeJoysoundBase64Field,
   getSongDuration,
 } from "../common/joysoundParser";
@@ -1373,6 +1378,7 @@ type NotARealDb = {
   joysoundRomajiWordSegmentation: boolean;
   micOutputEnabled: boolean;
   micRmsGateEnabled: boolean;
+  micRmsGateThreshold: number;
   experimentalScoringEnabled: boolean;
   oledFriendly: boolean;
   pianoRollOpacity: number;
@@ -1407,6 +1413,7 @@ enum SubscriptionEvent {
   JoysoundRomajiWordSegmentationChanged = "JoysoundRomajiWordSegmentationChanged",
   MicOutputEnabledChanged = "MicOutputEnabledChanged",
   MicRmsGateEnabledChanged = "MicRmsGateEnabledChanged",
+  MicRmsGateThresholdChanged = "MicRmsGateThresholdChanged",
   ExperimentalScoringEnabledChanged = "ExperimentalScoringEnabledChanged",
   OledFriendlyChanged = "OledFriendlyChanged",
   PianoRollOpacityChanged = "PianoRollOpacityChanged",
@@ -1456,6 +1463,7 @@ let db: NotARealDb = {
   joysoundRomajiWordSegmentation: false,
   micOutputEnabled: true,
   micRmsGateEnabled: false,
+  micRmsGateThreshold: DEFAULT_MIC_RMS_GATE_THRESHOLD,
   experimentalScoringEnabled: false,
   oledFriendly: false,
   pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
@@ -1529,6 +1537,7 @@ function loadDb(): NotARealDb {
     joysoundRomajiWordSegmentation: false,
     micOutputEnabled: true,
     micRmsGateEnabled: false,
+    micRmsGateThreshold: DEFAULT_MIC_RMS_GATE_THRESHOLD,
     experimentalScoringEnabled: false,
     oledFriendly: false,
     pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
@@ -2484,6 +2493,7 @@ const resolvers = {
     joysoundRomajiWordSegmentation: () => db.joysoundRomajiWordSegmentation,
     micOutputEnabled: () => db.micOutputEnabled,
     micRmsGateEnabled: () => db.micRmsGateEnabled,
+    micRmsGateThreshold: () => db.micRmsGateThreshold,
     experimentalScoringEnabled: () => db.experimentalScoringEnabled,
     oledFriendly: () => db.oledFriendly,
     pianoRollOpacity: () => db.pianoRollOpacity,
@@ -2948,6 +2958,17 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setMicRmsGateThreshold: (_: any, args: { threshold: number }): boolean => {
+      db.micRmsGateThreshold = Math.min(
+        Math.max(args.threshold, MIN_MIC_RMS_GATE_THRESHOLD),
+        MAX_MIC_RMS_GATE_THRESHOLD,
+      );
+      pubsub.publish(SubscriptionEvent.MicRmsGateThresholdChanged, {
+        micRmsGateThresholdChanged: db.micRmsGateThreshold,
+      });
+      saveDb();
+      return true;
+    },
     setExperimentalScoringEnabled: (
       _: any,
       args: { enabled: boolean },
@@ -3109,6 +3130,12 @@ const resolvers = {
       subscribe: () =>
         pubsub.asyncIterableIterator([
           SubscriptionEvent.MicRmsGateEnabledChanged,
+        ]),
+    },
+    micRmsGateThresholdChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.MicRmsGateThresholdChanged,
         ]),
     },
     peopleChanged: {

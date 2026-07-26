@@ -1,0 +1,50 @@
+.micLevelMeters {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.micLevelMeterRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.micLevelMeterLabel {
+  flex: 0 0 auto;
+  min-width: 1em;
+  font-size: 0.75rem;
+  opacity: 0.7;
+  text-align: right;
+}
+
+.micLevelMeterTrack {
+  position: relative;
+  flex: 1 1 auto;
+  height: 8px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.15);
+  /* Deliberately not overflow:hidden — the bar rounds its own ends, and
+     clipping here would swallow the threshold marker's overhang, making the
+     marker read as part of the bar rather than as a reference line. */
+}
+
+.micLevelMeterBar {
+  height: 100%;
+  width: 0;
+  border-radius: 4px;
+  /* Width is driven per-frame from a rAF loop, so no transition here — one
+     would fight the animation and lag the meter behind the actual level. */
+}
+
+/* The gate threshold. Anything left of this line is being discarded, which
+   is the whole comparison the meter exists to make. */
+.micLevelMeterThreshold {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  background-color: #ff5252;
+}
