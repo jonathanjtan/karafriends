@@ -135,7 +135,7 @@ const NavBar = () => {
         direction="down"
         className={styles.settingsDrawer}
       >
-        <RoomSettings />
+        <RoomSettings onNavigate={() => setShowSettings(false)} />
       </Collapse>
     </>
   );

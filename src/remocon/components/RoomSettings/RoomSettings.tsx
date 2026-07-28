@@ -28,7 +28,7 @@ const DEFAULT_BREAK_MESSAGE = "⚠️ Don't forget to stay hydrated!";
 // (common/settings), so this file is styling and the handful of remocon-only
 // concerns — supervised mode, and attributing a break message to whoever set
 // it. The big screen renders the same manifest through renderer/Sidebar.
-const RoomSettings = () => {
+const RoomSettings = ({ onNavigate }: { onNavigate?: () => void }) => {
   const settings = useRoomSettings();
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
   const [commitClearQueue, isClearingQueue] =
@@ -80,7 +80,9 @@ const RoomSettings = () => {
     // knows a working address — its own — so it offers to hand it on.
     connection: (
       <div className={styles.row}>
-        <Link className={styles.linkButton} to="/join">
+        {/* Closing the drawer is the whole point: it covers the page, so
+            navigating under it looks like the button did nothing. */}
+        <Link className={styles.linkButton} to="/join" onClick={onNavigate}>
           Show Join QR
         </Link>
         <div className={styles.hint}>

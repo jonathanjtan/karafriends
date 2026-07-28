@@ -50,7 +50,8 @@ interface Props {
   // Docked: detach into its own window. Window: close and re-dock.
   onPopOut?: () => void;
   onDock?: () => void;
-  // Docked: open the QR in its own window, to park on a second display.
+  // Open the QR in its own window, to park on a second display. Offered by
+  // both variants — see the button.
   onPopOutQr?: () => void;
   // True while the settings window is open, so the docked sidebar can say so
   // instead of pretending its (hidden) copy is the live one.
@@ -140,14 +141,16 @@ export default function Sidebar(props: Props) {
     ),
     services: (
       <>
-        {/* .settingValue rather than .settingControlWide so the indicator
-            stays beside its label in the narrow layout too, where wide
-            controls drop onto their own line. */}
-        <span className="settingLabel">DAM</span>
+        {/* .settingLabelWide spans the label+control columns: these rows have
+            a value but no control, and a bare .settingLabel would leave the
+            control column for the grid's dense flow to backfill with the next
+            row's label. .settingValue keeps the icon beside its label in the
+            narrow layout, where wide controls drop onto their own line. */}
+        <span className="settingLabel settingLabelWide">DAM</span>
         <span className="settingValue">
           {serviceHealthCell(props.serviceHealth?.damAvailable)}
         </span>
-        <span className="settingLabel">Joysound</span>
+        <span className="settingLabel settingLabelWide">Joysound</span>
         <span className="settingValue">
           {serviceHealthCell(props.serviceHealth?.joysoundAvailable)}
         </span>
@@ -194,7 +197,10 @@ export default function Sidebar(props: Props) {
       )}
       <div className="sidebarQrBlock">
         <QRCode hostname={hostname} oledFriendly={oledFriendly} />
-        {props.variant === "docked" && props.onPopOutQr && (
+        {/* Both variants: while the settings are popped out the docked
+            sidebar is collapsed, so a docked-only button would be
+            unreachable in exactly the arrangement it's most useful in. */}
+        {props.onPopOutQr && (
           <button
             className="sidebarQrPopOut"
             title="Open the QR code in its own window, to leave on a second screen"

@@ -8,6 +8,7 @@ import "./App.css";
 import {
   closeSettingsPanelWindow,
   MicSelection,
+  openQrPanelWindow,
   sendSettingsPanelMessage,
   subscribeSettingsPanelMessages,
 } from "./settingsPanelBus";
@@ -99,6 +100,7 @@ export default function SettingsPanel() {
         }
       }}
       onDock={closeSettingsPanelWindow}
+      onPopOutQr={openQrPanelWindow}
     />
   );
 }
