@@ -466,8 +466,12 @@ html.oledFriendly
   margin-bottom: 0;
 }
 
+/* Switches span the control+value columns, so ending them puts the lever on
+   the grid's right edge — in line with the slider readouts, the segmented
+   controls, and the service-health icons, instead of floating mid-row. Same
+   alignment the narrow layout and the remocon already use. */
 .settingsGrid .switch {
-  justify-self: start;
+  justify-self: end;
 }
 
 .settingsGrid .switch .lever {
