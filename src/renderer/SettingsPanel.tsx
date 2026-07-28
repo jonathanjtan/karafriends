@@ -32,7 +32,6 @@ const clearQueueMutation = graphql`
 export default function SettingsPanel() {
   const [ownerState, setOwnerState] = useState<{
     mics: MicSelection[];
-    hostname: string;
   } | null>(null);
   const micLevelsRef = useRef<number[]>([]);
   const { oledFriendly } = useOledFriendly();
@@ -45,7 +44,7 @@ export default function SettingsPanel() {
     const unsubscribe = subscribeSettingsPanelMessages((message) => {
       switch (message.type) {
         case "ownerState":
-          setOwnerState({ mics: message.mics, hostname: message.hostname });
+          setOwnerState({ mics: message.mics });
           break;
         case "micLevels":
           micLevelsRef.current = message.levels;
@@ -84,10 +83,6 @@ export default function SettingsPanel() {
   return (
     <Sidebar
       variant="window"
-      hostname={ownerState.hostname}
-      onHostnameChange={(hostname) =>
-        sendSettingsPanelMessage({ type: "setHostname", hostname })
-      }
       mics={ownerState.mics}
       onSelectMic={(index, name, channel) =>
         sendSettingsPanelMessage({ type: "setMic", index, name, channel })

@@ -16,7 +16,7 @@ import icon from "url:../../images/icon.png";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import AccountPicker from "../AccountPicker";
 import Collapse from "../Collapse";
-import VolumeControls from "../VolumeControls";
+import RoomSettings from "../RoomSettings";
 import * as styles from "./NavBar.module.scss";
 
 const DARK_MODE_STORAGE_KEY = "darkMode";
@@ -135,7 +135,7 @@ const NavBar = () => {
         direction="down"
         className={styles.settingsDrawer}
       >
-        <VolumeControls />
+        <RoomSettings />
       </Collapse>
     </>
   );

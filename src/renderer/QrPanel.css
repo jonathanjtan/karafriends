@@ -1,0 +1,36 @@
+/* Deliberately plain and light: this window gets left idle on a second
+   screen, and a white background with black modules is what scans best from
+   across a room. */
+.qrPanel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4vmin;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100vh;
+  padding: 5vmin;
+  background-color: #fff;
+  color: #222;
+  font-family: sans-serif;
+}
+
+.qrPanelTitle {
+  font-size: clamp(1rem, 5vmin, 2.5rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* Square, and bounded by whichever of width/height runs out first, so the QR
+   stays fully visible at any window shape instead of overflowing. */
+.qrPanelCode {
+  width: min(72vmin, 100%);
+}
+
+.qrPanelUrl {
+  font-size: clamp(0.8rem, 3.2vmin, 1.6rem);
+  font-variant-numeric: tabular-nums;
+  /* The address is worth being able to copy when a camera won't cooperate. */
+  user-select: text;
+}

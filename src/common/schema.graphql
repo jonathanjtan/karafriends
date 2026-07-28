@@ -52,6 +52,11 @@ type Query {
   # is still being tuned and its numbers match no commercial machine; only
   # DAM and JOYSOUND songs carry the reference melody it needs.
   experimentalScoringEnabled: Boolean!
+  # The "host:port" a phone should use to reach the remocon — what the QR
+  # codes encode. Synced rather than renderer-local so every window that draws
+  # a QR (the sidebar, the intermission screen, the popped-out QR window)
+  # agrees without a relay. Defaults to a private LAN IPv4 of this machine.
+  hostname: String!
   nicoVideoInfo(videoId: String): NicoVideoInfoResult!
   # Whether the big screen uses the dark OLED-friendly theme. Synced so the
   # remocon can toggle it on the TV remotely.
@@ -175,6 +180,7 @@ type Mutation {
   setMicRmsGateEnabled(enabled: Boolean!): Boolean!
   setMicRmsGateThreshold(threshold: Float!): Boolean!
   setExperimentalScoringEnabled(enabled: Boolean!): Boolean!
+  setHostname(hostname: String!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
   setPianoRollSize(size: Float!): Boolean!
@@ -200,6 +206,7 @@ type Subscription {
   micRmsGateEnabledChanged: Boolean!
   micRmsGateThresholdChanged: Float!
   experimentalScoringEnabledChanged: Boolean!
+  hostnameChanged: String!
   oledFriendlyChanged: Boolean!
   pianoRollOpacityChanged: Float!
   pianoRollSizeChanged: Float!

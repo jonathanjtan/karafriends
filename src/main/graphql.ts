@@ -34,9 +34,11 @@ import { BGM_TRACKS, SHUFFLE_VALUE } from "../common/bgmTracks";
 import karafriendsConfig, { KarafriendsConfig } from "../common/config";
 import {
   DEFAULT_MIC_RMS_GATE_THRESHOLD,
+  HOSTNAME,
   MAX_MIC_RMS_GATE_THRESHOLD,
   MIN_MIC_RMS_GATE_THRESHOLD,
 } from "../common/constants";
+import ipAddresses from "../common/ipAddresses";
 import {
   decodeJoysoundBase64Field,
   getSongDuration,
@@ -1374,6 +1376,11 @@ type NotARealDb = {
   currentSong: QueueItem | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   guideMelodyVolume: number;
+  // "host:port" the QR codes encode. Null until someone picks one, in which
+  // case the resolver serves defaultHostname() — the machine's LAN address
+  // can change between launches, so a stale persisted value shouldn't win
+  // over a freshly computed default unless it was chosen deliberately.
+  hostname: string | null;
   idToAdhocLyrics: Record<string, string[]>;
   joysoundRomajiWordSegmentation: boolean;
   micOutputEnabled: boolean;
@@ -1415,6 +1422,7 @@ enum SubscriptionEvent {
   MicRmsGateEnabledChanged = "MicRmsGateEnabledChanged",
   MicRmsGateThresholdChanged = "MicRmsGateThresholdChanged",
   ExperimentalScoringEnabledChanged = "ExperimentalScoringEnabledChanged",
+  HostnameChanged = "HostnameChanged",
   OledFriendlyChanged = "OledFriendlyChanged",
   PianoRollOpacityChanged = "PianoRollOpacityChanged",
   PianoRollSizeChanged = "PianoRollSizeChanged",
@@ -1459,6 +1467,7 @@ let db: NotARealDb = {
   currentSong: null,
   currentSongAdhocLyrics: [],
   guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
+  hostname: null,
   idToAdhocLyrics: {},
   joysoundRomajiWordSegmentation: false,
   micOutputEnabled: true,
@@ -1479,6 +1488,27 @@ let db: NotARealDb = {
   lastKnownGoodDamSongId: null,
   joysoundYoutubeVideos: {},
 };
+
+// The address a phone on the same WiFi can actually reach, with the remocon
+// port, so the QR codes are scannable out of the box. Prefer a private LAN
+// IPv4; fall back to the mDNS hostname when this machine has none. This used
+// to live in the renderer (over preload's ipAddresses()) — it moved here when
+// hostname became a synced setting, so every window agrees on one default.
+function defaultHostname(): string {
+  const ipv4 = ipAddresses().filter((addr) =>
+    /^\d{1,3}(\.\d{1,3}){3}$/.test(addr),
+  );
+  const preferred =
+    ipv4.find((addr) => addr.startsWith("192.168.")) ??
+    ipv4.find((addr) => addr.startsWith("10.")) ??
+    ipv4.find((addr) => /^172\.(1[6-9]|2\d|3[01])\./.test(addr)) ??
+    ipv4[0];
+  return preferred ? `${preferred}:${karafriendsConfig.remoconPort}` : HOSTNAME;
+}
+
+function currentHostname(): string {
+  return db.hostname ?? defaultHostname();
+}
 
 type ServiceHealthState = {
   damAvailable: boolean;
@@ -1533,6 +1563,7 @@ function loadDb(): NotARealDb {
     currentSong: null,
     currentSongAdhocLyrics: [],
     guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
+    hostname: null,
     idToAdhocLyrics: {},
     joysoundRomajiWordSegmentation: false,
     micOutputEnabled: true,
@@ -2490,6 +2521,7 @@ const resolvers = {
         ? { text: db.breakMessageText, author: db.breakMessageAuthor }
         : null,
     guideMelodyVolume: () => db.guideMelodyVolume,
+    hostname: () => currentHostname(),
     joysoundRomajiWordSegmentation: () => db.joysoundRomajiWordSegmentation,
     micOutputEnabled: () => db.micOutputEnabled,
     micRmsGateEnabled: () => db.micRmsGateEnabled,
@@ -2980,6 +3012,14 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setHostname: (_: any, args: { hostname: string }): boolean => {
+      db.hostname = args.hostname;
+      pubsub.publish(SubscriptionEvent.HostnameChanged, {
+        hostnameChanged: currentHostname(),
+      });
+      saveDb();
+      return true;
+    },
     setOledFriendly: (_: any, args: { oledFriendly: boolean }): boolean => {
       db.oledFriendly = args.oledFriendly;
       pubsub.publish(SubscriptionEvent.OledFriendlyChanged, {
@@ -3147,6 +3187,10 @@ const resolvers = {
         pubsub.asyncIterableIterator([
           SubscriptionEvent.ExperimentalScoringEnabledChanged,
         ]),
+    },
+    hostnameChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.HostnameChanged]),
     },
     oledFriendlyChanged: {
       subscribe: () =>

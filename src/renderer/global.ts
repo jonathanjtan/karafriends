@@ -19,6 +19,12 @@ declare global {
         send(message: unknown): void;
         subscribe(callback: (message: unknown) => void): () => void;
       };
+      // Window control for the popped-out join-QR window. No bus — it reads
+      // the hostname over GraphQL like any other synced setting.
+      qrPanel: {
+        open(): void;
+        close(): void;
+      };
       nativeAudio: {
         inputDevices: () => [string, number][];
         outputDevices: () => string[];

@@ -12,6 +12,7 @@ import ArtistSearchPage from "./pages/ArtistSearchPage";
 import DamRankingPage from "./pages/DamRankingPage";
 import HistoryPage from "./pages/HistoryPage";
 import HomePage from "./pages/HomePage";
+import JoinPage from "./pages/JoinPage";
 import JoysoundArtistPage from "./pages/JoysoundArtistPage";
 import JoysoundArtistSearchPage from "./pages/JoysoundArtistSearchPage";
 import JoysoundRankingPage from "./pages/JoysoundRankingPage";
@@ -110,6 +111,7 @@ const App = () => {
                   path="/search/oricon/:query/:artist?"
                   element={<OriconSongPage />}
                 />
+                <Route path="/join" element={<JoinPage />} />
                 <Route path="/history" element={<HistoryPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
                 <Route path="/" element={<HomePage />} />

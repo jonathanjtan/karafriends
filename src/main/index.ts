@@ -95,6 +95,8 @@ let rendererWindow: BrowserWindow | null;
 // The sidebar, detached into its own window (renderer bundle loaded with
 // ?panel=settings). Null whenever it isn't open.
 let settingsPanelWindow: BrowserWindow | null = null;
+// The join QR, likewise (?panel=qr), for parking on a second display.
+let qrPanelWindow: BrowserWindow | null = null;
 
 const rendererWebPreferences = {
   allowRunningInsecureContent: false,
@@ -157,6 +159,33 @@ function createSettingsPanelWindow() {
     // The big screen re-shows its docked sidebar when the panel goes away,
     // and stops publishing mic levels nobody is watching.
     broadcastSettingsPanelMessage(null, { type: "panelClosed" });
+  });
+}
+
+function createQrPanelWindow() {
+  if (qrPanelWindow && !qrPanelWindow.isDestroyed()) {
+    qrPanelWindow.show();
+    qrPanelWindow.focus();
+    return;
+  }
+
+  qrPanelWindow = new BrowserWindow({
+    // Framed even in the fullscreen production build: the point of this
+    // window is to be dragged to a second display and left there.
+    frame: true,
+    title: "karafriends — Join",
+    width: 480,
+    height: 620,
+    minWidth: 240,
+    minHeight: 300,
+    backgroundColor: "#ffffff",
+    webPreferences: rendererWebPreferences,
+  });
+
+  qrPanelWindow.loadURL(rendererUrl("?panel=qr"));
+
+  qrPanelWindow.on("closed", () => {
+    qrPanelWindow = null;
   });
 }
 
@@ -240,6 +269,14 @@ function createWindow() {
   ipcMain.on("close-settings-panel", () => {
     if (settingsPanelWindow && !settingsPanelWindow.isDestroyed()) {
       settingsPanelWindow.close();
+    }
+  });
+
+  ipcMain.on("open-qr-panel", () => createQrPanelWindow());
+
+  ipcMain.on("close-qr-panel", () => {
+    if (qrPanelWindow && !qrPanelWindow.isDestroyed()) {
+      qrPanelWindow.close();
     }
   });
 

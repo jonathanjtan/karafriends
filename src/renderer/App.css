@@ -233,6 +233,34 @@ html.oledFriendly
   opacity: 1;
 }
 
+/* The QR and its own pop-out affordance, which only shows on hover so the
+   idle big screen stays clean. */
+.sidebarQrBlock {
+  position: relative;
+}
+
+.sidebarQrPopOut {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  padding: 6px;
+  border: none;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #333;
+  font-size: 0.8rem;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.sidebarQrBlock:hover .sidebarQrPopOut,
+.sidebarQrPopOut:focus-visible {
+  opacity: 1;
+}
+
 /* Shown in the docked sidebar while the settings live in their own window, so
    an expanded (but deliberately settings-less) sidebar isn't a mystery. */
 .sidebarPoppedOutNotice {
@@ -334,6 +362,42 @@ html.oledFriendly
 
 .settingLabelClickable {
   cursor: pointer;
+}
+
+/* Explanations used to be `title=` tooltips, which nobody hovers on a
+   television — the Pitch Gate row in particular is the one most likely to be
+   set wrong. They're a real full-width row now, matching the remocon. */
+.settingHint {
+  grid-column: 1 / -1;
+  margin: -2px 0 2px;
+  font-size: 0.72rem;
+  line-height: 1.25;
+  text-align: left;
+  color: rgba(0, 0, 0, 0.5);
+}
+
+.oledFriendly .settingHint {
+  color: rgba(0, 0, 0, 0.6);
+}
+
+/* Plain <select> (no materialize FormSelect wrapper) for manifest-driven
+   selects; sized to the grid rather than materialize's stacked-form spacing. */
+.settingSelect {
+  /* Materialize authors form controls content-box, so a 100% width plus the
+     1px border below would land 2px outside the grid column. */
+  box-sizing: border-box;
+  width: 100%;
+  /* A <select>'s min-content width is its widest <option>, which for the BGM
+     list is wider than a narrow sidebar. Without this it would set the grid
+     column the same way a nowrap label does. */
+  min-width: 0;
+  max-width: 100%;
+  height: 2rem;
+  padding: 0 0.4rem;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  border-radius: 2px;
+  background-color: #fff;
+  font-size: 0.85rem;
 }
 
 .settingValue {
@@ -529,19 +593,18 @@ html.oledFriendly
     font-size: 0.85rem;
   }
 
-  .appSidebar .section table th,
-  .appSidebar .section table td {
-    padding: 5px 4px;
-    font-size: 0.85rem;
-  }
-
   /* 14px of padding per side is a lot of a 180px sidebar. */
   .appSidebar .section {
     padding-left: 8px;
     padding-right: 8px;
   }
 
+  /* Long labels ("Scoring (experimental)") have a min-content width wider
+     than the whole 180px grid, and `1fr` is `minmax(auto, 1fr)` — so a
+     nowrap label sets the column and pushes the value column off the clipped
+     edge. Wrapping is the graceful degradation; the row just gets taller. */
   .settingLabel {
     font-size: 0.85rem;
+    white-space: normal;
   }
 }

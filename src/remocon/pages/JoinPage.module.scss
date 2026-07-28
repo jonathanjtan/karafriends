@@ -1,0 +1,64 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: bold;
+  color: #1cb3ff;
+}
+
+.blurb {
+  max-width: 34ch;
+  font-size: 13px;
+  line-height: 18px;
+  opacity: 0.7;
+}
+
+/* White plate behind the code regardless of dark mode — plenty of phone
+   cameras won't read an inverted QR, and this one exists to be scanned off a
+   screen that is already dimmer than paper.
+   Dark mode is a global invert on .app (see App.module.scss), so the plate
+   cancels it for itself and everything inside, and the app's blanket
+   counter-invert on <img> is switched off in here so the code isn't flipped
+   back a third time. Net effect: black modules on white, either theme. */
+.codePlate {
+  padding: 12px;
+  border-radius: 8px;
+  background-color: #fff;
+}
+
+:global(html.dark) .codePlate {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+:global(html.dark) .codePlate img {
+  filter: none;
+}
+
+.code {
+  display: block;
+  width: min(68vw, 320px);
+  height: auto;
+}
+
+.url {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+  user-select: all;
+}
+
+.copyButton {
+  padding: 8px 16px;
+  border: 1px solid #1cb3ff;
+  border-radius: 4px;
+  background-color: #fff;
+  color: #1cb3ff;
+  font-size: 13px;
+}

@@ -16,6 +16,10 @@ import "./global";
 //
 // The big screen is the owner: the panel sends intents ("select this mic") and
 // renders whatever snapshot comes back.
+//
+// The hostname used to travel over here too. It's a synced setting now, so
+// windows that only need *it* (the QR window) need no relay at all — which is
+// the whole reason it moved.
 
 export interface MicSelection {
   name: string;
@@ -28,9 +32,8 @@ export type SettingsPanelMessage =
   | { type: "panelOpened" }
   | { type: "setMic"; index: number; name: string; channel: number }
   | { type: "clearMics" }
-  | { type: "setHostname"; hostname: string }
   // big screen -> panel
-  | { type: "ownerState"; mics: MicSelection[]; hostname: string }
+  | { type: "ownerState"; mics: MicSelection[] }
   | { type: "micLevels"; levels: number[] }
   // main process -> big screen, when the panel window is gone
   | { type: "panelClosed" };
@@ -47,6 +50,10 @@ export function closeSettingsPanelWindow(): void {
   window.karafriends.settingsPanel.close();
 }
 
+export function openQrPanelWindow(): void {
+  window.karafriends.qrPanel.open();
+}
+
 // Returns an unsubscribe function, so callers can hand it straight back from a
 // useEffect.
 export function subscribeSettingsPanelMessages(
@@ -57,10 +64,9 @@ export function subscribeSettingsPanelMessages(
   );
 }
 
-// The renderer bundle is loaded in two windows; this is how each one knows
-// which it is (main/index.ts appends the query for the panel window).
-export function isSettingsPanelWindow(): boolean {
-  return (
-    new URLSearchParams(window.location.search).get("panel") === "settings"
-  );
+// The renderer bundle is loaded in several windows; this is how each one
+// knows which it is (main/index.ts appends the query for the panel windows).
+export function panelKind(): "settings" | "qr" | null {
+  const panel = new URLSearchParams(window.location.search).get("panel");
+  return panel === "settings" || panel === "qr" ? panel : null;
 }

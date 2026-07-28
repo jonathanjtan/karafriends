@@ -71,6 +71,10 @@ function QRCode(props: {
 
     function update() {
       if (!canvasRef.current) return;
+      // The hostname is a synced setting now, so it's empty for the first
+      // frame or two after a window opens. Encoding "http://" would render a
+      // scannable-but-useless code, so wait for the real value.
+      if (props.hostname === "") return;
 
       canvasRef.current.style.width = "100%";
       toCanvas(

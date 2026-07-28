@@ -10,8 +10,9 @@ import environment from "../common/graphqlEnvironment";
 import { KuroshiroSingleton } from "../common/joysoundParser";
 import App from "./App";
 import "./index.css";
+import QrPanel from "./QrPanel";
 import SettingsPanel from "./SettingsPanel";
-import { isSettingsPanelWindow } from "./settingsPanelBus";
+import { panelKind } from "./settingsPanelBus";
 import KarafriendsAudio from "./webAudio";
 
 Sentry.init({
@@ -19,12 +20,17 @@ Sentry.init({
   debug: true,
 });
 
-// This bundle is loaded by two windows: the big screen and the popped-out
-// settings window. Only the big screen gets an audio graph and a kuromoji
-// dictionary — the panel window has no player, and a second AudioContext /
-// dictionary load would just cost memory.
+// This bundle is loaded by three windows: the big screen and the two
+// popped-out panels (settings, join QR). Only the big screen gets an audio
+// graph and a kuromoji dictionary — the panels have no player, and a second
+// AudioContext / dictionary load would just cost memory.
 function root() {
-  if (isSettingsPanelWindow()) return <SettingsPanel />;
+  switch (panelKind()) {
+    case "settings":
+      return <SettingsPanel />;
+    case "qr":
+      return <QrPanel />;
+  }
 
   const kuroshiro = new Kuroshiro();
   const kuromojiAnalyzer = new KuromojiAnalyzer({ dictPath: "./dict" });

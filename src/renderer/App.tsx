@@ -4,10 +4,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FaChevronLeft, FaChevronRight } from "react-icons/fa"; // tslint:disable-line:no-submodule-imports
 import { graphql, useMutation, useSubscription } from "react-relay";
 
-import { HOSTNAME } from "../common/constants";
 import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
+import useHostname from "../common/hooks/useHostname";
 import useMicOutputEnabled from "../common/hooks/useMicOutputEnabled";
 import useOledFriendly from "../common/hooks/useOledFriendly";
 import useServiceHealth from "../common/hooks/useServiceHealth";
@@ -20,6 +20,7 @@ import { InputDevice } from "./nativeAudio";
 import Player from "./Player";
 import {
   MicSelection,
+  openQrPanelWindow,
   openSettingsPanelWindow,
   sendSettingsPanelMessage,
   subscribeSettingsPanelMessages,
@@ -66,22 +67,6 @@ function clampSidebarWidth(width: number): number {
   );
 }
 
-// Default the remocon address to a private LAN IPv4 (what a phone on the same
-// WiFi can actually reach), with the remocon port so the QR is scannable
-// out of the box. Fall back to the mDNS hostname if no LAN address is found.
-function defaultHostname(): string {
-  const { remoconPort } = window.karafriends.karafriendsConfig();
-  const ipv4 = window.karafriends
-    .ipAddresses()
-    .filter((addr) => /^\d{1,3}(\.\d{1,3}){3}$/.test(addr));
-  const preferred =
-    ipv4.find((addr) => addr.startsWith("192.168.")) ??
-    ipv4.find((addr) => addr.startsWith("10.")) ??
-    ipv4.find((addr) => /^172\.(1[6-9]|2\d|3[01])\./.test(addr)) ??
-    ipv4[0];
-  return preferred ? `${preferred}:${remoconPort}` : HOSTNAME;
-}
-
 const songAddedSubscription = graphql`
   subscription AppQueueAddedSubscription {
     queueAdded {
@@ -107,7 +92,9 @@ function App(props: {
   // Latest RMS per mic, written by PianoRoll's pitch poller and read by the
   // settings-panel meters. A ref so 40Hz-per-mic updates never re-render App.
   const micLevelsRef = useRef<number[]>([]);
-  const [hostname, setHostname] = useState(defaultHostname);
+  // The address the QR codes encode. A synced setting, so the popped-out
+  // settings window and the QR window read it straight from the main process.
+  const { hostname } = useHostname();
   // Sidebar visibility is synced through the main process (like the Settings
   // section) so the remocon can fullscreen the TV's playing song remotely.
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
@@ -323,7 +310,7 @@ function App(props: {
     };
   }, [sidebarCollapsed]);
 
-  // The popped-out settings window can't own the mics or the hostname (see
+  // The popped-out settings window can't own the mics (see
   // settingsPanelBus.ts), so this window answers its intents and keeps it
   // supplied with snapshots. Re-subscribing whenever the owned state changes
   // keeps the handlers free of stale closures.
@@ -332,7 +319,6 @@ function App(props: {
       sendSettingsPanelMessage({
         type: "ownerState",
         mics: micSelections,
-        hostname,
       });
 
     const unsubscribe = subscribeSettingsPanelMessages((message) => {
@@ -357,16 +343,13 @@ function App(props: {
         case "clearMics":
           clearMics();
           break;
-        case "setHostname":
-          setHostname(message.hostname);
-          break;
       }
     });
 
     if (settingsPoppedOut) publishOwnerState();
 
     return unsubscribe;
-  }, [mics, hostname, settingsPoppedOut]);
+  }, [mics, settingsPoppedOut]);
 
   // Mic levels are only published while somebody is looking at them.
   useEffect(() => {
@@ -437,8 +420,6 @@ function App(props: {
           variant="docked"
           style={{ width: sidebarWidth }}
           onResizeHandleMouseDown={startSidebarResize}
-          hostname={hostname}
-          onHostnameChange={setHostname}
           mics={micSelections}
           onSelectMic={selectMic}
           onClearMics={clearMics}
@@ -453,6 +434,7 @@ function App(props: {
             }
           }}
           onPopOut={openSettingsPanelWindow}
+          onPopOutQr={openQrPanelWindow}
           poppedOut={settingsPoppedOut}
         />
       </div>
