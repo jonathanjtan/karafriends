@@ -260,6 +260,41 @@ sites + `loadDb`, add query/mutation/subscription to `schema.graphql`, add
 resolvers + a `SubscriptionEvent` + a pubsub publish in the mutation, write a
 hook, relay-compile. Persistence is automatic via the `...db` spread.
 
+### The settings manifest (`src/common/settings/`)
+
+**To surface that setting in the UI, add it here — not to each settings
+screen.** The TV sidebar (`renderer/Sidebar.tsx`) and the remocon panel
+(`remocon/components/RoomSettings/`) both render one pure-data manifest, so a
+setting is a single edit rather than two that can disagree. They used to be
+hand-maintained lists and had drifted: Scoring and Edit Break Message existed
+only on the phone, Scoring sat under MICROPHONE despite not being a mic
+setting, and the same value went by two names on the two screens.
+
+- `useRoomSettings()` calls every setting hook unconditionally, in a fixed
+  order, and returns a keyed map of `{value, set}`. That's what satisfies the
+  rules of hooks _once_ and lets the manifest stay data. Add the `Control`
+  here.
+- `manifest.ts` declares the entry: section, label, hint, and a `kind`
+  (`toggle` / `slider` / `select` / `presets` / `break` / `action`) with a
+  `get` accessor. Slider bounds are in **display** units (percent, dB) with
+  `toDisplay`/`fromDisplay` converting.
+- Each surface owns only a presenter (`SettingRow.tsx`, one per surface)
+  switching on `def.kind`. Don't add rendering logic to the manifest.
+- `surfaces: ["remocon"]` marks entries meaningless on the other screen (e.g.
+  "hide the TV settings panel" would hide its own switch). `visibleWhen` hides
+  a row conditionally (Gate Threshold under Pitch Gate).
+- Things that **aren't** synced settings — the mic pickers, mic level meters,
+  the hostname picker, the service-health rows — are per-surface
+  `sectionExtras` slots keyed by section, not manifest entries.
+- Actions (`editBreakMessage`, `recheckServices`, `clearQueue`) are typed by
+  id, so adding one is a compile error until both surfaces implement it.
+- **Hints render inline on both surfaces.** Don't put explanations in `title=`
+  tooltips; nobody hovers a television.
+- The TV grid is drag-resizable to 180px. `1fr` is `minmax(auto, 1fr)`, so a
+  long `.settingLabel` (or a `<select>`'s widest `<option>`) sets the column
+  and pushes the value column off the clipped edge — labels wrap in the narrow
+  container query for exactly this reason.
+
 ### Key subsystems
 
 - **JOYSOUND video pipeline** (`videoDownloader.ts` →
@@ -374,6 +409,14 @@ hook, relay-compile. Persistence is automatic via the `...db` spread.
   `SettingsPanel` instead of `App` (no audio graph, no kuromoji dictionary,
   no Player). While it's open the docked sidebar stays collapsed, so the big
   screen is all video.
+  - There is a **second panel window**, `?panel=qr` → `QrPanel`: the join QR
+    and its URL, nothing else, to drag onto a laptop beside the TV and leave
+    idle. Opened from the hover affordance on the sidebar QR. It needs no bus
+    at all — `hostname` is a synced setting (main owns the LAN-address
+    default), which is exactly why it was moved off renderer state. The
+    remocon's `/join` view is the phone-to-phone counterpart, and uses
+    `window.location.origin` rather than `hostname`: that's an address the
+    holder's phone demonstrably reaches the app on.
   - Every setting in there is a **synced setting**, so both windows just talk
     to the main process over GraphQL and need no coordination. The two
     exceptions are **mic selection** and the **mic level meters**:
@@ -390,7 +433,11 @@ hook, relay-compile. Persistence is automatic via the `...db` spread.
     Placements from the wide 3-column grid must be re-stated in there: a
     leftover `grid-column: 2 / 4` in a 2-column grid silently creates an
     _implicit_ third column, which is what used to push the value column off
-    the clipped edge at 180px.
+    the clipped edge at 180px. The other way to overflow that grid is a wide
+    _intrinsic_ minimum — `1fr` is `minmax(auto, 1fr)`, so a nowrap label
+    ("Scoring (experimental)") or a `<select>`'s widest `<option>` sets the
+    column width regardless of the container. Labels wrap and selects get
+    `min-width: 0` in there.
 - **BGM**: bundled tracks in `src/common/bgmTracks.ts` (normalized to −20
   LUFS; see the file header for the re-encode recipe). Track selection and
   volume are synced settings; the renderer plays them between songs.
