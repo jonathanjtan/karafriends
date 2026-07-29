@@ -9,7 +9,10 @@ import {
 import type { FetcherResponse } from "@apollo/utils.fetcher";
 import type { KeyValueCache } from "@apollo/utils.keyvaluecache";
 import DataLoader from "dataloader";
+import nodeFetch from "node-fetch";
 import promiseRetry from "promise-retry";
+
+import proxyAgent from "./proxyAgent";
 
 const BASE_MINSEI_REQUEST = {
   charset: "UTF-8",
@@ -114,9 +117,10 @@ export class MinseiAPI extends RESTDataSource {
   }
 
   static login(loginId: string, password: string) {
-    return fetch(
+    return nodeFetch(
       `https://win10.clubdam.com/cwa/win/minsei/auth/LoginByDamtomoMemberId.api`,
       {
+        agent: proxyAgent,
         method: "POST",
         body: `loginId=${loginId}&password=${password}&format=json`,
         headers: {

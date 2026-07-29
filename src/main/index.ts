@@ -230,6 +230,18 @@ function createWindow() {
       proxyBypassRules: "<local>,192.168.0.0/16,172.16.0.0/12,10.0.0.0/8",
     });
     // Technically should await this promise
+
+    // session.setProxy only covers Chromium's network stack. ffmpeg is
+    // *spawned*, so the one thing it can inherit is http_proxy -- and
+    // downloadDamVideo deliberately passes no `env:` of its own, so setting it
+    // here is what routes DAM's CDN through the proxy. youtubeSpawnEnv() and
+    // the Niconico path strip it back out, keeping YouTube on the real IP
+    // where it is far less likely to be bot-walled than a datacenter exit.
+    const { proxyHost, proxyPort, proxyUser, proxyPass } = karafriendsConfig;
+    const auth = proxyUser
+      ? `${encodeURIComponent(proxyUser)}:${encodeURIComponent(proxyPass)}@`
+      : "";
+    process.env.http_proxy = `http://${auth}${proxyHost}:${proxyPort}`;
   }
 
   protocol.registerFileProtocol("karafriends", (request, callback) => {

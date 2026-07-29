@@ -1,7 +1,10 @@
 import { DataSourceConfig, RESTDataSource } from "@apollo/datasource-rest";
 import type { KeyValueCache } from "@apollo/utils.keyvaluecache";
+import nodeFetch from "node-fetch";
 import promiseRetry from "promise-retry";
 import invariant from "ts-invariant";
+
+import proxyAgent from "./proxyAgent";
 
 const COOKIE_IDS: string[] = ["AWSALB", "AWSALBCORS", "JSESSIONID"];
 
@@ -280,7 +283,8 @@ export class JoysoundAPI extends RESTDataSource {
       JSESSIONID: "",
     };
 
-    const csrfToken = await fetch("https://www.sound-cafe.jp/login", {
+    const csrfToken = await nodeFetch("https://www.sound-cafe.jp/login", {
+      agent: proxyAgent,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
@@ -303,7 +307,8 @@ export class JoysoundAPI extends RESTDataSource {
         return matchData[1];
       });
 
-    return fetch("https://www.sound-cafe.jp/login/check", {
+    return nodeFetch("https://www.sound-cafe.jp/login/check", {
+      agent: proxyAgent,
       method: "POST",
       body: `mailAddress=${email}&password=${password}`,
       headers: {
@@ -323,7 +328,8 @@ export class JoysoundAPI extends RESTDataSource {
 
         parseCookies(setCookie, loginCookies);
 
-        return fetch("https://www.sound-cafe.jp/login", {
+        return nodeFetch("https://www.sound-cafe.jp/login", {
+          agent: proxyAgent,
           method: "POST",
           body: `_csrf=${csrfToken}&mailAddress=${email}&password=${password}`,
           headers: {
@@ -343,7 +349,8 @@ export class JoysoundAPI extends RESTDataSource {
 
         parseCookies(setCookie, loginCookies);
 
-        return fetch("https://www.sound-cafe.jp", {
+        return nodeFetch("https://www.sound-cafe.jp", {
+          agent: proxyAgent,
           headers: {
             Cookie: generateCookieString(loginCookies),
             "User-Agent":
