@@ -3605,6 +3605,11 @@ export function applyGraphQLMiddleware(app: Application) {
   const serverCleanup = useServer({ schema }, wsServer);
 
   db = loadDb();
+  // Write the mirror once up front rather than waiting for the first saveDb:
+  // a launch that gets rebooted out from under it before anyone touches a
+  // setting would otherwise leave no mirror at all, which is precisely the
+  // case this exists for.
+  writeHistoryMirror();
   // Bootstrap from history the first time only (no people.json yet), so the
   // room's existing songs keep their attribution instead of everyone showing
   // up as a stranger. songHistory is newest-first, which is the order
