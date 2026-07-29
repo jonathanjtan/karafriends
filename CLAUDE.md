@@ -165,6 +165,19 @@ http://localhost:8080/ | grep -oE 'remocon\.[a-z0-9]+\.js'`). If it's
   This has bitten us twice (a reverse-proxy filename collision and a
   `parcel serve` multi-target collision); both, plus the fast diagnostic, are
   written up in `docs/dev-server-investigation.md`. Read that _first_ next time.
+- **`run-dev` and the packaged app read DIFFERENT `config.yaml` files.**
+  `config.ts` resolves `app.getPath("userData")`, which in dev derives from the
+  _executable_ name — so `run-dev` reads
+  `~/Library/Application Support/`**`Electron`**`/config.yaml` (Windows:
+  `%APPDATA%\Electron\`, Linux: `~/.config/Electron/`) while the packaged app
+  reads the `karafriends/` one. Configure one and the other silently keeps its
+  **defaults**, and `config.ts` helpfully writes a fresh default file on first
+  launch so it looks configured. The tell: the service health check reports
+  **both** DAM and JOYSOUND unreachable under `run-dev` while the packaged app
+  is fine — `proxyEnable` is still `false` there, so every login goes out
+  un-proxied into the geo-block (see "DAM specifics"). Keep the proxy block and
+  the credentials in sync across both, and remember the file is only read at
+  startup — restart after editing.
 - **Scratch scripts that import repo deps must live inside the repo.** PnP
   only resolves packages for files under the project root. To use e.g.
   `youtubei.js` from a throwaway script, drop the `.cjs` into the repo dir and
