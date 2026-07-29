@@ -2413,18 +2413,26 @@ const resolvers = {
       const firstInt = args.first || 0;
       const afterInt = args.after ? parseInt(args.after, 10) : 0;
 
+      // `first` is a count, not an end index: slice(afterInt, firstInt) made
+      // every page after the first empty (page 2 is slice(30, 30)), so the
+      // remocon's "More" fetched nothing and then hid itself — capping the
+      // visible history at 30 no matter how much of it we'd kept.
+      const edges = db.songHistory
+        .slice(afterInt, afterInt + firstInt)
+        .map((songHistoryItem, i) => ({
+          node: songHistoryItem,
+          // Cursors are "resume from here", so the next page's `after` is
+          // one past this row.
+          cursor: (afterInt + i + 1).toString(),
+        }));
+
       return {
-        edges: db.songHistory
-          .slice(afterInt, firstInt)
-          .map((songHistoryItem, i) => ({
-            node: songHistoryItem,
-            cursor: (firstInt + i).toString(),
-          })),
+        edges,
         pageInfo: {
-          hasPreviousPage: false,
-          hasNextPage: firstInt + afterInt < db.songHistory.length,
-          startCursor: "0",
-          endCursor: (firstInt + afterInt).toString(),
+          hasPreviousPage: afterInt > 0,
+          hasNextPage: afterInt + edges.length < db.songHistory.length,
+          startCursor: (afterInt + 1).toString(),
+          endCursor: (afterInt + edges.length).toString(),
         },
       };
     },
