@@ -37,14 +37,6 @@ Package manager is **Yarn (Berry) with PnP** — there is **no `node_modules`**.
 
 ### Toolchain prerequisites
 
-- **Node.js LTS** + `corepack enable` (provides the `yarn` shim). CI uses
-  `lts/*`.
-- **Rust**, both **stable and nightly** — nightly is only needed for the
-  `cargo careful` native tests (`yarn test:native`); stable builds the addon.
-  Install via `rustup`.
-- **A C toolchain / platform audio headers**: macOS → Xcode command-line
-  tools (`xcode-select --install`); Linux → `libasound2-dev` (ALSA);
-  Windows → MSVC build tools.
 - **python3 + `ephemeral-port-reserve`** (`pip install --user
 ephemeral-port-reserve`) — only for the wdio integration tests. Make sure
   its install bin dir is on PATH.
@@ -107,12 +99,8 @@ files you touched.
 
 ### Kill / restart
 
-The dev app owns port **:8080**. To kill it:
-
-- **Windows**: `Get-NetTCPConnection -LocalPort 8080 -State Listen |
-Stop-Process -Id {OwningProcess} -Force`.
-- **macOS / Linux**: `lsof -ti tcp:8080 | xargs kill -9` (or
-  `kill $(lsof -ti tcp:8080)`).
+The dev app owns port **:8080** — kill whatever is listening there before
+relaunching.
 
 ### Gotchas that will waste your time
 
@@ -188,7 +176,7 @@ http://localhost:8080/ | grep -oE 'remocon\.[a-z0-9]+\.js'`). If it's
 
 The preview MCP tools can't attach to an externally-started server on :8080.
 There's a launch.json entry **`karafriends-remocon-via-app`** — a transparent
-TCP proxy (`scratchpad/.../tcp-proxy-8080.js`, port 3002 → app :8080) that
+TCP proxy (`.claude/tcp-proxy-8080.js`, port 3002 → app :8080) that
 carries both HTTP and graphql-ws, letting the preview browser drive the real
 running app's remocon.
 
@@ -219,22 +207,9 @@ the OS temp dir (`app.getPath("temp")`) — so **Windows**
 
 ## Architecture
 
-Four bundles built by Parcel from `src/`:
-
-- **`src/main`** — Electron main process. Hosts the Apollo GraphQL server
-  (`graphql.ts`, the heart of the app), the DAM/JOYSOUND API clients
-  (`damApi.ts`, `joysoundApi.ts`), and server-side kuroshiro/kuromoji for
-  reading (furigana) generation.
-- **`src/renderer`** — the big-screen display (Player, PianoRoll,
-  JoysoundRenderer, webAudio graph, BackgroundMusic).
-- **`src/remocon`** — the phone web UI (search, queue, playback controls,
-  volume/settings panels).
-- **`src/common`** — shared code: `schema.graphql`, GraphQL environment,
-  shared React hooks, `videoDownloader.ts` (the download/compose pipeline,
-  used from main), DSP (`guideMelody.ts`), parsers, constants.
-- **`native/`** — a Rust `.node` addon (audio I/O via **`cpal`** —
-  CoreAudio on macOS, WASAPI on Windows, ALSA on Linux, with **ASIO** an
-  opt-in Windows feature; plus ephemeral-port reservation).
+Four Parcel bundles from `src/` (`main`, `renderer`, `remocon`, `common`) plus
+a Rust `.node` addon in `native/` for audio I/O and port reservation. See
+`docs/architecture.md` for the tour.
 
 GraphQL on **:8080** is **POST-only** (Apollo CSRF protection); it also serves
 graphql-ws subscriptions over WebSocket. The remocon talks to it; in dev,
@@ -310,95 +285,14 @@ setting, and the same value went by two names on the two screens.
 
 ### Key subsystems
 
-- **JOYSOUND video pipeline** (`videoDownloader.ts` →
-  `downloadJoysoundData`): fetches telop + ogg, optionally downloads a YouTube
-  background video via yt-dlp, composites them with ffmpeg, extracts the guide
-  melody, and pushes to the queue. Falls back to JOYSOUND's own default video
-  if the YouTube path fails.
-- **YouTube MV auto-picker** (`suggestedYoutubeVideos` in `graphql.ts`):
-  JOYSOUND-only (DAM has no youtubeVideoId concept). Searches YouTube via
-  **youtubei.js** (`Innertube`), then ranks candidates by a **trust tier**
-  (artist's own channel / bracketed `[Official Video]` tag / official-title +
-  related-channel), with duration-closeness only a within-tier tiebreak,
-  song-name-in-title as a hard filter, and an exclusion list of cover/karaoke/
-  lyric/live keywords (English + Japanese + Korean + Thai). **The Innertube
-  client is created with `lang: "ja", location: "JP"`** — without it, YouTube
-  machine-romanizes JP titles (e.g. 晩餐歌 → "Bansanka"), which breaks the
-  song-name filter and hides the JP exclusion keywords.
-- **Video ↔ karaoke sync** (`computeYoutubeIntroOffsetMs`): three stages.
-  (1) A coarse (100ms) envelope scan collects _every_ local correlation peak
-  per anchor as a candidate offset — never trust any single anchor's argmax:
-  on riff-repetitive songs a phrase-aliased ghost offset (one repetition
-  off) can outscore the truth at coarse resolution (desynced 新宝島 by 3s,
-  alias 10400ms vs true 7350ms). (2) Each candidate is refined
-  **drift-tolerantly** on a fine (10ms) envelope: every anchor reports its
-  own best offset within ±1s of the candidate and the score-weighted median
-  wins — karaoke re-recordings genuinely wander by hundreds of ms across a
-  song, so demanding one exact offset at every anchor collapses honest
-  candidates (this null'd 残酷な天使のテーゼ into a bogus onset fallback).
-  (3) Top candidates are ranked by **guide-melody salience** — Goertzel
-  on-pitch vs off-pitch power in the MV audio at the times each offset
-  predicts for the extracted guide-melody notes. Envelope correlation only
-  measures "loud in the same places", which aliases fake convincingly
-  (残酷な天使のテーゼ's envelope actually prefers a wrong-by-1.7s alias at
-  the head); whether the melody's _pitches_ sound there is what they can't
-  fake — on every measured song melody separates true from alias by ≥0.37
-  where envelope margins were ~0.05 or inverted. Envelope ranking (with
-  confidence gates) is only a fallback when melody data is missing or its
-  ranking is ambiguous. After an offset is picked (by any method),
-  **`measureVideoDriftAround`** checks the tempo actually matches: some MV
-  uploads are speed-shifted (ロミオとシンデレラ's 9HrOqmiEsN8 runs 1.2%
-  fast — a smooth 3.3s of drift across the song that no constant offset can
-  fix). Per-anchor local peaks are collected across the whole track
-  (multiple peaks per anchor — an alias can outscore the honest peak at any
-  single anchor, and a greedy predict-then-search walk got poisoned by
-  exactly that), a RANSAC pass keeps the max-inlier-weight line (same-track
-  pairs give non-drifting songs a ~0-slope winner → no stretch), and a fine
-  refit along it yields the rate; the video's timestamps are then rescaled
-  to the karaoke's tempo (`stretchJoysoundVideoPromise`, a copy-codec
-  `-itsscale` remux, no re-encode) and the head offset drift-corrected
-  (`F·intercept`) before the usual trim/pad. Positive offset → `-ss`
-  trim; negative (karaoke has extra head material, e.g. a count-off) →
-  frozen-first-frame front-pad. When cross-correlation is inconclusive (the
-  common case — a karaoke re-recording rarely envelope-correlates with the
-  original master) it falls back to **onset alignment**
-  (`estimateOnsetOffsetMs`): detect where the music starts in each track and
-  align those points (already-aligned songs → ≈0, so it's self-limiting). Only
-  when onset also can't locate both starts do we give up (null) and leave the
-  heads at t=0. There is **no end-together pad** anymore — the old "assume the
-  video and song end together" fallback blindly shoved the whole video several
-  seconds late, desyncing songs whose heads were already aligned (this was the
-  Senbonzakura/Dry-Flower bug). With any measured offset the video plays once
-  and **holds its last frame** for the uncovered tail (so the MV's outro plays
-  in full); only the null case still loops (a possibly-short default video
-  shouldn't freeze). Intro-sync reads the MV's audio **out of the already
-  downloaded video file** (the `-f bv+ba/b` fetch) — it costs no extra YouTube
-  request; see "External tools" for why that matters. Optional per-queue via
-  `youtubeVideoSyncEnabled` (a default-on remocon checkbox; null = enabled for
-  old clients).
-- **Guide melody** (`common/guideMelody.ts`, `renderer/damGuideMelody.ts`):
-  - JOYSOUND's getFME ogg is **3.0-channel vorbis with the guide melody
-    isolated on the FC channel** (channel index 2 in Web Audio). It's
-    ffmpeg-decoded and pitch-tracked (autocorrelation) at download time into
-    DAM-scoring-binary format, cached as `-melody.bin`.
-    - Tracker gotcha: use a **full lag scan every frame** — narrowing the
-      search around the previous frame locks onto 2/3-subharmonics at melodic
-      leaps.
-  - DAM streams are plain stereo (no isolated guide channel), so the guide is
-    **synthesized locally** from the scoring reference data with scheduled
-    oscillators, tracking the video clock across play/pause/seek.
-- **Piano roll** (`renderer/PianoRoll.tsx` + `shaders/`): continuous
-  right-to-left scroll past a fixed "now" cursor at `CURSOR_FRACTION=0.3` of
-  canvas width, `TIME_WIDTH_SECS=7`. All shader programs take a
-  `cursorFraction` uniform. Opacity/size are synced settings applied as plain
-  CSS (the GL effect's deps are `[props]`, so a hook-state change re-renders
-  without rebuilding the GL pipeline; canvas backing-store resize is handled
-  by a ResizeObserver). Size `0` = "Off" (hides the canvas). JOYSOUND telop
-  lyrics reflow to clear the roll (`remapLyricsYPos` in JoysoundRenderer).
-  - **WebGL test harness lesson**: `drawImage`/late `readPixels` from a WebGL
-    canvas without `preserveDrawingBuffer` returns blank after compositing —
-    pixel assertions must run synchronously right after draw. `readPixels`
-    y-origin is bottom-left.
+Subsystem deep-dives live next to their code and load automatically when you
+work in those directories: **`src/common/CLAUDE.md`** (JOYSOUND video pipeline,
+YouTube MV auto-picker, video ↔ karaoke sync, guide melody) and
+**`src/renderer/CLAUDE.md`** (piano roll, sidebar + pop-out windows, BGM).
+
+These stay here — the first two are whole-app contracts, the third spans
+`scripts/`, `main/`, and `remocon/`:
+
 - **Queue advance is callback-chained with no self-healing**: songs advance
   only via media events → `pollQueue` → mutation callbacks in
   `renderer/Player.tsx`. One broken link (e.g. a song-start path that never
@@ -413,47 +307,6 @@ setting, and the same value went by two names on the two screens.
   "Check now"). Gate the per-song trigger on a **real** song transition — the
   Player polls `popSong` every ~5s while idle, which will otherwise hammer the
   services.
-- **The renderer sidebar, and its pop-out window** (`renderer/Sidebar.tsx`):
-  the QR + Settings + Queue column is one component rendered in two places —
-  docked beside the video (`variant="docked"`, drag-resizable, collapsible)
-  and in a **second BrowserWindow** (`variant="window"`), opened by the
-  pop-out button in the Settings header. That window loads the _same renderer
-  bundle_ with `?panel=settings`; `renderer/index.tsx` routes on it and mounts
-  `SettingsPanel` instead of `App` (no audio graph, no kuromoji dictionary,
-  no Player). While it's open the docked sidebar stays collapsed, so the big
-  screen is all video.
-  - There is a **second panel window**, `?panel=qr` → `QrPanel`: the join QR
-    and its URL, nothing else, to drag onto a laptop beside the TV and leave
-    idle. Opened from the hover affordance on the sidebar QR. It needs no bus
-    at all — `hostname` is a synced setting (main owns the LAN-address
-    default), which is exactly why it was moved off renderer state. The
-    remocon's `/join` view is the phone-to-phone counterpart, and uses
-    `window.location.origin` rather than `hostname`: that's an address the
-    holder's phone demonstrably reaches the app on.
-  - Every setting in there is a **synced setting**, so both windows just talk
-    to the main process over GraphQL and need no coordination. The two
-    exceptions are **mic selection** and the **mic level meters**:
-    `InputDevice`s are created through the preload's native binding and are
-    owned by the process whose PianoRoll polls them, so the big screen owns
-    them and the panel drives them over a small IPC bus
-    (`renderer/settingsPanelBus.ts` + preload's `settingsPanel` + the relay in
-    `main/index.ts`). The panel sends intents ("select this mic") and renders
-    the snapshots it gets back; levels are published at ~15Hz only while the
-    panel is open. **Don't create an InputDevice in the panel window** — it
-    would be a second, silent capture stream that scores nothing.
-  - Narrow-sidebar layout is a **`@container sidebar` query** on `.appSidebar`
-    (it reflows against the sidebar's dragged width, not the window's).
-    Placements from the wide 3-column grid must be re-stated in there: a
-    leftover `grid-column: 2 / 4` in a 2-column grid silently creates an
-    _implicit_ third column, which is what used to push the value column off
-    the clipped edge at 180px. The other way to overflow that grid is a wide
-    _intrinsic_ minimum — `1fr` is `minmax(auto, 1fr)`, so a nowrap label
-    ("Scoring (experimental)") or a `<select>`'s widest `<option>` sets the
-    column width regardless of the container. Labels wrap and selects get
-    `min-width: 0` in there.
-- **BGM**: bundled tracks in `src/common/bgmTracks.ts` (normalized to −20
-  LUFS; see the file header for the re-encode recipe). Track selection and
-  volume are synced settings; the renderer plays them between songs.
 - **Avatar portraits** (`scripts/getPortraits.mjs`, `main/portraits.ts`,
   `remocon/components/PmdPortraitPicker`): the avatar picker runs off a
   **local mirror** of PMDCollab SpriteCollab (no external requests at
@@ -469,109 +322,18 @@ setting, and the same value went by two names on the two screens.
   (`src/common/profilePicture.ts`); pre-mirror avatars remain absolute
   raw.githubusercontent.com URLs and still work.
 
-## External tools (yt-dlp / ffmpeg)
+## Service failures (yt-dlp, DAM, JOYSOUND)
 
-Downloaded by `scripts/getExternalResources.mjs` into `extraResources/`
-(gitignored) at build time; packaging copies them into
-`dist/.../resources/extraResources/`. `videoDownloader.ts` resolves them via
-`resourcePaths`.
+When a YouTube MV won't download, or DAM/JOYSOUND 403s from a blocked exit
+IP, use the **`karaoke-service-troubleshooting`** skill — it has the yt-dlp
+staleness/429 playbook and the two independent DAM network gates (geo on the
+auth hosts, anonymizer reputation on the CDN) with the `403`/992-byte
+fingerprint and how to pick a proxy exit that clears both.
 
-**yt-dlp goes stale fast and it is the #1 cause of "MV won't download".**
-YouTube regularly changes its player to break older yt-dlp releases with
-"Sign in to confirm you're not a bot" / HTTP 429 / signature-solving failures.
-The build script now **re-fetches the latest yt-dlp on every build**
-(`refreshYtdlp`) rather than caching an existing binary. If YouTube downloads
-start failing:
-
-1. Check `yt-<id>.log` in the temp dir for the bot/429/signature error.
-2. Confirm the bundled version: run the platform binary in
-   `extraResources/ytdlp/` with `--version` (`yt-dlp.exe` on Windows,
-   `yt-dlp_macos` on macOS, `yt-dlp` on Linux).
-3. Rebuild (auto-refreshes) or manually drop the latest release for your
-   platform from `github.com/yt-dlp/yt-dlp/releases/latest` into
-   `extraResources/ytdlp/` **and** the packaged
-   `dist/.../resources/extraResources/ytdlp/`.
-4. Avoid `player_client=tv` — it hit DRM-protected formats here.
-5. **A stale binary is not the only cause — check for HTTP 429 first.** If the
-   log shows `HTTP Error 429` on "Downloading webpage" followed by the bot
-   message, the binary is fine and the **exit IP is rate-limited**; no yt-dlp
-   version will fix it. Cycle the VPN (or wait — it expires on its own).
-
-**We pass a JS runtime.** yt-dlp only enables `deno` by default, and with no
-runtime it can't run YouTube's player JS, so it falls back to clients YouTube
-bot-walls (`android_vr`) and warns that JS-less extraction is deprecated.
-`youtubeJsRuntimeArgs()` points it at **Electron's own binary running as Node**
-(`--js-runtimes node:${process.execPath}` plus `ELECTRON_RUN_AS_NODE=1` from
-`youtubeSpawnEnv()`, which the runtime inherits) — no extra runtime to ship.
-
-**Keep the per-song request count at one extraction.** The MV fetch uses
-`-f bv+ba/b` so the downloaded file carries its own audio, which
-`computeYoutubeIntroOffsetMs` reads off disk. It used to be `-f bv`
-(video-only) plus a _second_ `-f ba` extraction just for intro-sync — two full
-extractions per song, four on a failing song once both retried, which is how we
-started earning 429s. Because the MV file now has an audio track, the composite
-**must** map streams explicitly (`-map 0:v:0 -map 1:a:0`); default selection
-only picks the ogg by luck of channel count (3.0 vs stereo). Retries back off
-(`YOUTUBE_RETRY_BACKOFF_MS`) and are **skipped entirely on a 429/bot-wall**
-(`isYoutubeRateLimited`) — retrying a wall can't succeed, it just deepens it.
-
-Note the search path (youtubei.js) and the download path (yt-dlp) are
-**independent** — search can work perfectly while downloads are bot-walled.
-
-## DAM specifics
-
-- DAM's `cds1-clubdam...ipcasting.jp` CDN **403s from datacenter/VPN exit
-  IPs** (IP-reputation filtering on commercial video), independent of the app
-  — the official DAM Windows client fails on the same network state and
-  unblocks when the VPN is toggled. This is not a karafriends bug; the service
-  health check is the intended mitigation (warn + let you cycle VPN without a
-  restart). JOYSOUND has no video CDN, so it never hits _this_ block — but it
-  is geo-restricted in its own right; see below.
-- Separately, DAM's **auth host `win10.clubdam.com` (CloudFront) geo-blocks
-  non-Japan IPs** with a 403 `text/html` page — so login itself fails off-VPN
-  (opposite polarity from the CDN case above). `MinseiAPI.login` detects the
-  non-JSON body and throws a descriptive error, and both credentials
-  providers use `memoizeWithFailureEviction` so a failed login is retried on
-  the next request instead of staying cached until relaunch. **JOYSOUND is
-  geo-blocked the same way**: from a non-JP address `sound-cafe.jp` answers
-  403 with no `set-cookie` at all, so `parseCookies`' `invariant` _throws_
-  rather than degrading, and its search APIs 403 identically (measured from a
-  US exit, 2026-07). The manual "check now" health check
-  (`recheckServiceHealth`) is the
-  recovery path after changing networks: it forces a fresh check (bypassing
-  the in-flight dedupe), resets both credential caches for a from-scratch
-  re-login, and fails fast (2 attempts + a 30s hang ceiling per service) rather
-  than sitting in `getMusicStreamingUrls`'s default ~17-minute
-  `promiseRetry` backoff, which playback paths intentionally keep.
-- **Two independent gates, and conflating them wastes hours.** The auth hosts
-  (`win10.clubdam.com`, `sound-cafe.jp`) filter on **geo**; DAM's CDN filters
-  on **anonymizer reputation** (`proxy:true` in commercial IP feeds). A
-  datacenter IP can pass the first and fail the second, which is exactly what
-  a VPN looks like. CDN fingerprint: a blocked exit gets `403` with exactly
-  **992 bytes** and `x-oke-front1-time: 0.000` for _any_ path — rejected at
-  the edge before token lookup — while a good exit gets a normal error with
-  `X-Oke-Middle-Via` present, i.e. it reached the origin.
-  `scripts/dam-exit-check.sh [http://user:pass@host:port]` scores any exit or
-  candidate proxy against all three gates.
-- **Cycling the VPN is no longer the fix — NordVPN is dead for this.** Its
-  whole Japan pool (293 IPs / 10 prefixes) is `proxy:true`, on
-  Datacamp/PacketHub/Hydra. Tokyo burned prefix-by-prefix over years; Osaka
-  was a _single_ prefix (`187.14.x`, 36 IPs), so when it was listed in 2026-07
-  every Osaka server died at once with no gradual degradation. **A plain
-  cloud/hosting exit can still work**: the CDN filters on `proxy`, so an exit
-  scoring `proxy:false, hosting:true` is orthogonal to the flag that matters —
-  score candidates with `dam-exit-check.sh` before committing to one. Set
-  `proxyEnable` + `proxyHost/Port/User/Pass` in
-  config.yaml and the whole app routes correctly: `main/index.ts` exports
-  `http_proxy` so spawned ffmpeg inherits it for the CDN leg,
-  `youtubeSpawnEnv()` strips it back out so yt-dlp keeps the real residential
-  IP (a datacenter exit gets bot-walled far harder), and `main/proxyAgent.ts`
-  covers the `damApi`/`joysoundApi` **static logins** — those call out through
-  node-fetch and would otherwise escape the proxy while every other call
-  succeeded, which is a maddening failure to diagnose.
-- Some songs are catalog-present but streaming-absent
-  (empty `mModelMusicInfoList`, `GetMusicStreamingURL` returns NG) — a
-  physical-machine-only license. Scoring reference data may still work.
+Two things to know without opening it: yt-dlp and ffmpeg are downloaded by
+`scripts/getExternalResources.mjs` into `extraResources/` (gitignored) at
+build time, and the **search path (youtubei.js) and the download path (yt-dlp)
+are independent** — search can work perfectly while downloads are bot-walled.
 
 ## Verifying changes
 
