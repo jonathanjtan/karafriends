@@ -63,7 +63,7 @@
 }
 
 .frameChoiceSelected {
-  border-color: #1cb3ff;
+  border-color: var(--accent);
 }
 
 .nicknameForm {
@@ -74,7 +74,7 @@
   input {
     flex: 1;
     border: none;
-    border-bottom: 4px solid #1cb3ff;
+    border-bottom: 4px solid var(--accent);
     font-size: 20px;
     margin: 8px 0;
     min-width: 0;

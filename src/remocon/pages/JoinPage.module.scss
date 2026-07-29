@@ -10,7 +10,7 @@
 .title {
   font-size: 18px;
   font-weight: bold;
-  color: #1cb3ff;
+  color: var(--accent);
 }
 
 .blurb {
@@ -20,25 +20,16 @@
   opacity: 0.7;
 }
 
-/* White plate behind the code regardless of dark mode — plenty of phone
-   cameras won't read an inverted QR, and this one exists to be scanned off a
-   screen that is already dimmer than paper.
-   Dark mode is a global invert on .app (see App.module.scss), so the plate
-   cancels it for itself and everything inside, and the app's blanket
-   counter-invert on <img> is switched off in here so the code isn't flipped
-   back a third time. Net effect: black modules on white, either theme. */
+/* Literal white in both themes, and the only place in the app that ignores
+   --surface on purpose: plenty of phone cameras won't read an inverted QR,
+   and this one exists to be scanned off a screen already dimmer than paper.
+   (Back when dark mode was a global invert this needed a pair of filter rules
+   to cancel the app's invert and then the counter-invert on <img>; a plain
+   background is all it takes now.) */
 .codePlate {
   padding: 12px;
   border-radius: 8px;
   background-color: #fff;
-}
-
-:global(html.dark) .codePlate {
-  filter: invert(1) hue-rotate(180deg);
-}
-
-:global(html.dark) .codePlate img {
-  filter: none;
 }
 
 .code {
@@ -56,9 +47,9 @@
 
 .copyButton {
   padding: 8px 16px;
-  border: 1px solid #1cb3ff;
+  border: 1px solid var(--accent);
   border-radius: 4px;
-  background-color: #fff;
-  color: #1cb3ff;
+  background-color: var(--surface);
+  color: var(--accent);
   font-size: 13px;
 }

@@ -1,7 +1,7 @@
 .picker {
   input {
     border: none;
-    border-bottom: 4px solid #1cb3ff;
+    border-bottom: 4px solid var(--accent);
     font-size: 20px;
     width: 100%;
     margin: 8px 0;
@@ -11,18 +11,18 @@
     }
 
     &::placeholder {
-      color: #aaa;
+      color: var(--text-faint);
     }
   }
 }
 
 .hint {
-  color: #666;
+  color: var(--text-muted);
   margin: 8px 0;
 }
 
 .error {
-  color: #de4e4e;
+  color: var(--danger);
   margin: 8px 0;
 }
 
@@ -55,7 +55,7 @@
 }
 
 .cellSelected {
-  border-color: #1cb3ff;
+  border-color: var(--accent);
 }
 
 .emotions {
@@ -66,7 +66,7 @@
     margin: 8px 0 0;
 
     select {
-      border: 2px solid #1cb3ff;
+      border: 2px solid var(--accent);
       border-radius: 4px;
       padding: 4px;
       font-size: 14px;
@@ -76,10 +76,10 @@
 
 .credit {
   margin: 8px 0;
-  color: #666;
+  color: var(--text-muted);
   font-size: 12px;
 
   a {
-    color: #1cb3ff;
+    color: var(--accent);
   }
 }

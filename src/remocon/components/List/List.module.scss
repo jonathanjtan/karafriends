@@ -7,7 +7,10 @@
 
 .listItem {
   padding: 8px;
-  box-shadow: 0 0 4px #ccc;
+  // The surface matters only in dark mode, where a shadow alone gives a
+  // card no edge to read against the page.
+  background-color: var(--surface-raised);
+  box-shadow: 0 0 4px var(--shadow);
   border-radius: 4px;
   overflow: hidden;
   overflow-wrap: anywhere;

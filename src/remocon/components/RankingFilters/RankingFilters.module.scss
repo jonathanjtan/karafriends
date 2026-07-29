@@ -13,16 +13,16 @@
 
 .chip {
   padding: 6px 12px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--border);
   border-radius: 16px;
-  background: #fff;
-  color: #333;
+  background: var(--surface);
+  color: var(--text);
   font-size: 14px;
 }
 
 .selected {
-  border-color: #1cb3ff;
-  background: #1cb3ff;
-  color: #fff;
+  border-color: var(--accent-surface);
+  background: var(--accent-surface);
+  color: var(--on-accent);
   font-weight: bold;
 }

@@ -1,5 +1,3 @@
-@use "sass:color";
-
 .noLyrics {
   margin-top: 1em;
   text-align: center;
@@ -19,8 +17,8 @@
 
 .controller {
   flex: 1;
-  border: 2px dashed #1cb3ff;
-  background-color: color.adjust(#1cb3ff, $lightness: 40%);
+  border: 2px dashed var(--accent);
+  background-color: var(--accent-soft);
   display: flex;
   flex-direction: column;
   justify-content: center;

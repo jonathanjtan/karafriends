@@ -16,7 +16,7 @@ main {
 
 header,
 footer {
-  box-shadow: 0 0 4px #aaa;
+  box-shadow: 0 0 4px var(--shadow);
 }
 
 // The settings panel inside the header is a fixed-position overlay drawer
@@ -25,15 +25,9 @@ header {
   flex-shrink: 0;
 }
 
-// Global dark mode: invert the whole app rather than re-theming every
-// component's hardcoded colors individually. Force a pure-white base first
-// so the inverted result is a true black, and counter-invert <img> tags
-// (thumbnails, the logo) so photos don't render with inverted colors.
-:global(html.dark) .app {
-  background-color: #fff;
-  filter: invert(1) hue-rotate(180deg);
-}
-
-:global(html.dark) .app img {
-  filter: invert(1) hue-rotate(180deg);
+// Dark mode is a token swap (see theme.scss), not a filter on this element.
+// Keeping the surface here as well as on <body> covers overscroll and the
+// area behind the fixed drawers.
+.app {
+  background-color: var(--surface);
 }

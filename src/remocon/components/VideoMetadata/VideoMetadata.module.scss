@@ -1,5 +1,5 @@
 .channel {
-  color: #1cb3ff;
+  color: var(--accent);
 }
 
 .title {
@@ -7,7 +7,7 @@
 }
 
 .numbers {
-  color: #999;
+  color: var(--text-faint);
   display: flex;
   gap: 16px;
 }

@@ -16,8 +16,8 @@
 }
 
 .custom {
-  color: #1cb3ff;
-  background-color: white;
+  color: var(--on-chrome-raised);
+  background-color: var(--chrome-raised);
   height: 32px;
   width: 32px;
   line-height: 0px;

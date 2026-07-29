@@ -2,21 +2,21 @@
   margin: 8px 0;
   padding: 8px 10px;
   border-left: 3px solid #d4af37;
-  background: #faf6e8;
-  color: #555;
+  background: var(--surface-warm);
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
 
 .weekNote {
   margin: 8px 0 4px;
-  color: #777;
+  color: var(--text-muted);
   font-size: 13px;
 }
 
 .lookupHeader {
   margin: 8px 0 4px;
-  color: #555;
+  color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -24,12 +24,12 @@
 .lookupTitle {
   font-size: 20px;
   font-weight: bold;
-  color: #333;
+  color: var(--text);
 }
 
 .serviceHeading {
   margin: 14px 0 4px;
   font-size: 15px;
   font-weight: bold;
-  color: #333;
+  color: var(--text);
 }

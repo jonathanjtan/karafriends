@@ -2,7 +2,7 @@
   display: flex;
   gap: 8px;
   padding: 4px 0;
-  border-bottom: 2px solid #1cb3ff;
+  border-bottom: 2px solid var(--on-chrome-raised);
   overflow: hidden;
 }
 
@@ -58,14 +58,14 @@
   @extend %round-button;
   padding: 4px;
   width: 24px;
-  background-color: #1cb3ff;
+  background-color: var(--accent-surface);
 }
 
 .remove {
   @extend %round-button;
   padding: 4px;
   width: 24px;
-  background-color: #de4e4e;
+  background-color: var(--danger-surface);
 }
 
 .songMeta {

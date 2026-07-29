@@ -5,11 +5,8 @@
 
 body {
   font-family: "Roboto", sans-serif;
-  color: #333;
-  // Explicit so browsers with a dark default canvas (prefers-color-scheme:
-  // dark) don't paint the page black — our dark mode is the invert filter in
-  // App.module.scss, not the UA color scheme.
-  background-color: #fff;
+  color: var(--text);
+  background-color: var(--surface);
 }
 
 a {
@@ -17,9 +14,28 @@ a {
   color: inherit;
 }
 
+// Form controls don't inherit type or color by default, so in dark mode a
+// bare <input> would render as the UA's own light-on-dark (or, worse,
+// dark-on-dark) pairing. `color-scheme` on :root (see theme.scss) fixes the
+// native chrome — the scrollbars, the <select> popup, the date pickers — and
+// these fix the parts the page owns. Controls that want a filled background
+// (RoomSettings' selects and buttons) set one themselves.
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+input,
+textarea {
+  background-color: transparent;
+}
+
 blockquote {
   margin: 8px;
   padding-left: 4px;
-  border-left: 2px solid #1cb3ff;
-  color: #666;
+  border-left: 2px solid var(--accent);
+  color: var(--text-muted);
 }

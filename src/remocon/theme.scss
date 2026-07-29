@@ -1,0 +1,120 @@
+/* The remocon's two themes, as one set of semantic tokens.
+ *
+ * Dark mode used to be `filter: invert(1) hue-rotate(180deg)` on the whole
+ * app. That flips lightness while roughly preserving hue, which is why the
+ * nav bar and every primary button stayed at full brightness in "dark" mode —
+ * the accent blue round-trips back to itself. It also isn't a real hue
+ * rotation (it's a linear matrix approximation), so saturated brand colors
+ * came back desaturated and reordered: the JOYSOUND and DAM reds both landed
+ * on the same pale pink, and the darker of the two came out lighter. And
+ * because the filter is a blanket transform, the only way to tune anything
+ * was to author the light-mode color backwards so it inverted to the value
+ * you wanted, which nobody can reason about.
+ *
+ * So: name the roles, give each one a value per theme, and let components ask
+ * for the role. Rules of thumb when adding a token:
+ *   - Name the job, not the color (`--text-muted`, not `--gray`).
+ *   - `--chrome-*` is the nav bar and control bar, which are an accent-colored
+ *     surface in light mode and a deep slate in dark. Anything sitting ON them
+ *     needs a `--*-chrome*` token, not the page-level equivalent.
+ *   - `--on-*` is the foreground that goes on the matching filled surface.
+ *   - Brand colors (the service reds, the medal metals) are deliberately NOT
+ *     tokens. They're the same in both themes because a brand doesn't have a
+ *     dark variant.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Page surfaces. `--surface-raised` is cards and overlay drawers,
+     `--surface-sunken` is a well inset into a surface (the queue card inside
+     the control bar). They collapse to plain white in light mode; the
+     distinction only does visible work in dark. */
+  --surface: #fff;
+  --surface-raised: #fff;
+  --surface-sunken: #f7f9fa;
+  /* The Oricon blurb's cream plate — a warm tint that pairs with the gold
+     rule beside it. */
+  --surface-warm: #faf6e8;
+
+  --text: #333;
+  --text-muted: #666;
+  --text-faint: #999;
+
+  --border: #ddd;
+  /* Shadows are authored as translucent black rather than a gray so they read
+     as depth on both a white page and a near-black one. */
+  --shadow: rgba(0, 0, 0, 0.22);
+  --hairline: rgba(0, 0, 0, 0.08);
+
+  /* `--accent` is the brand blue as ink: links, icons, rules, input
+     underlines. `--accent-surface` is the same role as a filled background,
+     and gets its own value because a dark theme wants a filled button dimmer
+     than its own text color. */
+  --accent: #1cb3ff;
+  --accent-surface: #1cb3ff;
+  --accent-soft: rgba(28, 179, 255, 0.2);
+  --on-accent: #fff;
+
+  /* Unfilled switch tracks and disabled button fills. */
+  --control-off: #ccc;
+
+  /* The nav bar / control bar and everything living on them. */
+  --chrome: #1cb3ff;
+  --on-chrome: #fff;
+  --on-chrome-faint: rgba(255, 255, 255, 0.55);
+  --chrome-raised: #f7f9fa;
+  --on-chrome-raised: #1cb3ff;
+  --chrome-inset: rgba(28, 92, 255, 0.22);
+
+  --danger: #de4e4e;
+  --danger-surface: #de4e4e;
+  --success-surface: #2ecc71;
+  --warning-surface: #ffc107;
+  --on-warning: #3e2723;
+}
+
+/* Plain `html.dark`, not `:global(html.dark)` — this file is not a
+   `*.module.scss`, so Parcel ships it as global CSS and nothing gets hashed. */
+html.dark {
+  color-scheme: dark;
+
+  /* Not pure black: a slight blue cast keeps the near-black from looking like
+     a dead panel, and gives the raised surfaces somewhere to go. (The TV's
+     separate `oledFriendly` theme is the one that wants true off-pixels.) */
+  --surface: #0f1318;
+  --surface-raised: #181e26;
+  --surface-sunken: #0a0d11;
+  --surface-warm: #241d10;
+
+  --text: #e3e7eb;
+  --text-muted: #9aa5b1;
+  --text-faint: #6d7885;
+
+  --border: #2c3540;
+  --shadow: rgba(0, 0, 0, 0.7);
+  --hairline: rgba(255, 255, 255, 0.08);
+
+  --accent: #4cc2ff;
+  --accent-surface: #11719f;
+  --accent-soft: rgba(76, 194, 255, 0.16);
+  --on-accent: #f2fbff;
+
+  --control-off: #3a434f;
+
+  /* The whole point of the exercise: under the old invert this stayed
+     #1cb3ff, so the two biggest elements on screen were still the brightest
+     things in the room. */
+  --chrome: #0e2c41;
+  --on-chrome: #dbe9f4;
+  --on-chrome-faint: rgba(219, 233, 244, 0.4);
+  --chrome-raised: #1b3a52;
+  --on-chrome-raised: #7fd3ff;
+  --chrome-inset: rgba(255, 255, 255, 0.1);
+
+  --danger: #ff7b7b;
+  --danger-surface: #a33636;
+  --success-surface: #1f8b52;
+  --warning-surface: #d9a406;
+  --on-warning: #1c1206;
+}

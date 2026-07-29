@@ -1,4 +1,9 @@
-// Sampled from the services' own logo assets.
+@use "sass:color";
+
+// Sampled from the services' own logo assets. Deliberately identical in both
+// themes — a brand doesn't have a dark variant, and the old global invert
+// collapsed these two into the same pale pink with the darker one coming out
+// lighter.
 $joysound-red: #d70e18;
 $dam-red: #b80009;
 
@@ -85,7 +90,7 @@ $banner-width: 30px;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  box-shadow: 0 0 4px #ccc;
+  box-shadow: 0 0 4px var(--shadow);
 
   img {
     display: block;
@@ -131,6 +136,48 @@ $golden-ratio: 1.618;
   grid-row: 2;
 }
 
+// Each tile is a color chip: a flat fill with a slight vertical sheen, a ring
+// in a same-hue tint, the oversized icon a shade off the fill, and the label
+// at high contrast. Both themes share that structure and every value is
+// derived from the one $search-method-colors map, so adding a method stays a
+// one-line change.
+//
+// Why a chip and not a gradient fading into the page, which is what this was:
+// white is a surface, black is an absence. Light mode faded each tile into the
+// white page, and because white is itself bright the tile still read as a
+// card. Fading into a near-black page instead deletes the right half of the
+// button, so dark mode looked muddy at every lightness we tried — the fix
+// wasn't a brighter color, it was to stop fading.
+//
+// Two more things that went with the old gradient. The label used to be
+// `color: #333` + `mix-blend-mode: difference` + `filter: contrast(0.1)`, i.e.
+// |backdrop − midgray|, which auto-contrasts against a gradient's saturated
+// end and gives up at its faded end — "Top 100" is a wide, mostly-faded tile
+// and was already barely legible in LIGHT mode. And the icon used to be the
+// tile color exactly, so it only appeared over the faded part; on a flat chip
+// it needs its own shade or it disappears entirely.
+//
+// color.change (set lightness) rather than color.adjust (shift it) wherever a
+// value is pinned: the source palette spans L=49% (joysoundArtist orange) to
+// L=79% (song periwinkle), so a relative shift lands every tile somewhere
+// different and the row stops reading as one set.
+
+// Light keeps each tile's own source lightness — today's palette untouched,
+// just no longer dissolving — so its ring and icon are relative deltas.
+$chip-sheen-light: 4%;
+$chip-ring-delta-light: -22%;
+$chip-icon-delta-light: -14%;
+$label-lightness-light: 26%;
+
+// Dark pins every tile to one lightness so the row reads as a set; a mirrored
+// per-tile lightness would put the near-neutral DAM and Niconico tiles at a
+// different depth from the saturated ones.
+$chip-lightness-dark: 36%;
+$chip-sheen-dark: 5%;
+$chip-ring-lightness-dark: 52%;
+$chip-icon-lightness-dark: 48%;
+$label-lightness-dark: 92%;
+
 .button {
   height: 100%;
   padding: 0 6px;
@@ -139,12 +186,47 @@ $golden-ratio: 1.618;
   flex-direction: column-reverse;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 0 4px #ccc;
 
   @each $method, $color in $search-method-colors {
+    // The chip's four roles, resolved per theme before they're used, so the
+    // declarations below stay one short line each.
+    $l: color.channel($color, "lightness", $space: hsl);
+
+    $top-l: color.change($color, $lightness: $l + $chip-sheen-light);
+    $bottom-l: color.change($color, $lightness: $l - $chip-sheen-light);
+    $ring-l: color.change($color, $lightness: $l + $chip-ring-delta-light);
+    $icon-l: color.change($color, $lightness: $l + $chip-icon-delta-light);
+
+    $dark: $chip-lightness-dark;
+    $top-d: color.change($color, $lightness: $dark + $chip-sheen-dark);
+    $bottom-d: color.change($color, $lightness: $dark - $chip-sheen-dark);
+    $ring-d: color.change($color, $lightness: $chip-ring-lightness-dark);
+    $icon-d: color.change($color, $lightness: $chip-icon-lightness-dark);
+
     &.#{$method} {
-      background: linear-gradient(to right, $color, #fff);
-      color: $color;
+      background: linear-gradient(to bottom, $top-l, $bottom-l);
+      color: $icon-l;
+      // Ring plus a soft lift: a ring alone reads flat, and these tiles were
+      // raised (0 0 4px) before.
+      box-shadow:
+        0 0 0 1px $ring-l,
+        0 1px 3px rgba(0, 0, 0, 0.13);
+
+      .text {
+        color: color.change($color, $lightness: $label-lightness-light);
+      }
+    }
+
+    :global(html.dark) &.#{$method} {
+      background: linear-gradient(to bottom, $top-d, $bottom-d);
+      color: $icon-d;
+      // Ring only — a drop shadow on a near-black page is invisible, so the
+      // ring is the whole edge there.
+      box-shadow: 0 0 0 1px $ring-d;
+
+      .text {
+        color: color.change($color, $lightness: $label-lightness-dark);
+      }
     }
   }
 }
@@ -157,10 +239,7 @@ $golden-ratio: 1.618;
 }
 
 .text {
-  color: #333;
   font-size: 32px;
   font-weight: bold;
   z-index: 1;
-  mix-blend-mode: difference;
-  filter: contrast(0.1);
 }
