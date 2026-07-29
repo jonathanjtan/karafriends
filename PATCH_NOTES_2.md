@@ -8,11 +8,9 @@ Everything since the last set of notes.
 
 - The app can now score your singing against the guide melody and put a card up when the song ends. Off by default — turn it on from the settings on either your phone or the big screen.
 - Grades run D / C / B / A / S / SS / SSS, calibrated against what real singing actually scores rather than a theoretical perfect run.
-- Accuracy (how on-pitch you were) and coverage (how much of the melody you actually sang) are tracked separately, so nailing four notes and mumbling the rest doesn't get you a full score.
+- Accuracy (how on-pitch you were) and coverage (how much of the melody you actually sang) tracked separately.
 - End-of-song graph showing how you did across 24 slices of the song.
-- The formula is ours, not DAM's — the numbers are **not** comparable to a real DAM machine.
 - Every score card is auto-saved as a screenshot in the app's data folder.
-- YouTube and Niconico songs have no guide melody, so they never show a card.
 
 **Singer accounts**
 
