@@ -43,6 +43,7 @@ __generated__
 /extraResources/ffmpeg/**/*
 /extraResources/ytdlp/*
 /extraResources/portraits/
+/extraResources/7za
 /buildResources/asio/*
 
 # Claude Code local/scratch state
@@ -50,3 +51,4 @@ __generated__
 .claude/worktrees/
 .claude/repro/
 .claude/common/
+.claude/*proxy*
