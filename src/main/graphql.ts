@@ -1,3 +1,5 @@
+// Aliased: `app` is the express Application in applyGraphQLMiddleware below.
+import { app as electronApp } from "electron"; // tslint:disable-line:no-implicit-dependencies
 import fs from "fs";
 import { createServer } from "http";
 import path from "path";
@@ -1524,6 +1526,75 @@ let runHealthCheckOnce:
 
 const DB_PATH = path.resolve(TEMP_FOLDER, "queue.json");
 
+// queue.json lives in the OS temp dir, which macOS wipes on every boot — a
+// reboot mid-party (2026-07-25 is the case on record) took the room's whole
+// song history with it, along with the cached composites. The composites are
+// a cache and can be re-fetched; the history can't. Mirror it to userData,
+// for the same reason people.json and the score cards live there, and merge
+// the two on load.
+const HISTORY_MIRROR_PATH = path.resolve(
+  electronApp.getPath("userData"),
+  "song-history.json",
+);
+const HISTORY_MIRROR_VERSION = 1;
+
+function historyKey(item: SongHistoryItem): string {
+  return `${item.song.__typename}:${item.song.songId}:${item.song.timestamp}`;
+}
+
+let lastMirroredHistory: string | null = null;
+
+function writeHistoryMirror(): void {
+  // saveDb runs on every mutation — a slider drag included — but the history
+  // only moves on popSong, so skip the write unless it actually changed.
+  const fingerprint = `${db.songHistory.length}:${
+    db.songHistory.length ? historyKey(db.songHistory[0]) : ""
+  }`;
+  if (fingerprint === lastMirroredHistory) return;
+
+  try {
+    fs.writeFileSync(
+      HISTORY_MIRROR_PATH,
+      JSON.stringify({
+        version: HISTORY_MIRROR_VERSION,
+        songHistory: db.songHistory,
+      }),
+      "utf-8",
+    );
+    lastMirroredHistory = fingerprint;
+  } catch (e) {
+    console.error("[history] failed to write mirror", e);
+  }
+}
+
+function readHistoryMirror(): SongHistoryItem[] {
+  try {
+    if (!fs.existsSync(HISTORY_MIRROR_PATH)) return [];
+    const parsed = JSON.parse(fs.readFileSync(HISTORY_MIRROR_PATH, "utf-8"));
+    return Array.isArray(parsed?.songHistory) ? parsed.songHistory : [];
+  } catch (e) {
+    console.error("[history] failed to read mirror", e);
+    return [];
+  }
+}
+
+// A union rather than "fall back to the mirror when queue.json is empty":
+// after a temp sweep queue.json holds whatever was sung since the relaunch
+// and the mirror holds everything before it, and neither is a superset.
+function mergeHistory(...sources: SongHistoryItem[][]): SongHistoryItem[] {
+  const byKey = new Map<string, SongHistoryItem>();
+
+  for (const item of sources.flat()) {
+    if (!item?.song?.timestamp) continue;
+    const key = historyKey(item);
+    if (!byKey.has(key)) byKey.set(key, item);
+  }
+
+  return [...byKey.values()].sort(
+    (a, b) => Number(b.song.timestamp) - Number(a.song.timestamp),
+  );
+}
+
 // TODO: write a db interface and call these from within mutating methods instead of at their call sites
 function saveDb() {
   if (!fs.existsSync(TEMP_FOLDER)) {
@@ -1551,6 +1622,7 @@ function saveDb() {
     }),
     "utf-8",
   );
+  writeHistoryMirror();
 }
 
 function loadDb(): NotARealDb {
@@ -1591,6 +1663,9 @@ function loadDb(): NotARealDb {
   // non-WAITING playbackState from a session killed mid-song.
   loaded.songQueue = loaded.songQueue.filter((song) => song !== null);
   loaded.playbackState = PlaybackState.WAITING;
+  // Whichever of the two survived the last sweep, plus anything the other
+  // one has that it doesn't.
+  loaded.songHistory = mergeHistory(loaded.songHistory, readHistoryMirror());
   // A break doesn't survive a relaunch (and a stale past deadline is noise).
   loaded.breakEndsAt = null;
   return loaded;

@@ -187,7 +187,14 @@ the OS temp dir (`app.getPath("temp")`) — so **Windows**
 `%LOCALAPPDATA%\Temp\karafriends_tmp\`, **macOS** `$TMPDIR/karafriends_tmp/`
 (under `/var/folders/…/T/`), **Linux** `/tmp/karafriends_tmp/`:
 
-- `queue.json` — the persisted NotARealDb (see below).
+- `queue.json` — the persisted NotARealDb (see below). **This dir is swept on
+  reboot** (macOS wipes `/var/folders/…/T/` at boot), which on 2026-07-25 ate
+  the room's whole song history mid-party along with every cached composite.
+  The composites are a cache and re-download; the history isn't, so
+  `songHistory` is mirrored to `<userData>/song-history.json` and the two are
+  merged (union, keyed by typename+songId+timestamp) in `loadDb`. Same
+  reasoning as `people.json` and the score cards. Nothing else in here
+  survives a sweep — don't put durable state in this dir.
 - `reading-cache.json` — persisted name→reading (yomi) cache backing the
   helper romaji. Entries are `{yomi, canonical}` keyed by an NFKC-normalized
   name; `canonical` (from DAM's curated readings) beats a kuromoji guess and
