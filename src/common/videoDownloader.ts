@@ -2469,8 +2469,11 @@ export function downloadNicoVideo(
   const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
 
   const env = { ...process.env };
-  // Don't need a proxy to download from Niconico
-  delete process.env.http_proxy;
+  // Don't need a proxy to download from Niconico. Strip it from the *copy* --
+  // deleting from the live process.env instead both left this spawn proxied
+  // (env was cloned first) and permanently un-proxied every later spawn, so a
+  // single Niconico song would silently break DAM downloads for the session.
+  delete env.http_proxy;
 
   const ytdlp = spawn(
     resourcePaths.ytdlp,
