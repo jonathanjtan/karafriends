@@ -640,13 +640,24 @@ const INTRO_SYNC_MIN_RUNNER_UP_MARGIN = 0.05;
 // Guide-melody salience selection. Scores are log10(on-pitch power /
 // off-pitch power) averaged over the first HEAD_NOTES_SEC of sung notes;
 // observed true offsets score 1.65-2.04 and aliases 0.69-1.28, so MIN_SCORE
-// rejects rankings where nothing really matches (e.g. a transposed or live
-// MV) and MIN_MARGIN rejects ambiguous ones (observed true margins:
-// 0.37-0.99) - both fall back to the envelope decision.
+// rejects rankings where nothing really matches (e.g. a live MV) and
+// MIN_MARGIN rejects ambiguous ones (observed true margins: 0.37-0.99) -
+// both fall back to the envelope decision.
 const INTRO_SYNC_MELODY_TOP_K = 8;
 const INTRO_SYNC_MELODY_HEAD_NOTES_SEC = 30;
 const INTRO_SYNC_MELODY_MIN_SCORE = 1.0;
 const INTRO_SYNC_MELODY_MIN_MARGIN = 0.3;
+// A JOYSOUND re-recording need not share the master's key. Piano Man (15410)
+// sits exactly a semitone below Billy Joel's own upload, which put the sung
+// melody 1 semitone off the on-pitch probes and between the +-1.5/+-2.5
+// off-pitch ones: every candidate scored 0.17-0.78, the whole ranking fell
+// under MIN_SCORE, melody abstained, and the far cruder onset fallback picked
+// an offset 1.3s out. Probing a few semitones either way recovers it - the
+// same candidates score 1.04-1.26 at +1. One transposition is chosen for the
+// whole ranking rather than per candidate, so the margin test stays
+// apples-to-apples and the wider search can't inflate a single candidate; ties
+// prefer the untransposed reading.
+const INTRO_SYNC_MELODY_TRANSPOSE_SEMIS = [0, 1, -1, 2, -2, 3, -3];
 // Onset-alignment fallback (used when the interior-window cross-correlation
 // can't reach a confident consensus - which is the common case, because a
 // JOYSOUND karaoke re-recording rarely envelope-correlates with the original
@@ -692,6 +703,24 @@ const INTRO_SYNC_DRIFT_MIN_SPAN_MS = 120000;
 const INTRO_SYNC_DRIFT_MAX_RESIDUAL_MS = 250;
 const INTRO_SYNC_DRIFT_MIN_RATE = 0.003;
 const INTRO_SYNC_DRIFT_MAX_RATE = 0.05;
+// Drift cross-check. measureVideoDriftAround only ever sees envelope peaks,
+// and a karaoke re-recording that wanders non-linearly can hand its RANSAC
+// fit a convincing line through part of the song: Piano Man's true offset
+// traces -1800 -> -1050 -> -2750ms, a lambda no rate fits, and stretching to
+// the line it found lands the last chorus ~3.7s out. So before stretching,
+// re-score the proposed drift against the best constant offset using the
+// guide melody - the same arbiter that picks the offset in the first place -
+// and keep the constant when it wins clearly. This also caught a live
+// regression: on Zankoku na Tenshi no Teeze the drift fit was overwriting the
+// melody's (correct, previously hand-validated) -11900ms with -10799ms plus a
+// 1.6% stretch. CHECK_NOTES caps the sample while still spanning the whole
+// song (a rate error shows up at the ends), SEARCH/STEP bound the constant
+// refinement around the seed, and the gates mirror melody selection's: the
+// constant has to be a confident match and clearly better, or the fit stands.
+const INTRO_SYNC_DRIFT_CHECK_NOTES = 64;
+const INTRO_SYNC_DRIFT_CHECK_SEARCH_MS = 800;
+const INTRO_SYNC_DRIFT_CHECK_STEP_MS = 50;
+const INTRO_SYNC_DRIFT_CHECK_MIN_MARGIN = 0.1;
 
 // Decodes an audio file or in-memory buffer to raw mono PCM at
 // INTRO_SYNC_SAMPLE_RATE_HZ, capped to maxDurationSec of output.
@@ -1104,23 +1133,27 @@ function noteSalienceAt(
   return Math.log10((onPower + 1e-9) / (offPower / offCount + 1e-9));
 }
 
-// Mean note salience of a candidate offset: do the guide melody's pitches
-// actually sound in the video's audio at the times this offset predicts?
-// Null when fewer than half the notes could be scored (offset maps them
-// outside the video).
-function melodySalienceAt(
+// Mean note salience under an arbitrary karaoke-time -> video-time map: do the
+// guide melody's pitches actually sound in the video's audio where this
+// alignment predicts? A constant offset is the usual map; the drift
+// cross-check passes the stretched one. semitoneShift transposes the guide
+// notes onto the video's key (see INTRO_SYNC_MELODY_TRANSPOSE_SEMIS). Null
+// when fewer than half the notes could be scored (the map puts them outside
+// the video).
+function melodySalienceUnderMap(
   videoPcm: Float64Array,
-  headNotes: GuideMelodyNote[],
-  offsetMs: number,
+  notes: GuideMelodyNote[],
+  mapKaraokeMs: (karaokeMs: number) => number,
+  semitoneShift: number,
 ): number | null {
   let sum = 0;
   let count = 0;
-  for (const note of headNotes) {
+  for (const note of notes) {
     const startSample = Math.round(
-      ((note.startMs + offsetMs) / 1000) * INTRO_SYNC_SAMPLE_RATE_HZ,
+      (mapKaraokeMs(note.startMs) / 1000) * INTRO_SYNC_SAMPLE_RATE_HZ,
     );
     const endSample = Math.round(
-      ((note.endMs + offsetMs) / 1000) * INTRO_SYNC_SAMPLE_RATE_HZ,
+      (mapKaraokeMs(note.endMs) / 1000) * INTRO_SYNC_SAMPLE_RATE_HZ,
     );
     if (startSample < 0 || endSample > videoPcm.length) {
       continue;
@@ -1129,14 +1162,34 @@ function melodySalienceAt(
       videoPcm,
       startSample,
       endSample,
-      note.midi,
+      note.midi + semitoneShift,
     );
     if (salience !== null) {
       sum += salience;
       count++;
     }
   }
-  return count < headNotes.length / 2 ? null : sum / count;
+  return count < notes.length / 2 ? null : sum / count;
+}
+
+// Mean note salience of a plain constant-offset alignment.
+function melodySalienceAt(
+  videoPcm: Float64Array,
+  headNotes: GuideMelodyNote[],
+  offsetMs: number,
+  semitoneShift: number,
+): number | null {
+  return melodySalienceUnderMap(
+    videoPcm,
+    headNotes,
+    (karaokeMs) => karaokeMs + offsetMs,
+    semitoneShift,
+  );
+}
+
+interface MelodyRanking {
+  candidate: OffsetCandidate;
+  melody: number;
 }
 
 // Stage 3 + final decision (see the block comment above the constants):
@@ -1158,24 +1211,73 @@ function chooseVideoOffset(
       (note) =>
         note.startMs < firstNoteMs + INTRO_SYNC_MELODY_HEAD_NOTES_SEC * 1000,
     );
-    const ranked = candidates
-      .slice(0, INTRO_SYNC_MELODY_TOP_K)
-      .flatMap((candidate) => {
-        const melody = melodySalienceAt(
-          videoPcm,
-          headNotes,
-          candidate.offsetMs,
-        );
-        return melody === null ? [] : [{ candidate, melody }];
-      })
-      .sort((a, b) => b.melody - a.melody);
-    if (
-      ranked.length > 0 &&
-      ranked[0].melody >= INTRO_SYNC_MELODY_MIN_SCORE &&
-      (ranked.length < 2 ||
-        ranked[0].melody - ranked[1].melody >= INTRO_SYNC_MELODY_MIN_MARGIN)
-    ) {
-      return { offsetMs: ranked[0].candidate.offsetMs, method: "melody" };
+    const topCandidates = candidates.slice(0, INTRO_SYNC_MELODY_TOP_K);
+
+    // Rank the candidates once per transposition and keep the reading that
+    // fits the video's key best overall. Scoring each candidate at its own
+    // best transposition instead would let every candidate cherry-pick a
+    // flattering key, which flattens the margin the gate below depends on.
+    let best: { semitoneShift: number; ranked: MelodyRanking[] } | null = null;
+    for (const semitoneShift of INTRO_SYNC_MELODY_TRANSPOSE_SEMIS) {
+      const ranked = topCandidates
+        .flatMap((candidate) => {
+          const melody = melodySalienceAt(
+            videoPcm,
+            headNotes,
+            candidate.offsetMs,
+            semitoneShift,
+          );
+          return melody === null ? [] : [{ candidate, melody }];
+        })
+        .sort((a, b) => b.melody - a.melody);
+      // Strictly greater, and the shift list leads with 0, so an untransposed
+      // reading holds the tie.
+      if (
+        ranked.length > 0 &&
+        (best === null || ranked[0].melody > best.ranked[0].melody)
+      ) {
+        best = { semitoneShift, ranked };
+      }
+    }
+
+    if (best !== null) {
+      const { ranked } = best;
+      const shift = `${best.semitoneShift >= 0 ? "+" : ""}${best.semitoneShift}`;
+
+      if (
+        ranked[0].melody >= INTRO_SYNC_MELODY_MIN_SCORE &&
+        (ranked.length < 2 ||
+          ranked[0].melody - ranked[1].melody >= INTRO_SYNC_MELODY_MIN_MARGIN)
+      ) {
+        return {
+          offsetMs: ranked[0].candidate.offsetMs,
+          method: `melody${shift}`,
+        };
+      }
+
+      // Corroboration. The margin gate exists to reject phrase aliases, and an
+      // alias is by definition a *different* offset that scores nearly as
+      // well - so when the melody's own pick is also the envelope ranking's
+      // winner, two independent signals have agreed and the runner-up's
+      // closeness says nothing about that agreement. (The aliasing cases the
+      // gate was built for are exactly the ones where the two disagree: on
+      // both Shintakarajima and Zankoku na Tenshi no Teeze the envelope
+      // preferred the alias and only melody found the truth, so this never
+      // fires there.) Without it a repetitive song can leave the pipeline with
+      // both rankings pointing at the right offset and still fall through to
+      // onset alignment: Piano Man scored -1480ms top on melody (1.22) *and*
+      // top on envelope (0.43), was blocked by a 34s-away alias 0.29 behind on
+      // melody and by MIN_MEAN_SCORE on envelope, and shipped the onset
+      // guess - 1.3s late against a true offset of -1125ms.
+      if (
+        ranked[0].melody >= INTRO_SYNC_MELODY_MIN_SCORE &&
+        ranked[0].candidate === candidates[0]
+      ) {
+        return {
+          offsetMs: ranked[0].candidate.offsetMs,
+          method: `melody${shift}+envelope`,
+        };
+      }
     }
   }
 
@@ -1486,6 +1588,120 @@ function measureVideoDriftAround(
   };
 }
 
+// Evenly spaced sample of the guide melody spanning the whole song. The drift
+// cross-check needs coverage at both ends (that's where a wrong rate has
+// accumulated the most error) far more than it needs every note.
+function sampleNotesAcrossSong(
+  notes: GuideMelodyNote[],
+  limit: number,
+): GuideMelodyNote[] {
+  if (notes.length <= limit) {
+    return notes;
+  }
+  const stride = notes.length / limit;
+  const sampled: GuideMelodyNote[] = [];
+  for (let i = 0; i < limit; i++) {
+    sampled.push(notes[Math.floor(i * stride)]);
+  }
+  return sampled;
+}
+
+// Cross-checks a proposed tempo stretch against the guide melody (see
+// INTRO_SYNC_DRIFT_CHECK_*). Returns the constant offset to use instead when
+// the melody clearly prefers one, or null to let the stretch stand.
+//
+// The drift model maps karaoke time t to video time t / F + intercept: the
+// pipeline scales the video's timestamps by F and then applies a constant
+// F * intercept, so intercept is the pre-stretch head alignment.
+function constantOffsetBeatingDrift(
+  videoPcm: Float64Array,
+  guideMelodyNotes: GuideMelodyNote[],
+  seedOffsetMs: number,
+  drift: IntroSyncMeasurement,
+): number | null {
+  const notes = sampleNotesAcrossSong(
+    guideMelodyNotes,
+    INTRO_SYNC_DRIFT_CHECK_NOTES,
+  );
+  if (notes.length === 0) {
+    return null;
+  }
+
+  // Same key search as melody selection - the seed may have come from onset
+  // alignment, which never established a transposition.
+  let semitoneShift = 0;
+  let seedSalience: number | null = null;
+  for (const shift of INTRO_SYNC_MELODY_TRANSPOSE_SEMIS) {
+    const salience = melodySalienceAt(videoPcm, notes, seedOffsetMs, shift);
+    if (
+      salience !== null &&
+      (seedSalience === null || salience > seedSalience)
+    ) {
+      seedSalience = salience;
+      semitoneShift = shift;
+    }
+  }
+  if (seedSalience === null) {
+    return null;
+  }
+
+  let bestConstant: { offsetMs: number; salience: number } | null = null;
+  for (
+    let offsetMs = seedOffsetMs - INTRO_SYNC_DRIFT_CHECK_SEARCH_MS;
+    offsetMs <= seedOffsetMs + INTRO_SYNC_DRIFT_CHECK_SEARCH_MS;
+    offsetMs += INTRO_SYNC_DRIFT_CHECK_STEP_MS
+  ) {
+    const salience = melodySalienceAt(videoPcm, notes, offsetMs, semitoneShift);
+    if (
+      salience !== null &&
+      (bestConstant === null || salience > bestConstant.salience)
+    ) {
+      bestConstant = { offsetMs, salience };
+    }
+  }
+  if (bestConstant === null) {
+    return null;
+  }
+
+  // The decision itself runs on every note, not the sample. A constant
+  // offset's error is the same everywhere, but a wrong rate's grows through
+  // the song, so the drift model's score depends on which notes get looked at
+  // - sampling swung it by 0.2 on Piano Man (1.11 over all 253 notes, 1.31
+  // over 64 of them), enough to flip the verdict. Refining the offset on the
+  // sample is fine; comparing the two models is not.
+  const constantSalience = melodySalienceAt(
+    videoPcm,
+    guideMelodyNotes,
+    bestConstant.offsetMs,
+    semitoneShift,
+  );
+  if (
+    constantSalience === null ||
+    constantSalience < INTRO_SYNC_MELODY_MIN_SCORE
+  ) {
+    return null;
+  }
+
+  const intercept = drift.offsetMs / drift.videoStretchFactor;
+  const driftSalience = melodySalienceUnderMap(
+    videoPcm,
+    guideMelodyNotes,
+    (karaokeMs) => karaokeMs / drift.videoStretchFactor + intercept,
+    semitoneShift,
+  );
+  if (
+    driftSalience !== null &&
+    constantSalience - driftSalience < INTRO_SYNC_DRIFT_CHECK_MIN_MARGIN
+  ) {
+    return null;
+  }
+
+  console.info(
+    `constantOffsetBeatingDrift: rejecting stretch=${drift.videoStretchFactor.toFixed(5)} (melody ${driftSalience === null ? "n/a" : driftSalience.toFixed(3)}) for constant offsetMs=${bestConstant.offsetMs} (melody ${constantSalience.toFixed(3)}, semis ${semitoneShift})`,
+  );
+  return bestConstant.offsetMs;
+}
+
 // Estimates how a YouTube video's audio lines up with the Joysound karaoke
 // track: a signed head offset (ms) plus a timestamp stretch factor for
 // speed-shifted uploads. offsetMs positive: the video has extra head
@@ -1571,13 +1787,33 @@ export async function computeYoutubeIntroSync(
     // and corrects the head offset for the stretch that will cancel it.
     let measurement: IntroSyncMeasurement | null = null;
     if (offsetMs !== null) {
-      measurement = measureVideoDriftAround(
+      const drift = measureVideoDriftAround(
         karaokeEnvelope,
         videoEnvelope,
         karaokeFineEnvelope,
         videoFineEnvelope,
         offsetMs,
-      ) ?? { offsetMs, videoStretchFactor: 1 };
+      );
+      // A drift fit is a claim that no constant offset works; check it against
+      // the guide melody before rescaling the whole video on the strength of
+      // envelope peaks alone.
+      const constantOffsetMs =
+        drift !== null &&
+        guideMelodyNotes !== null &&
+        guideMelodyNotes.length > 0
+          ? constantOffsetBeatingDrift(
+              videoSamples,
+              guideMelodyNotes,
+              offsetMs,
+              drift,
+            )
+          : null;
+      if (constantOffsetMs !== null) {
+        measurement = { offsetMs: constantOffsetMs, videoStretchFactor: 1 };
+        method = `${method}+melody-constant`;
+      } else {
+        measurement = drift ?? { offsetMs, videoStretchFactor: 1 };
+      }
     }
 
     console.info(

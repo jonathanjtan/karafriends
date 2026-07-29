@@ -63,6 +63,19 @@ separates true from alias by ≥0.37 where envelope margins were ~0.05 or
 inverted. Envelope ranking (with confidence gates) is only a fallback when
 melody data is missing or its ranking is ambiguous.
 
+The salience ranking is **transposition-aware**: a JOYSOUND re-recording need
+not share the master's key (Piano Man 15410 sits exactly a semitone below Billy
+Joel's own upload), and an off-by-a-semitone melody lands between the on-pitch
+probes and the ±1.5/±2.5 off-pitch ones, so every candidate scores ~0.2 and the
+whole stage silently abstains. Candidates are ranked once per semitone shift
+and the shift with the best peak wins — **one shift for the whole ranking**, or
+each candidate cherry-picks a flattering key and the margin gate goes soft.
+A repetitive song can still tie up the margin gate (Piano Man's 34s-away phrase
+alias sits 0.29 behind), so a winner that is **top of both the melody and the
+envelope ranking** is accepted on that corroboration alone: aliasing is exactly
+the case where the two disagree, so this can't fire on the cases the margin gate
+was built for.
+
 After an offset is picked (by any method), **`measureVideoDriftAround`** checks
 the tempo actually matches: some MV uploads are speed-shifted (ロミオとシンデレラ's
 9HrOqmiEsN8 runs 1.2% fast — a smooth 3.3s of drift across the song that no
@@ -74,6 +87,21 @@ non-drifting songs a ~0-slope winner → no stretch), and a fine refit along it
 yields the rate; the video's timestamps are then rescaled to the karaoke's tempo
 (`stretchJoysoundVideoPromise`, a copy-codec `-itsscale` remux, no re-encode)
 and the head offset drift-corrected (`F·intercept`) before the usual trim/pad.
+
+A drift fit is a claim that **no** constant offset works, and it is made from
+envelope peaks alone — so `constantOffsetBeatingDrift` cross-checks it against
+the guide melody before anything gets rescaled, scoring the stretched map
+(`t/F + intercept`) against the best constant offset near the seed. A karaoke
+re-recording that merely _wanders_ non-linearly hands the RANSAC fit a
+convincing line through half the song: Piano Man's true offset traces
+−1800 → −1050 → −2750ms, a Λ no rate fits, and stretching to that line lands the
+last chorus ~3.7s out. This also caught the fit overwriting 残酷な天使のテーゼ's
+already-validated −11900ms with −10799ms plus a 1.6% stretch. Two traps: the
+comparison **must run on every note**, not a subsample (a constant offset's
+error is uniform but a wrong rate's grows through the song, so which notes get
+sampled swung the drift score by 0.2 — enough to flip the verdict; refining the
+offset on a sample is fine), and the seed may have come from onset alignment, so
+the check re-derives the transposition itself.
 
 Positive offset → `-ss` trim; negative (karaoke has extra head material, e.g. a
 count-off) → frozen-first-frame front-pad. When cross-correlation is
