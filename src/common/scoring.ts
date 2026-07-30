@@ -12,6 +12,16 @@
 
 import { ScoringInterval, ScoringNote } from "./scoringData";
 
+// Bump whenever a change would make a stored score incomparable to a new one:
+// the axis weights, DISPLAY_CURVE, BAND_THRESHOLDS, or how any axis is
+// computed. Persisted score records carry it (see main/scores.ts), so a
+// personal best from an older formula can be shown with that caveat, or
+// filtered out, rather than quietly competing with numbers it was never on the
+// same scale as.
+//
+// 1: pitch/longTone/timing on a display curve, fitted to the 54-take corpus.
+export const SCORING_FORMULA_VERSION = 1;
+
 // DAM divides the sung span into exactly 24 windows for its end-of-song
 // graph. Verified on 96 songs: always 24, never song-length dependent.
 export const SCORE_BUCKET_COUNT = 24;

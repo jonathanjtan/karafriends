@@ -45,6 +45,7 @@ import {
   decodeJoysoundBase64Field,
   getSongDuration,
 } from "../common/joysoundParser";
+import { SCORING_FORMULA_VERSION } from "../common/scoring";
 import { parseScoringData } from "../common/scoringData";
 import {
   downloadDamVideo,
@@ -90,6 +91,11 @@ import {
   RankingPeriod,
   RankingSongEntry,
 } from "./rankings";
+import {
+  loadScores,
+  recordScore as persistScore,
+  scoreHistoryFor,
+} from "./scores";
 
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
 import { isRomaji, toHiragana, toKana, toKatakana } from "wanakana";
@@ -2435,6 +2441,22 @@ const resolvers = {
     },
     // Counted server-side rather than by paging songHistory to the client: the
     // history only grows, and the card wants one number.
+    scoreHistory: (
+      _: any,
+      args: {
+        songType: string;
+        songId: string;
+        nickname: string;
+        personId: string | null;
+      },
+    ) =>
+      scoreHistoryFor(
+        args.songType,
+        args.songId,
+        args.nickname,
+        args.personId,
+        SCORING_FORMULA_VERSION,
+      ),
     songPlayCount: (
       _: any,
       args: {
@@ -3156,6 +3178,38 @@ const resolvers = {
     // macOS sweeps by age, and losing it strands every recorded performance in
     // probe-logs/: a sung take can't be scored without the melody it was sung
     // against. This is how a lost cache is rebuilt from a list of songIds.
+    recordScore: (
+      _: any,
+      args: {
+        input: {
+          personId: string | null;
+          nickname: string;
+          songType: string;
+          songId: string;
+          songName: string;
+          artistName: string | null;
+          display: number;
+          band: string;
+          overall: number;
+          pitch: number;
+          longTone: number | null;
+          timing: number | null;
+          compensationMs: number;
+        };
+      },
+    ): boolean => {
+      // Same gate as the history itself: a song queued to test a download
+      // must not leave a personal best behind.
+      if (!db.historyRecordingEnabled) return false;
+      persistScore({
+        ...args.input,
+        timestamp: Date.now(),
+        // Stamped here rather than sent by the renderer: the formula that
+        // produced the number is a property of this build, not of the caller.
+        formulaVersion: SCORING_FORMULA_VERSION,
+      });
+      return true;
+    },
     backfillGuideMelody: async (
       _: any,
       args: { songId: string },
@@ -3754,6 +3808,7 @@ export function applyGraphQLMiddleware(app: Application) {
       lastSeenAt: parseInt(song.timestamp, 10) || undefined,
     })),
   );
+  loadScores();
   loadReadingCache();
   loadDamPrimeMarkers();
   loadJoysoundArtistSongCountCache();

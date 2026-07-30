@@ -7,6 +7,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { commitMutation, fetchQuery, graphql } from "react-relay";
 import YoutubePlayer from "youtube-player";
 import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.graphql";
+import { PlayerRecordScoreMutation } from "./__generated__/PlayerRecordScoreMutation.graphql";
+import { PlayerScoreHistoryQuery } from "./__generated__/PlayerScoreHistoryQuery.graphql";
 import { PlayerSongPlayCountQuery } from "./__generated__/PlayerSongPlayCountQuery.graphql";
 
 import environment from "../common/graphqlEnvironment";
@@ -46,6 +48,34 @@ const songPlayCountQuery = graphql`
       nickname: $nickname
       personId: $personId
     )
+  }
+`;
+
+const scoreHistoryQuery = graphql`
+  query PlayerScoreHistoryQuery(
+    $songType: String!
+    $songId: String!
+    $nickname: String!
+    $personId: String
+  ) {
+    scoreHistory(
+      songType: $songType
+      songId: $songId
+      nickname: $nickname
+      personId: $personId
+    ) {
+      count
+      best {
+        display
+        band
+      }
+    }
+  }
+`;
+
+const recordScoreMutation = graphql`
+  mutation PlayerRecordScoreMutation($input: ScoreRecordInput!) {
+    recordScore(input: $input)
   }
 `;
 
@@ -187,6 +217,17 @@ function Player(props: {
   const scoredSongMetaRef = useRef<Omit<ScoredPerformance, "result"> | null>(
     null,
   );
+  // Which song and singer the armed take belongs to. Kept apart from the card's
+  // meta because the card has no use for it -- it is what the score record is
+  // keyed on when the take is persisted.
+  const scoredSongIdentityRef = useRef<{
+    songType: string;
+    songId: string;
+    songName: string;
+    artistName: string | null;
+    nickname: string;
+    personId: string | null;
+  } | null>(null);
   const [scoredPerformance, setScoredPerformance] =
     useState<ScoredPerformance | null>(null);
   const [scoreCardVisible, setScoreCardVisible] = useState(false);
@@ -336,6 +377,7 @@ function Player(props: {
       setScoredPerformance(null);
       scoreAccumulatorRef.current = null;
       scoredSongMetaRef.current = null;
+      scoredSongIdentityRef.current = null;
     };
 
     // Total mic-to-score latency compensation, read fresh per song. The
@@ -362,7 +404,7 @@ function Player(props: {
       songScoringData: readonly number[],
       meta: Omit<
         ScoredPerformance,
-        "result" | "instrumentalBreaks" | "timesSung"
+        "result" | "instrumentalBreaks" | "timesSung" | "personalBest"
       >,
       song: { songType: string; songId: string; personId: string | null },
     ) => {
@@ -383,8 +425,35 @@ function Player(props: {
         ...meta,
         instrumentalBreaks: findInstrumentalBreaks(freeTimeIntervals),
         timesSung: 0,
+        personalBest: null,
       };
       scoredSongMetaRef.current = armed;
+      scoredSongIdentityRef.current = {
+        songType: song.songType,
+        songId: song.songId,
+        songName: meta.songName,
+        artistName: meta.artistName,
+        nickname: meta.nickname,
+        personId: song.personId,
+      };
+
+      // Fetched now, before this take is recorded, so "your best" is the score
+      // to beat rather than the one just set.
+      fetchQuery<PlayerScoreHistoryQuery>(environment, scoreHistoryQuery, {
+        songType: song.songType,
+        songId: song.songId,
+        nickname: meta.nickname,
+        personId: song.personId,
+      }).subscribe({
+        next: (response) => {
+          const best = response.scoreHistory.best;
+          if (scoredSongMetaRef.current === armed && best) {
+            armed.personalBest = { display: best.display, band: best.band };
+          }
+        },
+        error: (err: Error) =>
+          console.error("Score history query failed:", err),
+      });
 
       // Fetched now rather than at reveal: the pop that started this song has
       // already written it to the history, so the count is settled and
@@ -419,8 +488,10 @@ function Player(props: {
     const revealScoreCard = (): boolean => {
       const accumulator = scoreAccumulatorRef.current;
       const meta = scoredSongMetaRef.current;
+      const identity = scoredSongIdentityRef.current;
       scoreAccumulatorRef.current = null;
       scoredSongMetaRef.current = null;
+      scoredSongIdentityRef.current = null;
       if (accumulator === null || meta === null) return false;
       if (!experimentalScoringEnabledRef.current) return false;
 
@@ -430,6 +501,29 @@ function Player(props: {
       // the end, and a seek resets the tally) or an empty room. Scoring that
       // as a D is worse than staying quiet.
       if (result.notesAttempted === 0) return false;
+
+      // Persisted before the card is even drawn: this is the durable record a
+      // later personal best reads, and it must not depend on the card
+      // surviving its nine seconds. Main ignores it while history recording is
+      // off, so test queueing leaves no scores behind.
+      if (identity !== null) {
+        commitMutation<PlayerRecordScoreMutation>(environment, {
+          mutation: recordScoreMutation,
+          variables: {
+            input: {
+              ...identity,
+              display: result.display,
+              band: result.band,
+              overall: result.overall,
+              pitch: result.pitch,
+              longTone: result.longTone,
+              timing: result.timing,
+              compensationMs: result.compensationMs,
+            },
+          },
+          onError: (err) => console.error("Recording the score failed:", err),
+        });
+      }
 
       scoreCardTimersRef.current.forEach(clearTimeout);
       scoreCardTimersRef.current = [];

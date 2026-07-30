@@ -23,6 +23,10 @@ export interface ScoredPerformance {
   // read as "first time", which is why the copy below never prints the number
   // below 2.
   timesSung: number;
+  // This singer's best stored score on this song *before* this take, or null
+  // if they have none on the current formula. Fetched at song start so the
+  // card shows the number that was there to beat.
+  personalBest: { display: number; band: string } | null;
 }
 
 // A detail, not a metric: no ranking, nothing comparing one singer to another.
@@ -111,6 +115,7 @@ export default function ScoreCard(props: {
     profilePictureUrl,
     instrumentalBreaks,
     timesSung,
+    personalBest,
   } = props.performance;
   const portraitUrl =
     profilePictureUrl === null
@@ -155,6 +160,16 @@ export default function ScoreCard(props: {
           <span className="scoreCardOverallUnit">pts</span>
         </div>
         <div className="scoreCardTimesSung">{timesSungLabel(timesSung)}</div>
+        {/* Compared only against themselves -- nothing on this card ranks one
+            singer against another. Beating it is the interesting case, so say
+            so rather than making them do the subtraction. */}
+        {personalBest === null ? null : (
+          <div className="scoreCardTimesSung">
+            {result.display > personalBest.display
+              ? `beat your best of ${personalBest.display.toFixed(1)}`
+              : `your best ${personalBest.display.toFixed(1)} ${personalBest.band}`}
+          </div>
+        )}
       </div>
 
       <div className="scoreCardMain">

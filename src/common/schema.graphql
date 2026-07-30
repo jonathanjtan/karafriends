@@ -131,6 +131,16 @@ type Query {
   # recording is off, so callers should read 0 and 1 the same way ("first
   # time"). Matched on personId when both sides have one, otherwise nickname --
   # entries from before the singer registry carry no personId.
+  # This singer's stored scores for one song, newest formula only -- a record
+  # from an older formula was produced on a different scale and would make a
+  # personal best nobody can beat. Empty until a take has been scored and
+  # recorded, which only happens while history recording is on.
+  scoreHistory(
+    songType: String!
+    songId: String!
+    nickname: String!
+    personId: String
+  ): ScoreHistory!
   songPlayCount(
     songType: String!
     songId: String!
@@ -204,6 +214,10 @@ type Mutation {
   # probe-logs/ are useless for offline scoring work without the melody they
   # were sung against. See scripts/backfillMelodies.mjs.
   backfillGuideMelody(songId: String!): GuideMelodyBackfill!
+  # Persist a scored performance. Called by the renderer when it reveals a card.
+  # Ignored while history recording is off, so test queueing can't invent a
+  # personal best. Returns whether it was stored.
+  recordScore(input: ScoreRecordInput!): Boolean!
   setHostname(hostname: String!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
@@ -471,6 +485,38 @@ type Person {
   profilePictureUrl: String
   profilePictureFrame: String
   lastSeenAt: Float!
+}
+
+input ScoreRecordInput {
+  personId: String
+  nickname: String!
+  songType: String!
+  songId: String!
+  songName: String!
+  artistName: String
+  display: Float!
+  band: String!
+  overall: Float!
+  pitch: Float!
+  longTone: Float
+  timing: Float
+  compensationMs: Float!
+}
+
+type ScoreRecord {
+  nickname: String!
+  display: Float!
+  band: String!
+  timestamp: Float!
+}
+
+type ScoreHistory {
+  # Highest this singer has scored on this song, and their most recent take.
+  # Both null until they have one stored; they are the same record when the
+  # latest take is also the best.
+  best: ScoreRecord
+  previous: ScoreRecord
+  count: Int!
 }
 
 type GuideMelodyBackfill {
