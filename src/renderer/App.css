@@ -625,3 +625,26 @@ html.oledFriendly
     white-space: normal;
   }
 }
+
+/* Shown only while history recording is off (the `run-dev` default). Bottom
+   left, out of the way of the sidebar on the right and the score card's
+   "Experimental" tag on the top left, and deliberately drab -- it is a standing
+   condition, not an alert. Above the score card and intermission (z-index 20)
+   so it stays visible while those are up: those are exactly the moments
+   somebody would otherwise assume the night is being recorded. */
+.appNotRecording {
+  position: fixed;
+  bottom: 1.5vh;
+  left: 1.5vh;
+  z-index: 30;
+  padding: 0.3vh 0.9vh;
+  border: 0.15vh solid rgba(255, 255, 255, 0.25);
+  border-radius: 0.5vh;
+  background-color: rgba(0, 0, 0, 0.45);
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 1.4vh;
+  letter-spacing: 0.15vh;
+  text-transform: uppercase;
+  pointer-events: none;
+  user-select: none;
+}

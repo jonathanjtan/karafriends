@@ -7,6 +7,7 @@ import { graphql, useMutation, useSubscription } from "react-relay";
 import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
 import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
+import useHistoryRecordingEnabled from "../common/hooks/useHistoryRecordingEnabled";
 import useHostname from "../common/hooks/useHostname";
 import useMicOutputEnabled from "../common/hooks/useMicOutputEnabled";
 import useOledFriendly from "../common/hooks/useOledFriendly";
@@ -95,6 +96,10 @@ function App(props: {
   // The address the QR codes encode. A synced setting, so the popped-out
   // settings window and the QR window read it straight from the main process.
   const { hostname } = useHostname();
+  // Drives the "History off" marker below. Off is the default under `run-dev`,
+  // so during development this is the normal state and the marker doubles as a
+  // reminder of which build is on screen.
+  const { historyRecordingEnabled } = useHistoryRecordingEnabled();
   // Sidebar visibility is synced through the main process (like the Settings
   // section) so the remocon can fullscreen the TV's playing song remotely.
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
@@ -383,6 +388,18 @@ function App(props: {
 
   return (
     <div className="appMainContainer black">
+      {/* Persistent rather than a toast: the risk this guards against is a
+          party running for three hours with recording off, and a notice that
+          disappears is exactly the one nobody sees. Only the off state shows
+          anything -- recording is the normal case and needs no chrome. */}
+      {historyRecordingEnabled ? null : (
+        <div
+          className="appNotRecording"
+          title="Played songs are not being logged to the history"
+        >
+          History off
+        </div>
+      )}
       <div
         className={`sidebarToggle ${controlsVisible ? "visible" : ""}`}
         style={{ right: sidebarVisible ? sidebarWidth : 0 }}

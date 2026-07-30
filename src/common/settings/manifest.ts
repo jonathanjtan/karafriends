@@ -221,6 +221,13 @@ export const SETTINGS: SettingDef[] = [
   },
   {
     kind: "toggle",
+    section: "session",
+    label: "Record History",
+    hint: "Log played songs to the history. Off by default in development, so test queueing doesn't count.",
+    get: (s) => s.historyRecordingEnabled,
+  },
+  {
+    kind: "toggle",
     section: "display",
     label: "OLED Mode",
     hint: "Dark theme for the big screen, easier on an OLED panel.",

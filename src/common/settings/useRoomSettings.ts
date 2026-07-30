@@ -6,6 +6,7 @@ import useBreakEndsAt from "../hooks/useBreakEndsAt";
 import useBreakMessage from "../hooks/useBreakMessage";
 import useExperimentalScoringEnabled from "../hooks/useExperimentalScoringEnabled";
 import useGuideMelodyVolume from "../hooks/useGuideMelodyVolume";
+import useHistoryRecordingEnabled from "../hooks/useHistoryRecordingEnabled";
 import useJoysoundRomajiWordSegmentation from "../hooks/useJoysoundRomajiWordSegmentation";
 import useMicOutputEnabled from "../hooks/useMicOutputEnabled";
 import useMicRmsGateEnabled from "../hooks/useMicRmsGateEnabled";
@@ -47,6 +48,7 @@ export interface RoomSettings {
   micRmsGateEnabled: Control<boolean>;
   micRmsGateThreshold: Control<number>;
   experimentalScoringEnabled: Control<boolean>;
+  historyRecordingEnabled: Control<boolean>;
   pianoRollOpacity: Control<number>;
   pianoRollSize: Control<number>;
   queueIntermissionEnabled: Control<boolean>;
@@ -79,6 +81,8 @@ export default function useRoomSettings(): RoomSettings {
     useMicRmsGateThreshold();
   const { experimentalScoringEnabled, setExperimentalScoringEnabled } =
     useExperimentalScoringEnabled();
+  const { historyRecordingEnabled, setHistoryRecordingEnabled } =
+    useHistoryRecordingEnabled();
   const { pianoRollOpacity, setPianoRollOpacity } = usePianoRollOpacity();
   const { pianoRollSize, setPianoRollSize } = usePianoRollSize();
   const { queueIntermissionEnabled, setQueueIntermissionEnabled } =
@@ -125,6 +129,10 @@ export default function useRoomSettings(): RoomSettings {
     experimentalScoringEnabled: {
       value: experimentalScoringEnabled,
       set: setExperimentalScoringEnabled,
+    },
+    historyRecordingEnabled: {
+      value: historyRecordingEnabled,
+      set: setHistoryRecordingEnabled,
     },
     pianoRollOpacity: { value: pianoRollOpacity, set: setPianoRollOpacity },
     pianoRollSize: { value: pianoRollSize, set: setPianoRollSize },

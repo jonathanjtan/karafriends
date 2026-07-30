@@ -52,6 +52,12 @@ type Query {
   # is still being tuned and its numbers match no commercial machine; only
   # DAM and JOYSOUND songs carry the reference melody it needs.
   experimentalScoringEnabled: Boolean!
+  # Whether a played song is recorded to songHistory. Defaults on in a
+  # packaged build and off under `run-dev`, and is re-derived every launch
+  # rather than restored, because testing the app means queueing songs nobody
+  # sang and those must not reach the history, the play counts, or anything
+  # else keyed off it.
+  historyRecordingEnabled: Boolean!
   # The "host:port" a phone should use to reach the remocon — what the QR
   # codes encode. Synced rather than renderer-local so every window that draws
   # a QR (the sidebar, the intermission screen, the popped-out QR window)
@@ -180,6 +186,7 @@ type Mutation {
   setMicRmsGateEnabled(enabled: Boolean!): Boolean!
   setMicRmsGateThreshold(threshold: Float!): Boolean!
   setExperimentalScoringEnabled(enabled: Boolean!): Boolean!
+  setHistoryRecordingEnabled(enabled: Boolean!): Boolean!
   setHostname(hostname: String!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
@@ -206,6 +213,7 @@ type Subscription {
   micRmsGateEnabledChanged: Boolean!
   micRmsGateThresholdChanged: Float!
   experimentalScoringEnabledChanged: Boolean!
+  historyRecordingEnabledChanged: Boolean!
   hostnameChanged: String!
   oledFriendlyChanged: Boolean!
   pianoRollOpacityChanged: Float!

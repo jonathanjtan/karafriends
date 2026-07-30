@@ -1378,6 +1378,13 @@ type NotARealDb = {
   currentSong: QueueItem | null;
   currentSongAdhocLyrics: AdhocLyricsEntry[];
   guideMelodyVolume: number;
+  // Whether a played song enters songHistory at all. Off under `run-dev`, on
+  // in a packaged build (see DEFAULT_HISTORY_RECORDING), because testing a
+  // download or a sync fix means queueing a dozen songs nobody sang, and those
+  // otherwise land in the history — and in the play counts and scores that
+  // hang off it — indistinguishable from a real party. Deliberately NOT
+  // restored from disk; loadDb re-derives it every launch.
+  historyRecordingEnabled: boolean;
   // "host:port" the QR codes encode. Null until someone picks one, in which
   // case the resolver serves defaultHostname() — the machine's LAN address
   // can change between launches, so a stale persisted value shouldn't win
@@ -1419,6 +1426,7 @@ enum SubscriptionEvent {
   CurrentSongChanged = "CurrentSongChanged",
   Emote = "Emote",
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
+  HistoryRecordingEnabledChanged = "HistoryRecordingEnabledChanged",
   JoysoundRomajiWordSegmentationChanged = "JoysoundRomajiWordSegmentationChanged",
   MicOutputEnabledChanged = "MicOutputEnabledChanged",
   MicRmsGateEnabledChanged = "MicRmsGateEnabledChanged",
@@ -1459,6 +1467,11 @@ const DEFAULT_PIANO_ROLL_SIZE = 0.3;
 const MIN_PIANO_ROLL_SIZE = 0.1;
 const MAX_PIANO_ROLL_SIZE = 0.5;
 
+// Record history in a packaged build, don't under `run-dev`. That split is how
+// the app is actually used — parties run the packaged build, development
+// doesn't — so the safe behaviour needs nobody to remember a toggle.
+const DEFAULT_HISTORY_RECORDING = !isDev;
+
 // TODO: make this gql context instead of global
 let db: NotARealDb = {
   bgmTrack: null,
@@ -1469,6 +1482,7 @@ let db: NotARealDb = {
   currentSong: null,
   currentSongAdhocLyrics: [],
   guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
+  historyRecordingEnabled: DEFAULT_HISTORY_RECORDING,
   hostname: null,
   idToAdhocLyrics: {},
   joysoundRomajiWordSegmentation: false,
@@ -1635,6 +1649,7 @@ function loadDb(): NotARealDb {
     currentSong: null,
     currentSongAdhocLyrics: [],
     guideMelodyVolume: DEFAULT_GUIDE_MELODY_VOLUME,
+    historyRecordingEnabled: DEFAULT_HISTORY_RECORDING,
     hostname: null,
     idToAdhocLyrics: {},
     joysoundRomajiWordSegmentation: false,
@@ -1668,6 +1683,13 @@ function loadDb(): NotARealDb {
   loaded.songHistory = mergeHistory(loaded.songHistory, readHistoryMirror());
   // A break doesn't survive a relaunch (and a stale past deadline is noise).
   loaded.breakEndsAt = null;
+  // Re-derived per launch rather than restored, because `run-dev` and the
+  // packaged build share one OS temp dir and so one queue.json: a `true`
+  // persisted by the packaged app would otherwise spread over the dev
+  // default and quietly turn test-queue recording back on. Erring the other
+  // way is also better — a toggle flipped off for one test session can't
+  // silently eat the next party's history.
+  loaded.historyRecordingEnabled = DEFAULT_HISTORY_RECORDING;
   return loaded;
 }
 
@@ -2604,6 +2626,7 @@ const resolvers = {
         ? { text: db.breakMessageText, author: db.breakMessageAuthor }
         : null,
     guideMelodyVolume: () => db.guideMelodyVolume,
+    historyRecordingEnabled: () => db.historyRecordingEnabled,
     hostname: () => currentHostname(),
     joysoundRomajiWordSegmentation: () => db.joysoundRomajiWordSegmentation,
     micOutputEnabled: () => db.micOutputEnabled,
@@ -2863,7 +2886,10 @@ const resolvers = {
         },
       });
 
-      if (db.currentSong) {
+      // The one place a song enters the history, so the one place the
+      // recording gate has to sit — play counts and anything else keyed off
+      // songHistory inherit it for free.
+      if (db.currentSong && db.historyRecordingEnabled) {
         const prevSong: QueueItem | null = db.songHistory[0]?.song || null;
 
         if (
@@ -3095,6 +3121,20 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setHistoryRecordingEnabled: (
+      _: any,
+      args: { enabled: boolean },
+    ): boolean => {
+      db.historyRecordingEnabled = args.enabled;
+      pubsub.publish(SubscriptionEvent.HistoryRecordingEnabledChanged, {
+        historyRecordingEnabledChanged: db.historyRecordingEnabled,
+      });
+      // Saved like every other setting even though loadDb re-derives it: the
+      // spread in saveDb writes the whole db, and leaving it out would be a
+      // special case to maintain for no benefit.
+      saveDb();
+      return true;
+    },
     setHostname: (_: any, args: { hostname: string }): boolean => {
       db.hostname = args.hostname;
       pubsub.publish(SubscriptionEvent.HostnameChanged, {
@@ -3269,6 +3309,12 @@ const resolvers = {
       subscribe: () =>
         pubsub.asyncIterableIterator([
           SubscriptionEvent.ExperimentalScoringEnabledChanged,
+        ]),
+    },
+    historyRecordingEnabledChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.HistoryRecordingEnabledChanged,
         ]),
     },
     hostnameChanged: {
