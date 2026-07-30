@@ -4,29 +4,73 @@ import React from "react";
 import { cyrb53 } from "../common/hash";
 import { resolveProfilePictureUrl } from "../common/profilePicture";
 import { ScoreResult } from "../common/scoring";
+import { InstrumentalBreak } from "../common/scoringData";
 /* tslint:enable:no-submodule-imports no-implicit-dependencies */
+import NoteRibbon, { ribbonCounts } from "./NoteRibbon";
 import "./ScoreCard.css";
 
 export interface ScoredPerformance {
   result: ScoreResult;
   songName: string;
+  artistName: string | null;
   nickname: string;
   profilePictureUrl: string | null;
+  // Shaded on the ribbon. Passed in rather than derived here because Player
+  // already parses the scoring data and computes these for the piano roll.
+  instrumentalBreaks: readonly InstrumentalBreak[];
 }
 
 function nicknameBadge(nickname: string) {
   const nicknameHash = cyrb53(nickname);
   return (
     <span
+      className="scoreCardNickname"
       style={{
         backgroundColor: `hsl(${(nicknameHash % 180) + 180}, 100%, 50%)`,
         color: `hsl(${nicknameHash % 180}, 100%, 50%)`,
-        padding: "0 1vh",
-        borderRadius: "0.5vh",
       }}
     >
       {nickname}
     </span>
+  );
+}
+
+// One axis: its name, its score, a meter, and the raw fact behind it. The fact
+// is the point -- an unfamiliar metric is only trustworthy next to its
+// evidence, and "81" means nothing until you know it's 53 held notes.
+//
+// An axis the song can't be judged on shows "—" and says why, rather than being
+// quietly folded away: a missing axis leans the headline harder on pitch (see
+// ScoreResult), so hiding it would overstate what the score measured.
+function axisRow(
+  key: string,
+  labelJp: string,
+  labelEn: string,
+  value: number | null,
+  note: string,
+) {
+  return (
+    <div
+      className={`scoreCardAxis scoreCardAxis${key}${
+        value === null ? " scoreCardAxisAbsent" : ""
+      }`}
+      key={key}
+    >
+      <div className="scoreCardAxisName">
+        {labelJp}
+        <br />
+        {labelEn}
+      </div>
+      <div className="scoreCardAxisValue">
+        {value === null ? "—" : Math.round(value * 100)}
+      </div>
+      <div className="scoreCardMeter">
+        {value === null ? null : (
+          <i style={{ width: `${(value * 100).toFixed(1)}%` }} />
+        )}
+      </div>
+      <div className="scoreCardAxisNote">{note}</div>
+    </div>
   );
 }
 
@@ -37,81 +81,120 @@ export default function ScoreCard(props: {
   performance: ScoredPerformance;
   hiding: boolean;
 }) {
-  const { result, songName, nickname, profilePictureUrl } = props.performance;
+  const {
+    result,
+    songName,
+    artistName,
+    nickname,
+    profilePictureUrl,
+    instrumentalBreaks,
+  } = props.performance;
   const portraitUrl =
     profilePictureUrl === null
       ? null
       : resolveProfilePictureUrl(profilePictureUrl);
+  const counts = ribbonCounts(result);
+  const landed = counts.hit + counts.close;
+
+  // Three decimals like the machines everyone recognises, so "you beat me by
+  // 0.4" works. The integer part carries the reading from across the room; the
+  // fraction is for the argument afterwards.
+  const whole = Math.floor(result.display);
+  const fraction = (result.display - whole).toFixed(3).slice(1);
 
   return (
     <div
       className={`scoreCard${props.hiding ? " scoreCardHiding" : ""}`}
       data-testid="scoreCard"
     >
-      <div className="scoreCardExperimentalTag">Experimental</div>
-
-      <div className="scoreCardSinger">
-        {portraitUrl ? (
-          <img className="scoreCardPortrait" src={portraitUrl} alt="" />
-        ) : null}
-        {nicknameBadge(nickname)}
+      <div className="scoreCardTopRail">
+        <span className="scoreCardTag">Experimental</span>
+        <span className="scoreCardSpacer" />
+        <span>
+          {result.notesTotal} notes · fitted {Math.round(result.compensationMs)}
+          ms
+        </span>
       </div>
 
-      <div className="scoreCardSongName">{songName}</div>
-
-      <div className={`scoreCardBand scoreCardBand${result.band}`}>
-        {result.band}
-      </div>
-
-      <div className="scoreCardOverall">{result.display.toFixed(1)}</div>
-
-      {/* One row per axis, each with the raw fact behind it: an unfamiliar
-          metric is only trustworthy next to its evidence. An axis the song
-          can't be judged on reads "—" rather than being quietly folded away
-          (see ScoreResult), because a missing axis leans the score on pitch. */}
-      <div className="scoreCardBreakdown">
-        <div>
-          Pitch{" "}
-          <span className="scoreCardBreakdownValue">
-            {Math.round(result.pitch * 100)}
-          </span>
+      <div className="scoreCardIdentity">
+        <div className="scoreCardSinger">
+          {portraitUrl ? (
+            <img className="scoreCardPortrait" src={portraitUrl} alt="" />
+          ) : null}
+          {nicknameBadge(nickname)}
         </div>
-        <div>
-          Long tone{" "}
-          <span className="scoreCardBreakdownValue">
-            {result.longTone === null ? "—" : Math.round(result.longTone * 100)}
-          </span>{" "}
-          <span className="scoreCardBreakdownNote">
-            {result.longToneCount === 0
-              ? "no held notes"
-              : `${result.longToneCount} held`}
-          </span>
+        <div className={`scoreCardBand scoreCardBand${result.band}`}>
+          {result.band}
         </div>
-        <div>
-          Timing{" "}
-          <span className="scoreCardBreakdownValue">
-            {result.timing === null ? "—" : Math.round(result.timing * 100)}
-          </span>{" "}
-          <span className="scoreCardBreakdownNote">
-            {result.timingSpreadMs === null
-              ? `${result.timingCount} attacks`
-              : `±${Math.round(result.timingSpreadMs)}ms`}
-          </span>
+        <div className="scoreCardOverall">
+          <span className="scoreCardOverallWhole">{whole}</span>
+          <span className="scoreCardOverallFraction">{fraction}</span>
+          <span className="scoreCardOverallUnit">pts</span>
         </div>
       </div>
 
-      <div className="scoreCardGraph">
-        {result.buckets.map((bucket, i) =>
-          bucket === null ? (
-            <div key={i} className="scoreCardBarEmpty" />
-          ) : (
-            <div
-              key={i}
-              className="scoreCardBar"
-              style={{ height: `${Math.max(bucket * 100, 3)}%` }}
-            />
-          ),
-        )}
+      <div className="scoreCardMain">
+        <div className="scoreCardSongLine">
+          <div className="scoreCardSongName">{songName}</div>
+          {artistName ? (
+            <div className="scoreCardArtist">{artistName}</div>
+          ) : null}
+        </div>
+
+        <div className="scoreCardAxes">
+          {axisRow(
+            "Pitch",
+            "音程",
+            "PITCH",
+            result.pitch,
+            `${landed} of ${result.notesTotal} notes landed`,
+          )}
+          {axisRow(
+            "Long",
+            "ロングトーン",
+            "LONG TONE",
+            result.longTone,
+            result.longToneCount === 0
+              ? "no note over a second"
+              : `${result.longToneCount} held notes`,
+          )}
+          {axisRow(
+            "Timing",
+            "リズム",
+            "TIMING",
+            result.timing,
+            result.timingSpreadMs === null
+              ? `only ${result.timingCount} clean attacks`
+              : `±${Math.round(result.timingSpreadMs)} ms spread`,
+          )}
+        </div>
+      </div>
+
+      <div className="scoreCardRibbonWrap">
+        <NoteRibbon result={result} breaks={instrumentalBreaks} />
+        <div className="scoreCardLegend">
+          <span>
+            <i style={{ background: "#5dff9b" }} />
+            hit {counts.hit}
+          </span>
+          <span>
+            <i style={{ background: "#ffd34d" }} />
+            close {counts.close}
+          </span>
+          <span>
+            <i style={{ background: "#ff6b81" }} />
+            missed {counts.missed}
+          </span>
+          <span>
+            <i style={{ background: "rgba(127,168,217,0.22)" }} />
+            not sung {counts.unsung}
+          </span>
+          <span className="scoreCardLegendRight">
+            best run {counts.bestRun} notes ·{" "}
+            {Math.round((result.notesAttempted / result.notesTotal) * 100)}% of
+            phrases sung
+          </span>
+        </div>
       </div>
     </div>
   );

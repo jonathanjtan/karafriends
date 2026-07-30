@@ -341,9 +341,10 @@ function Player(props: {
     // Youtube/Nico (no reference data at all) from ever showing a card.
     const armScoring = (
       songScoringData: readonly number[],
-      meta: Omit<ScoredPerformance, "result">,
+      meta: Omit<ScoredPerformance, "result" | "instrumentalBreaks">,
     ) => {
-      const { notes, lyricsIntervals } = parseScoringData(songScoringData);
+      const { notes, lyricsIntervals, freeTimeIntervals } =
+        parseScoringData(songScoringData);
       if (!isScoreable(notes)) return;
 
       scoreAccumulatorRef.current = new ScoreAccumulator(
@@ -351,7 +352,14 @@ function Player(props: {
         lyricsIntervals,
         micLatencyCompensationMs(),
       );
-      scoredSongMetaRef.current = meta;
+      // Shaded on the card's note ribbon. Derived here rather than passed in by
+      // each call site: this function already has the parsed data, and the
+      // component-level `instrumentalBreaks` memo tracks the *current* song,
+      // which by reveal time is the next one.
+      scoredSongMetaRef.current = {
+        ...meta,
+        instrumentalBreaks: findInstrumentalBreaks(freeTimeIntervals),
+      };
     };
 
     // Finalize whatever the accumulator collected and put the card up. Always
@@ -487,6 +495,7 @@ function Player(props: {
 
               armScoring(popSong.scoringData, {
                 songName: popSong.name,
+                artistName: popSong.artistName,
                 nickname: popSong.userIdentity.nickname,
                 profilePictureUrl:
                   popSong.userIdentity.profilePictureUrl ?? null,
@@ -625,6 +634,7 @@ function Player(props: {
 
               armScoring(popSong.scoringData ?? [], {
                 songName: popSong.name,
+                artistName: popSong.artistName,
                 nickname: popSong.userIdentity.nickname,
                 profilePictureUrl:
                   popSong.userIdentity.profilePictureUrl ?? null,

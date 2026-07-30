@@ -1,17 +1,17 @@
+/* Sizes are in vh throughout: this is a 10-foot UI on whatever the room's
+   projector happens to be, so everything scales with the screen rather than
+   with a pixel guess. */
 .scoreCard {
   position: absolute;
   inset: 0;
   /* Above the queue intermission (z-index 10): the score is the first thing
      shown when a song ends, and the intermission carries on underneath it. */
   z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2vh;
-  /* Symmetric, unlike QueueIntermission: this screen has no QR codes to keep
-     text clear of, so it centers properly. */
-  padding: 4vh 6vw;
+  display: grid;
+  grid-template-columns: 30vh 1fr;
+  grid-template-rows: auto 1fr auto;
+  gap: 0 4vh;
+  padding: 3.5vh 4vh;
   background: linear-gradient(160deg, #0d0d1c 0%, #191933 60%, #0d0d1c 100%);
   color: white;
   /* Keep durations in sync with SCORE_CARD_FADE_MS in Player.tsx. */
@@ -44,64 +44,85 @@
   }
 }
 
-/* The numbers here come from a formula that is still being tuned and match
-   no commercial machine, so the card says so rather than implying authority. */
-.scoreCardExperimentalTag {
-  position: absolute;
-  top: 3vh;
-  left: 3vh;
-  padding: 0.4vh 1.2vh;
-  border: 0.2vh solid rgba(255, 255, 255, 0.35);
-  border-radius: 0.6vh;
-  font-size: 1.6vh;
+/* Provenance strip. Deliberately the quietest thing on the card -- it is here
+   to be honest, not to be read from the sofa. */
+.scoreCardTopRail {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 2vh;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.5vh;
   letter-spacing: 0.3vh;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
+  color: #7b81a3;
+}
+
+.scoreCardSpacer {
+  flex: 1;
+}
+
+/* The numbers here come from a formula that is still being tuned and match
+   no commercial machine, so the card says so rather than implying authority. */
+.scoreCardTag {
+  padding: 0.2vh 0.9vh;
+  border: 0.2vh solid rgba(255, 255, 255, 0.28);
+  border-radius: 0.5vh;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.scoreCardIdentity {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1vh;
+  min-width: 0;
 }
 
 .scoreCardSinger {
   display: flex;
   align-items: center;
   gap: 1.5vh;
-  font-size: 3vh;
+  min-width: 0;
 }
 
 .scoreCardPortrait {
   width: 8vh;
   height: 8vh;
   image-rendering: pixelated;
+  border-radius: 0.4vh;
 }
 
-.scoreCardSongName {
-  font-size: 2.4vh;
-  color: rgba(255, 255, 255, 0.7);
-  text-align: center;
-  max-width: 60vw;
+.scoreCardNickname {
+  padding: 0 1vh;
+  border-radius: 0.5vh;
+  font-size: 3.4vh;
+  font-weight: bold;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .scoreCardBand {
-  font-size: 22vh;
-  line-height: 1;
+  font-size: 17vh;
+  line-height: 0.82;
   font-weight: bold;
   text-shadow: 0 0 4vh currentColor;
 }
 
 /* The S ladder shares the gold family, brightening as it climbs, so the tier
-   reads at a glance from across the room. */
-/* .scoreCardBand is sized for a single glyph; shrink the multi-letter tiers
-   so SSS occupies about the same width as a lone S. */
+   reads at a glance from across the room. Multi-letter tiers shrink so SSS
+   occupies about the same width as a lone S. */
 .scoreCardBandSSS {
-  font-size: 14vh;
+  font-size: 11vh;
   color: #fff3b0;
   text-shadow:
     0 0 3vh #fff3b0,
     0 0 7vh #ffd34d;
 }
 .scoreCardBandSS {
-  font-size: 18vh;
+  font-size: 14vh;
   color: #ffe27a;
   text-shadow:
     0 0 3vh #ffe27a,
@@ -124,50 +145,173 @@
 }
 
 .scoreCardOverall {
-  font-size: 5vh;
+  display: flex;
+  align-items: baseline;
   font-weight: bold;
+  line-height: 1;
 }
 
-.scoreCardBreakdown {
+.scoreCardOverallWhole {
+  font-size: 8vh;
+}
+
+.scoreCardOverallFraction {
+  font-size: 3.8vh;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.scoreCardOverallUnit {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.5vh;
+  font-weight: normal;
+  letter-spacing: 0.25vh;
+  color: #7b81a3;
+  margin-left: 0.6vh;
+}
+
+.scoreCardMain {
   display: flex;
-  gap: 5vh;
-  font-size: 2.2vh;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2vh;
+  min-width: 0;
+}
+
+.scoreCardSongName {
+  font-size: 4.2vh;
+  font-weight: bold;
+  line-height: 1.05;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreCardArtist {
+  font-size: 2vh;
+  color: #7b81a3;
+  margin-top: 0.3vh;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreCardAxes {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2vh;
+}
+
+/* Name / value / meter / evidence. The name column is wide enough for
+   ロングトーン over LONG TONE, and the evidence column is fixed so the meters
+   all end at the same place. */
+.scoreCardAxis {
+  display: grid;
+  grid-template-columns: 13vh 6vh 1fr 15vh;
+  align-items: center;
+  gap: 1.5vh;
+}
+
+.scoreCardAxisName {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.55vh;
+  line-height: 1.35;
+  letter-spacing: 0.15vh;
   color: rgba(255, 255, 255, 0.8);
 }
 
-.scoreCardBreakdownValue {
+.scoreCardAxisValue {
+  font-size: 3.4vh;
   font-weight: bold;
-  color: white;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
-/* 24 buckets, matching the grid DAM uses for its own end-of-song graph. */
-.scoreCardGraph {
+.scoreCardAxisNote {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.4vh;
+  color: #7b81a3;
+}
+
+.scoreCardMeter {
+  position: relative;
+  height: 1.6vh;
+  border-radius: 0.15vh;
+  background: rgba(127, 168, 217, 0.16);
+  overflow: hidden;
+}
+
+.scoreCardMeter i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  border-radius: 0.15vh;
+}
+
+/* One hue per axis, so a glance at the card tells you which bar is which
+   without reading the labels. Pitch takes the piano roll's note green. */
+.scoreCardAxisPitch .scoreCardMeter i {
+  background: linear-gradient(90deg, #2f8f5e, #5dff9b);
+}
+.scoreCardAxisLong .scoreCardMeter i {
+  background: linear-gradient(90deg, #b98a1c, #ffd34d);
+}
+.scoreCardAxisTiming .scoreCardMeter i {
+  background: linear-gradient(90deg, #4a7fb5, #b9d6ff);
+}
+
+/* An axis this song can't be judged on. Hatched rather than empty, so it reads
+   as "not applicable" instead of "scored zero". */
+.scoreCardAxisAbsent .scoreCardAxisValue {
+  color: #7b81a3;
+}
+
+.scoreCardAxisAbsent .scoreCardMeter {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(127, 168, 217, 0.13) 0 0.4vh,
+    transparent 0.4vh 1vh
+  );
+}
+
+.scoreCardRibbonWrap {
+  grid-column: 1 / -1;
+  margin-top: 2vh;
+  min-height: 0;
+}
+
+/* A third of the card. Letting it absorb all the leftover height instead put it
+   at nearly 60% on a 720p screen, which drowned the numbers; a fixed share
+   keeps the balance the design was drawn at while still being big enough to
+   read a melody contour in. */
+.scoreCardRibbon {
+  display: block;
+  width: 100%;
+  height: 32vh;
+}
+
+.scoreCardLegend {
   display: flex;
-  align-items: flex-end;
-  gap: 0.4vh;
-  height: 12vh;
-  width: min(60vw, 80vh);
+  align-items: center;
+  gap: 2.2vh;
+  margin-top: 0.6vh;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.4vh;
+  color: #7b81a3;
 }
 
-.scoreCardBar {
-  flex: 1;
-  border-radius: 0.3vh 0.3vh 0 0;
-  background: linear-gradient(to top, #3a6ea5, #63c6ff);
-  min-height: 0.3vh;
+.scoreCardLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6vh;
 }
 
-/* A window the singer sat out entirely -- an instrumental break, or a phrase
-   nobody took. Distinct from a bar at zero, which means they sang and missed. */
-.scoreCardBarEmpty {
-  flex: 1;
-  height: 0.3vh;
-  border-radius: 0.3vh;
-  background: rgba(255, 255, 255, 0.15);
+.scoreCardLegend i {
+  width: 1.2vh;
+  height: 1.2vh;
+  border-radius: 0.15vh;
+  display: inline-block;
 }
 
-/* The raw fact behind an axis -- held-note count, attack spread. Quieter than
-   the value it annotates: it is evidence, not a second score. */
-.scoreCardBreakdownNote {
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 1.7vh;
+.scoreCardLegendRight {
+  margin-left: auto;
 }

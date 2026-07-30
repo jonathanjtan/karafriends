@@ -507,6 +507,19 @@ const BAND_THRESHOLDS: [ScoreBand, number][] = [
   ["D", 0],
 ];
 
+// One reference note, positioned for drawing. The card's note ribbon replays
+// the whole melody from these, so it needs every note -- including the ones
+// nobody sang, which are what make a missed phrase visible as a gap.
+export interface ScoredNote {
+  // Position and width within the scored window, both 0..1, so a caller can
+  // draw the take without knowing anything about the song's timing.
+  x: number;
+  width: number;
+  midiNumber: number;
+  // How well it was sung (noteCredit), or null if it got no samples at all.
+  credit: number | null;
+}
+
 export interface ScoreResult {
   // The number to show, 0..100, after DISPLAY_CURVE. This is what `band` is
   // derived from and what the card leads with.
@@ -545,6 +558,15 @@ export interface ScoreResult {
   // the UI can say "you sang 41 of 58 phrases" without recomputing.
   notesAttempted: number;
   notesTotal: number;
+  // Every reference note, positioned for the ribbon, plus the reference pitch
+  // range to scale it against and the window the positions are relative to.
+  // The window bounds are here so a caller can place anything else it knows in
+  // absolute seconds -- instrumental breaks, say -- on the same axis.
+  notes: ScoredNote[];
+  pitchLo: number;
+  pitchHi: number;
+  windowStartSecs: number;
+  windowEndSecs: number;
   // The compensation the take was actually scored at, after fitting (see
   // fitCompensation), and the seed it was fitted from. The difference is the
   // singer's own timing against this song; the median of `compensationMs`
@@ -711,6 +733,7 @@ export class ScoreAccumulator {
     const bucketCredit = new Array<number>(SCORE_BUCKET_COUNT).fill(0);
     const bucketNotes = new Array<number>(SCORE_BUCKET_COUNT).fill(0);
     const windowSpan = this.windowEnd - this.windowStart;
+    const scoredNotes: ScoredNote[] = [];
 
     for (let i = 0; i < this.notes.length; i++) {
       const note = this.notes[i];
@@ -719,6 +742,15 @@ export class ScoreAccumulator {
       expectedFrames += expected;
 
       const slots = hits.get(i);
+      // Every note goes on the ribbon, sung or not: an unsung phrase reads as
+      // a gap, which is information.
+      scoredNotes.push({
+        x: (note.startTime - this.windowStart) / windowSpan,
+        width: (note.endTime - note.startTime) / windowSpan,
+        midiNumber: note.midiNumber,
+        credit: slots === undefined ? null : noteCredit(note, slots),
+      });
+
       if (slots === undefined) continue;
       notesAttempted++;
 
@@ -776,6 +808,11 @@ export class ScoreAccumulator {
       ),
       notesAttempted,
       notesTotal: this.notes.length,
+      notes: scoredNotes,
+      pitchLo: Math.min(...this.notes.map((note) => note.midiNumber)),
+      pitchHi: Math.max(...this.notes.map((note) => note.midiNumber)),
+      windowStartSecs: this.windowStart,
+      windowEndSecs: this.windowEnd,
       compensationMs,
       seedCompensationMs: this.compensationMs,
     };
