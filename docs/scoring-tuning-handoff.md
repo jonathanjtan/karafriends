@@ -135,11 +135,18 @@ one offline-scoring input that can't be reconstructed from a log.
 1. ~~Tag songId in the probe and split multi-song logs.~~ **Done** — each
    PROBE_PITCH line is `PROBE_PITCH <songId> <videoTime> <midi> <shift>`, and
    `measureMicLatency.mjs` splits by song (`--song` to pick when several).
-2. ~~Re-tune band thresholds.~~ **Superseded.** The ladder now sits on the
-   displayed number with `DISPLAY_CURVE` in between, so the formula and the
-   scale move independently. On the 29-take corpus the current curve gives
-   58.5–96.3, mean 81.5, bands C:3 B:7 A:9 S:7 SS:3 — re-fit the curve, not the
-   ladder, if that distribution drifts.
+2. ~~Re-tune band thresholds.~~ **Superseded.** The ladder sits on the displayed
+   number with `DISPLAY_CURVE` in between, so the formula and the scale move
+   independently — re-fit the curve, not the ladder. Currently fitted to the
+   54-take corpus by placing each band boundary at a chosen quantile, giving
+   38.8–96.6, mean 80.4, bands D:1 C:7 B:11 A:18 S:12 SS:5 SSS:0.
+   `scripts/replayScoring.mjs` prints that distribution.
+
+   **Fit it on more than one room.** The first version of this curve was fitted
+   to 29 takes — all that survived a temp sweep — and that subset turned out to
+   be biased toward the better half of the room: on the full 54 it read about 4
+   points generous at the median and put a fifth of all takes into C.
+
 3. **Visually confirm a live-sung card.** Everything is offline-validated;
    nobody has watched a real card render with the compensation + best-frame
    applied. First sung song after this build settles it.

@@ -464,18 +464,31 @@ const WEIGHT_TIMING = 0.15;
 // re-fitting this table rather than moving every band -- which is the treadmill
 // the old design was on.
 //
-// The anchors come from the corpus: a raw composite in the low 0.5s is a take
-// that mostly worked, the high 0.7s is a strong one, and 0.9 raw is better than
-// anybody in the corpus managed. Every band is reachable, which was not true
-// before (49 saved cards used four of seven).
+// Fitted by placing each band boundary at a chosen quantile of a real corpus
+// (54 takes, two nights, six singers) rather than by taste, so the bands mean
+// something about how a room actually sings:
+//
+//   55 (D/C) below every take but the one nobody really attempted
+//   68 (C/B) at the 13th percentile      78 (B/A) at the 37th
+//   87 (A/S) at the 67th                 93 (S/SS) at the 91st
+//   97 (SSS) above the best take in the corpus -- reachable, unearned so far
+//
+// which lands D 1, C 7, B 11, A 18, S 12, SS 5, SSS 0. Slopes fall from 157 to
+// 25 across the range: deliberately compressive at the top, so the last few
+// points cost the most.
+//
+// The earlier version of this table was fitted to 29 takes -- all that survived
+// a temp sweep -- and that subset was biased toward the better half of the
+// room, which made the curve read ~4 points generous at the median and pushed a
+// fifth of all takes into C. Re-fit once there is a corpus from more rooms than
+// this one; scripts/replayScoring.mjs prints the distribution.
 const DISPLAY_CURVE: [number, number][] = [
   [0.0, 0],
-  [0.3, 45],
-  [0.45, 62],
-  [0.55, 72],
-  [0.65, 80],
-  [0.72, 86],
-  [0.8, 92],
+  [0.35, 55],
+  [0.475, 68],
+  [0.587, 78],
+  [0.7, 87],
+  [0.775, 93],
   [0.88, 97],
   [1.0, 100],
 ];
