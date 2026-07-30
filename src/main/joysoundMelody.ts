@@ -151,6 +151,17 @@ async function extractAndCache(
   return scoringData;
 }
 
+// Whether a melody has actually been extracted and cached for this song.
+//
+// Distinct from getJoysoundScoringData returning null, which also covers "the
+// extraction ran and found no usable melody channel" -- that result is cached
+// deliberately so it isn't retried forever. A caller that needs to tell a
+// finished-but-empty extraction from one that never ran (ffmpeg missing, the
+// fetch failing) has to ask about the file.
+export function hasCachedGuideMelody(songId: string): boolean {
+  return readMelodyCache(songId) !== null;
+}
+
 // Kicks off (or reuses) guide-melody extraction for a song. Callers pass the
 // raw ogg when they have it (initial download) or the composited video file
 // (whose audio stream is the ogg, copied) when reusing a cached download.

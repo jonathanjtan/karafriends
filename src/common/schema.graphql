@@ -198,6 +198,12 @@ type Mutation {
   setMicRmsGateThreshold(threshold: Float!): Boolean!
   setExperimentalScoringEnabled(enabled: Boolean!): Boolean!
   setHistoryRecordingEnabled(enabled: Boolean!): Boolean!
+  # Fetch a JOYSOUND song's audio and extract its guide melody into the cache,
+  # without downloading a video or queueing anything. Exists so a lost melody
+  # cache can be rebuilt from a list of songIds -- the sung performances in
+  # probe-logs/ are useless for offline scoring work without the melody they
+  # were sung against. See scripts/backfillMelodies.mjs.
+  backfillGuideMelody(songId: String!): GuideMelodyBackfill!
   setHostname(hostname: String!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
@@ -465,6 +471,15 @@ type Person {
   profilePictureUrl: String
   profilePictureFrame: String
   lastSeenAt: Float!
+}
+
+type GuideMelodyBackfill {
+  songId: String!
+  # Notes extracted. Zero is a real answer: some songs have no usable guide
+  # melody channel, and that result is cached too so it isn't retried forever.
+  noteCount: Int!
+  # True when a melody was already cached and nothing was fetched.
+  alreadyCached: Boolean!
 }
 
 type BreakMessage {

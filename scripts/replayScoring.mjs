@@ -136,8 +136,14 @@ function defaultLogDir() {
 
 // Searched in order, so an expired temp copy falls through to the mirror.
 function defaultMelodyDirs() {
+  // The packaged app and `run-dev` keep separate userData dirs (the dev one is
+  // named after the Electron executable), so a melody extracted under run-dev
+  // does not land beside the probe logs a packaged party wrote. Search both.
+  const userData = path.dirname(defaultLogDir());
+  const devUserData = path.join(path.dirname(userData), "Electron");
   return [
-    path.join(path.dirname(defaultLogDir()), "melodies"),
+    path.join(userData, "melodies"),
+    path.join(devUserData, "melodies"),
     path.join(fs.realpathSync(os.tmpdir()), "karafriends_tmp"),
   ];
 }

@@ -45,6 +45,7 @@ import {
   decodeJoysoundBase64Field,
   getSongDuration,
 } from "../common/joysoundParser";
+import { parseScoringData } from "../common/scoringData";
 import {
   downloadDamVideo,
   downloadJoysoundData,
@@ -55,7 +56,11 @@ import {
 } from "./../common/videoDownloader";
 import { DkwebsysAPI, MinseiAPI, MinseiCredentialsProvider } from "./damApi";
 import { JoysoundAPI, JoysoundCredentialsProvider } from "./joysoundApi";
-import { getJoysoundScoringData } from "./joysoundMelody";
+import {
+  ensureJoysoundGuideMelody,
+  getJoysoundScoringData,
+  hasCachedGuideMelody,
+} from "./joysoundMelody";
 import memoizeWithFailureEviction from "./memoizeWithFailureEviction";
 import {
   claimPerson,
@@ -3145,6 +3150,61 @@ const resolvers = {
       });
       saveDb();
       return true;
+    },
+    // Rebuilds one song's guide melody without downloading a video or touching
+    // the queue. The melody cache used to live only in the temp dir, which
+    // macOS sweeps by age, and losing it strands every recorded performance in
+    // probe-logs/: a sung take can't be scored without the melody it was sung
+    // against. This is how a lost cache is rebuilt from a list of songIds.
+    backfillGuideMelody: async (
+      _: any,
+      args: { songId: string },
+      { dataSources }: IDataSources,
+    ): Promise<{
+      songId: string;
+      noteCount: number;
+      alreadyCached: boolean;
+    }> => {
+      const countNotes = (data: number[] | null): number =>
+        data === null ? 0 : parseScoringData(data).notes.length;
+
+      const existing = await getJoysoundScoringData(args.songId);
+      if (existing !== null) {
+        return {
+          songId: args.songId,
+          noteCount: countNotes(existing),
+          alreadyCached: true,
+        };
+      }
+
+      // The ogg is the whole point of the fetch; getFME returns it beside the
+      // telop, and extraction reads the guide melody off its FC channel.
+      const rawData = await dataSources.joysound.getSongRawData(args.songId);
+      ensureJoysoundGuideMelody(args.songId, {
+        oggBuffer: Buffer.from(decodeJoysoundBase64Field(rawData.ogg)),
+      });
+
+      // Awaits the in-flight extraction rather than returning immediately, so a
+      // caller working through a list learns the outcome before moving on.
+      const scoringData = await getJoysoundScoringData(args.songId);
+
+      // A cached result means the extraction ran, and zero notes is then a real
+      // answer about the song. No cache file means it never got that far --
+      // ffmpeg missing is the usual reason (running the app outside run-dev
+      // resolves extraResources into Electron's own bundle). Those are worth
+      // retrying and a song with no melody channel is not, so they must not
+      // report the same thing.
+      if (!hasCachedGuideMelody(args.songId)) {
+        throw new Error(
+          `Guide melody extraction produced nothing for ${args.songId} — check the app log for an ffmpeg spawn failure.`,
+        );
+      }
+
+      return {
+        songId: args.songId,
+        noteCount: countNotes(scoringData),
+        alreadyCached: false,
+      };
     },
     setHistoryRecordingEnabled: (
       _: any,
