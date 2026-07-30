@@ -144,57 +144,123 @@ one offline-scoring input that can't be reconstructed from a log.
   validated offline against captured takes, but a live-sung card has never been
   eyeballed rendering. See open item #3.
 
+## Where this stands
+
+The scoring rebuild described in `scoring-scorecard-proposal.md` is implemented:
+the trace-keeping accumulator, the weighted-axis formula on a display curve, the
+per-take latency fit, the note-ribbon card, play counts, persisted scores, the
+history-recording gate, the melody mirror, and the 10ms pitch hop.
+
+**Everything measurable offline has been measured.** What has never happened is
+somebody singing a song on this build. That single act closes three open items
+at once (#1, #2, #3 below), so it is worth doing before anything else here.
+
 ## Open items / next steps
 
-1. ~~Tag songId in the probe and split multi-song logs.~~ **Done** — each
-   PROBE_PITCH line is `PROBE_PITCH <songId> <videoTime> <midi> <shift>`, and
-   `measureMicLatency.mjs` splits by song (`--song` to pick when several).
-2. ~~Re-tune band thresholds.~~ **Superseded.** The ladder sits on the displayed
-   number with `DISPLAY_CURVE` in between, so the formula and the scale move
-   independently — re-fit the curve, not the ladder. Currently fitted to the
-   54-take corpus by placing each band boundary at a chosen quantile, giving
-   38.8–96.6, mean 80.4, bands D:1 C:7 B:11 A:18 S:12 SS:5 SSS:0.
-   `scripts/replayScoring.mjs` prints that distribution.
+Ordered by what unblocks the most.
 
-   **Fit it on more than one room.** The first version of this curve was fitted
-   to 29 takes — all that survived a temp sweep — and that subset turned out to
-   be biased toward the better half of the room: on the full 54 it read about 4
-   points generous at the median and put a fifth of all takes into C.
-
-3. **Visually confirm a live-sung card.** Everything is offline-validated;
-   nobody has watched a real card render with the compensation + best-frame
-   applied. First sung song after this build settles it.
-4. **100–150ms notes** (~8% of a typical song) were unresolvable at a 25ms hop,
+1. **Sing one song and watch the card.** Nobody has seen a live-sung card render
+   — not the ribbon, not the play-count line, not the personal best. Everything
+   about them is offline-validated or built-and-typechecked only. This is the
+   longest-standing gap in this doc.
+2. **Confirm the 10ms poll loop against a real microphone.** `PitchFramer` is
+   unit-tested against synthetic tones and the addon exports the new binding,
+   but `pollPitch` has never run with a live mic. A "not a function" or a
+   mis-shaped batch would show up in the first second of singing.
+3. **Capture a corpus on the new framing and re-check `DISPLAY_CURVE`.** Live
+   scores will read slightly above the 25ms-hop corpus the curve was fitted on,
+   because `ScoreAccumulator` still buckets to 25ms slots and now picks the
+   closest of ~2.5 readings per slot instead of the only one. Small, unmeasured,
+   and only measurable with new singing. Probe logs are ~2.5x bigger now too
+   (~15-22MB a night).
+4. **Surface scores on the remocon.** The data is there (`scores.json`,
+   `scoreHistory`) and nothing reads it yet. The phone is where people actually
+   re-read a result; the TV card is gone in nine seconds.
+5. **Write the vibrato detector.** The 10ms hop makes rate measurable — a unit
+   test recovers 5.5Hz / ±50 cents from a synthetic tone, which the old framing
+   could not represent at all. The detector itself (4.5-8Hz band, coherence
+   gate, ≥3 cycles) still has to be written against
+   `ScoreAccumulator.samples()`, and validated on singing rather than a
+   synthesised tone. Depth is probably already measurable; rate was the blocker.
+6. **Redefine stability on held notes.** Frame-to-frame wobble measured 12-22
+   cents across every take in the corpus — the tracker's own noise floor, not
+   the singers. If it earns an axis it should be drift from note start to end,
+   and worst excursion within the note, where the corpus does show spread.
+7. **100-150ms notes** (~8% of a typical song) were unresolvable at a 25ms hop,
    hit only ~36% of the time even generously. The 10ms hop gives them 2-3x the
-   readings; whether that is enough is untested, and needs a corpus captured on
-   the new framing.
-5. **Vibrato is unblocked but unbuilt.** `PitchFramer` recovers a 5.5Hz / ±50
-   cent vibrato from a synthetic tone (a unit test asserts it), which the old
-   framing could not represent at all. Nothing yet reads that: the detector
-   described in the proposal — 4.5-8Hz band, coherence gate, ≥3 cycles — still
-   has to be written against `ScoreAccumulator.samples()`, and validated on real
-   singing rather than a synthesised tone.
+   readings; whether that is enough is untested and needs #3.
+8. **Scoop/fall counting** needs takes where somebody deliberately scooped, to
+   set a gate against. The prototype swung between 0% and 50% of notes on gate
+   choice alone.
+9. **A vocal-range readout** needs octave-corrected range estimation first: the
+   2nd percentile of detected pitch was MIDI 42-44 on every corpus take, which
+   is F2 for singers who plainly were not there.
 
-## Data captured so far
+## Decisions waiting on a human
 
-- **God Knows** (124975): latency ~105ms; A→S with compensation. Log was
-  overwritten (both takes teed to the same path).
-- **Vaundy 怪獣の花唄** (485151): latency ~104ms (consistent with God Knows —
-  calibration is stable across takes). Scored **S**: 81.2% raw → 86.2% with
-  best-frame credit. Log at `/tmp/latency-run.log` (until next capture
-  overwrites it).
+None of these block the work above; they change what it should look like.
+
+- **Is the band distribution right?** The curve puts 54 real takes at D:1 C:7
+  B:11 A:18 S:12 SS:5. Whether a fifth of a party reading C-or-below is honest
+  feedback or a bad night out is a product call, and it is one table to change.
+  SSS is currently set above the best take ever recorded, so it is reachable but
+  unearned — also a choice.
+- **`micLatencyCalibrationMs` is 80; the corpus fits ~105.** The per-take fit
+  absorbs the difference, so this is not urgent, but a better seed makes better
+  fits. `ScoreResult.compensationMs` across a night re-derives it.
+- **Upstream `dc712b36` ("Upgrade rubato") is not merged here.** It drops the
+  FFT resampler's output delay, which _reduces_ monitor latency and therefore
+  shifts the right seed above. Worth merging, and worth re-checking the seed
+  after.
+- **Duets score as the melody line only.** Every open mic feeds one accumulator
+  and the per-slot dedupe keeps the closest reading, so a harmony part reads as
+  off-pitch. _Beauty and the Beast_ scoring 58.5/C is partly this. Per-mic
+  scoring is possible — `pollPitch` already knows the mic index — but mic bleed
+  makes attribution unreliable without hard-panned inputs.
+
+## Rebuilding the corpus
+
+If `replayScoring.mjs` reports "no cached melody", the melodies expired (see
+above) and the probe logs are still fine. Start the app and run:
+
+```
+node scripts/backfillMelodies.mjs
+```
+
+It takes every JOYSOUND songId in the probe logs, fetches each song's audio
+through the app's own session, and re-extracts. ~8s a song, and melodies now
+land in the `userData` mirror where the sweep can't reach them.
+
+## The corpus
+
+54 takes from 25–26 July 2026 — six singers, two nights, one room. Every
+JOYSOUND song from those nights whose probe trace survived; the one DAM take
+(`3747-03`) can't be replayed because DAM ships its own scoring blob rather than
+a melody we extract.
+
+That is one room's worth of singing, and the display curve is fitted to it. It
+is enough to tell a rough take from a strong one; it is not enough to know how a
+different room sings.
 
 ## Where the code is
 
-- `src/common/scoring.ts` — the formula, bands, `ScoreAccumulator`,
-  best-frame credit.
+- `src/common/scoring.ts` — axes, weights, `DISPLAY_CURVE`, `BAND_THRESHOLDS`,
+  `SCORING_FORMULA_VERSION`, `placeSamples`, `fitCompensation`,
+  `ScoreAccumulator`.
 - `src/common/config.ts` — `micLatencyCalibrationMs`, `pitchProbeEnabled`.
-- `src/renderer/Player.tsx` — compensation assembly (config + live output),
-  card reveal, screenshot trigger.
-- `src/renderer/PianoRoll.tsx` — pitch poll, the PROBE_PITCH capture (gated,
-  songId-tagged; songId is passed in from Player purely for this).
-- `src/main/index.ts` — score-card screenshot handler + probe-log file
-  appender (both write under userData).
-- `native/karafriends-lib/src/lib.rs` — pitch detection, the pitch ring (now
-  drops stale audio, not fresh, on a late poll).
-- `scripts/measureMicLatency.mjs` — the latency sweep / calibration tool.
+- `src/renderer/Player.tsx` — compensation seed (config + live output), arming
+  and revealing, the play-count and personal-best fetches, score recording.
+- `src/renderer/ScoreCard.tsx`, `NoteRibbon.tsx` — the card and its ribbon.
+- `src/renderer/PianoRoll.tsx` — the pitch poll and the PROBE_PITCH capture.
+- `src/main/scores.ts` — persisted scores and `scoreHistoryFor`.
+- `src/main/joysoundMelody.ts` — melody extraction, the userData mirror.
+- `src/main/graphql.ts` — `songPlayCount`, `scoreHistory`, `recordScore`,
+  `backfillGuideMelody`, and the `historyRecordingEnabled` gate on `popSong`.
+- `native/karafriends-lib/src/pitch_framer.rs` — the sliding window, its hop,
+  and the synthetic-tone tests.
+- `scripts/replayScoring.mjs` — replay a corpus, print the distribution,
+  snapshot and diff across a change.
+- `scripts/backfillMelodies.mjs` — rebuild a lost melody cache.
+- `scripts/measureMicLatency.mjs` — the original latency sweep. Largely
+  superseded by the per-take fit; still the way to establish a seed on a new
+  machine.
