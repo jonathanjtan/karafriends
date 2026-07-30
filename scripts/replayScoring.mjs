@@ -21,8 +21,10 @@
 //   * PROBE_PITCH logs from `pitchProbeEnabled` --
 //     <userData>/probe-logs/probe-<date>.log (see the handoff doc for how to
 //     capture them; each line carries its songId, so one log holds a session).
-//   * the cached guide melody per song --
-//     <temp>/karafriends_tmp/joysound-<songId>-melody.bin.
+//   * the cached guide melody per song -- <userData>/melodies/ first, then
+//     <temp>/karafriends_tmp/, both named joysound-<songId>-melody.bin. The
+//     temp copy expires (macOS sweeps /var/folders by age, which is what took
+//     the original 29-take corpus out); the userData mirror is the durable one.
 // Both default to those locations; --logs and --melody-dir override.
 //
 // The compensation defaults to 105ms (config's 80 plus the ~25ms live output
@@ -132,8 +134,21 @@ function defaultLogDir() {
   return path.join(home, ".config/karafriends/probe-logs");
 }
 
-const defaultMelodyDir = () =>
-  path.join(fs.realpathSync(os.tmpdir()), "karafriends_tmp");
+// Searched in order, so an expired temp copy falls through to the mirror.
+function defaultMelodyDirs() {
+  return [
+    path.join(path.dirname(defaultLogDir()), "melodies"),
+    path.join(fs.realpathSync(os.tmpdir()), "karafriends_tmp"),
+  ];
+}
+
+function findMelody(dirs, songId) {
+  for (const dir of dirs) {
+    const candidate = path.join(dir, `joysound-${songId}-melody.bin`);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
 
 // Every PROBE_PITCH line across every log, keyed "<log stem>/<songId>" so the
 // same song sung twice on different nights stays two takes. Both the tagged
@@ -223,22 +238,23 @@ const args = parseArgs();
 if (args.diff) diff(args.diff[0], args.diff[1]);
 
 const logTarget = args.logs || defaultLogDir();
-const melodyDir = args.melodyDir || defaultMelodyDir();
+const melodyDirs = args.melodyDir ? [args.melodyDir] : defaultMelodyDirs();
 const compensationMs =
   args.compensation === undefined
     ? DEFAULT_COMPENSATION_MS
     : parseFloat(args.compensation);
 
-for (const [label, target] of [
-  ["probe logs", logTarget],
-  ["melody cache", melodyDir],
-]) {
-  if (!fs.existsSync(target)) {
-    console.error(
-      `No ${label} at ${target}. Capture a take with pitchProbeEnabled first (see docs/scoring-tuning-handoff.md), or pass --logs / --melody-dir.`,
-    );
-    process.exit(1);
-  }
+if (!fs.existsSync(logTarget)) {
+  console.error(
+    `No probe logs at ${logTarget}. Capture a take with pitchProbeEnabled first (see docs/scoring-tuning-handoff.md), or pass --logs.`,
+  );
+  process.exit(1);
+}
+if (!melodyDirs.some((dir) => fs.existsSync(dir))) {
+  console.error(
+    `No melody cache in any of:\n  ${melodyDirs.join("\n  ")}\nMelodies are written when a JOYSOUND song downloads; the userData copy is the durable one. Pass --melody-dir to point elsewhere.`,
+  );
+  process.exit(1);
 }
 
 const outDir = compileScoring();
@@ -256,8 +272,8 @@ const skipped = [];
 for (const [key, take] of [...takes.entries()].sort()) {
   if (args.song !== undefined && take.songId !== args.song) continue;
 
-  const melodyPath = path.join(melodyDir, `joysound-${take.songId}-melody.bin`);
-  if (!fs.existsSync(melodyPath)) {
+  const melodyPath = findMelody(melodyDirs, take.songId);
+  if (melodyPath === null) {
     skipped.push(`${key}: no cached melody`);
     continue;
   }

@@ -1,5 +1,7 @@
 import { spawn } from "child_process";
+import { app } from "electron"; // tslint:disable-line:no-implicit-dependencies
 import fs from "fs";
+import path from "path";
 
 import {
   buildScoringData,
@@ -15,6 +17,60 @@ const inFlightExtractions: Map<string, Promise<Uint8Array | null>> = new Map();
 
 function melodyCacheFilename(songId: string): string {
   return `${TEMP_FOLDER}/joysound-${songId}-melody.bin`;
+}
+
+// A durable copy beside config.yaml, because the temp dir is not a cache we
+// control: macOS sweeps /var/folders by *age* (about three days untouched),
+// not only on reboot, so a melody extracted last week is simply gone. Same
+// reasoning as song-history.json and the people registry.
+//
+// The composited videos in the temp dir are a genuine cache -- they re-download
+// -- but a melody is the one thing offline scoring work cannot reconstruct
+// without re-fetching the song, and it is a few KB of deterministic output per
+// song. scripts/replayScoring.mjs reads this directory too.
+const MELODY_MIRROR_DIR = path.join(app.getPath("userData"), "melodies");
+
+function melodyMirrorFilename(songId: string): string {
+  return path.join(MELODY_MIRROR_DIR, `joysound-${songId}-melody.bin`);
+}
+
+// Write both copies. The temp one stays the primary read path (it sits beside
+// the composited video, and everything else in the pipeline already looks
+// there); the mirror is what survives the sweep.
+function writeMelodyCache(songId: string, scoringData: Uint8Array): void {
+  try {
+    fs.writeFileSync(melodyCacheFilename(songId), scoringData);
+  } catch (e) {
+    console.error(`Failed writing guide melody cache for ${songId}`, e);
+  }
+  try {
+    fs.mkdirSync(MELODY_MIRROR_DIR, { recursive: true });
+    fs.writeFileSync(melodyMirrorFilename(songId), scoringData);
+  } catch (e) {
+    console.error(`Failed writing guide melody mirror for ${songId}`, e);
+  }
+}
+
+// The cached melody from wherever it survived. A mirror hit is restored into
+// the temp dir on the way past, so the next read is local again and the file
+// sits beside its video as the rest of the pipeline expects.
+function readMelodyCache(songId: string): Uint8Array | null {
+  try {
+    return fs.readFileSync(melodyCacheFilename(songId));
+  } catch {
+    // Not in temp; fall through to the mirror.
+  }
+  try {
+    const mirrored = fs.readFileSync(melodyMirrorFilename(songId));
+    try {
+      fs.writeFileSync(melodyCacheFilename(songId), mirrored);
+    } catch (e) {
+      console.error(`Failed restoring guide melody for ${songId}`, e);
+    }
+    return mirrored;
+  } catch {
+    return null;
+  }
 }
 
 // Decodes the guide melody (FC) channel of a media file or in-memory ogg
@@ -90,11 +146,7 @@ async function extractAndCache(
 
   // Cached even when empty (header with zero notes) so songs without a
   // usable guide melody aren't re-analyzed on every replay.
-  try {
-    fs.writeFileSync(melodyCacheFilename(songId), scoringData);
-  } catch (e) {
-    console.error(`Failed writing guide melody cache for ${songId}`, e);
-  }
+  writeMelodyCache(songId, scoringData);
   console.info(`Guide melody extraction for ${songId}: ${notes.length} notes`);
   return scoringData;
 }
@@ -107,7 +159,10 @@ export function ensureJoysoundGuideMelody(
   source: { oggBuffer?: Buffer; mediaFilename?: string },
 ): void {
   if (inFlightExtractions.has(songId)) return;
-  if (fs.existsSync(melodyCacheFilename(songId))) return;
+  // readMelodyCache rather than an existsSync on the temp path: after a sweep
+  // the mirror still has it, and re-extracting a melody we already own would
+  // cost an ffmpeg decode and a pitch-track pass for nothing.
+  if (readMelodyCache(songId) !== null) return;
 
   inFlightExtractions.set(
     songId,
@@ -136,11 +191,8 @@ export async function getJoysoundScoringData(
   if (inFlight) {
     scoringData = await inFlight;
   } else {
-    try {
-      scoringData = fs.readFileSync(melodyCacheFilename(songId));
-    } catch {
-      return null;
-    }
+    scoringData = readMelodyCache(songId);
+    if (scoringData === null) return null;
   }
 
   if (scoringData === null || scoringData.length < 24) return null;

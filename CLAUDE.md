@@ -218,6 +218,11 @@ the OS temp dir (`app.getPath("temp")`) — so **Windows**
   composite when changing sync/compose logic**, or the app serves the stale
   cached file instead of recompositing.
 - `joysound-<songId>-melody.bin` — extracted guide-melody scoring data.
+  **Mirrored to `<userData>/melodies/`** and restored from there when the temp
+  copy has expired, so a sweep costs a file copy rather than a re-extraction.
+  Same reasoning as `song-history.json`: this dir is swept by age (~3 days),
+  not only on reboot, and a melody can't be reconstructed without re-fetching
+  the song.
 - `joysound-<songId>.joy_02` — telop (lyrics/timing) blob.
 - `yt-<ytid>.log`, `joysound-<songId>.log` —
   yt-dlp / ffmpeg logs. Read these first when a download or compose fails.

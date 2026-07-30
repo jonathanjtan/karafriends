@@ -88,26 +88,29 @@ terminal), each line is songId-tagged so a whole session splits cleanly by
 song, and the per-day file is in userData (survives an OS temp sweep). Turn the
 flag off when done collecting to stop the writes.
 
-## The corpus is not durable — mirror the melodies
+## The melody cache, and why the corpus was lost once
 
-**The 29-take corpus this formula was tuned on is no longer replayable.** The
-probe logs survive (they are in `userData`), but `replayScoring.mjs` also needs
-`<temp>/karafriends_tmp/joysound-<songId>-melody.bin`, and macOS sweeps
-`/var/folders/.../T/` by **age**, not only on reboot — roughly three days
-untouched. The 25–26 July melodies were gone by 30 July, and the tool now
-reports "no cached melody" for every take.
+`replayScoring.mjs` needs two things per take: the probe log and the song's
+extracted guide melody. The logs live in `userData` and are safe. The melodies
+used to live only in the temp dir — and macOS sweeps `/var/folders/.../T/` by
+**age**, roughly three days untouched, not only on reboot. The 25–26 July
+melodies were gone by 30 July and every corpus take reported "no cached melody".
 
-Regenerating them means re-queueing each song so the JOYSOUND fetch and melody
-extraction run again. Before the next tuning session, either do that or — better
-— **mirror `-melody.bin` into `userData` the way `song-history.json` is
-mirrored**. A melody is a few KB, deterministic per song, and it is the only
-input to offline scoring work that we can't reconstruct from a log. The
-composited videos are a genuine cache and should keep expiring.
+Melodies are now **mirrored to `<userData>/melodies/`** as they are extracted
+(`src/main/joysoundMelody.ts`). The temp copy stays the primary read path — it
+sits beside the composited video, where the rest of the pipeline looks — and a
+mirror hit is restored into the temp dir on the way past, so a swept cache heals
+itself on the next play instead of re-running an ffmpeg decode and a pitch-track
+pass. `replayScoring.mjs` searches `userData` first, then temp.
 
-Numbers already recorded in this doc and in
-`docs/scoring-scorecard-proposal.md` came from that corpus while it existed;
-they are still the measurements the formula was calibrated on, but they can't be
-re-derived until the melodies are back.
+This does not bring the original corpus back: those melodies predate the mirror.
+Re-queueing each song regenerates them. The numbers recorded in this doc and in
+`docs/scoring-scorecard-proposal.md` are the measurements the formula was
+calibrated on, and can't be re-derived until that happens.
+
+The composited videos are a genuine cache and should keep expiring — they
+re-download. A melody is a few KB of deterministic output per song and is the
+one offline-scoring input that can't be reconstructed from a log.
 
 ## Gotchas (learned the hard way this session)
 
