@@ -250,6 +250,40 @@ recording is off, and nothing at all in the normal case.
 Sequencing note: this should land _before_ play counts are surfaced, or the first
 counts anyone sees will already be wrong.
 
+### Implementation checklist
+
+`historyRecordingEnabled`, as a standard synced setting. Sites in the order the
+root `CLAUDE.md` recipe lists them (line numbers as of `9739981c`). Every one sits
+next to its `experimentalScoringEnabled` equivalent, which is the closest existing
+model — same shape, boolean, commits immediately rather than debounced:
+
+- `src/main/graphql.ts`
+  - `NotARealDb` field (beside :1391) and **both** `db` init sites (:1478, :1644);
+    the second is `loadDb`'s default for an older `queue.json`.
+  - `SubscriptionEvent` enum member (beside :1426).
+  - Query resolver (beside :2612), mutation + pubsub publish (beside :3091),
+    subscription resolver (beside :3268).
+  - **The gate itself**: the `db.songHistory.unshift` at :2875.
+  - Default `app.isPackaged`. `loadDb` must not clobber a persisted override with
+    that default — absent means "use the default", present means the user chose.
+- `src/common/schema.graphql` — query field (beside :54), mutation, subscription
+  (beside :208).
+- `src/common/hooks/useHistoryRecordingEnabled.ts` — copy
+  `useExperimentalScoringEnabled.ts`, including its `fetchQueryWithRetry` and
+  `WS_RECONNECTED_EVENT` refetch.
+- `src/common/settings/useRoomSettings.ts` — `Control<boolean>` in the type (:49),
+  call the hook (:80), add to the returned map (:125).
+- `src/common/settings/manifest.ts` — a `toggle` entry (beside :185). **Not**
+  `surfaces: ["remocon"]`; the TV needs it too.
+- `corepack yarn build-relay-dev`, then `corepack yarn tsc --noEmit -p
+tsconfig.json` (must stay at 0).
+
+Then the TV marker for the off state: a small persistent element, not a toast —
+the point is that it survives being ignored for three hours.
+
+Scoring is untouched by all of this, so `scripts/replayScoring.mjs --diff` against
+a snapshot should come back IDENTICAL. If it doesn't, something leaked.
+
 **Where this could go later.** An explicit night ("start the night" / "end the
 night") would give sessions to hang things off — a night summary, "3rd time
 tonight" distinct from "3rd time ever", and an unambiguous answer to whether a
