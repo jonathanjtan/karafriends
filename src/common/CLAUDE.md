@@ -131,6 +131,32 @@ old clients).
   format, cached as `-melody.bin`.
   - Tracker gotcha: use a **full lag scan every frame** — narrowing the search
     around the previous frame locks onto 2/3-subharmonics at melodic leaps.
+  - Octave outliers are folded against **local context** (`OCTAVE_CONTEXT_SECS`
+    either side), not the song's overall median. Against the global median the
+    fold clips any melody wider than its threshold — 40 of 53 cached melodies
+    sat pinned exactly at it, and Dancing Queen (21 semitones in DAM's chart)
+    had 18 of 204 notes moved, its genuine low notes folded up an octave and
+    its real tracking errors folded _twice_, past where they started. A wide
+    melody reaches its extremes through its neighbours; a tracking error is an
+    isolated note 15-25 semitones off the notes either side of it, which is
+    what local context tells apart. Costs nothing in scoring either way (the
+    scorer octave-folds deviations) — this is what the piano roll draws.
+  - Extraction output is versioned (`GUIDE_MELODY_EXTRACTION_VERSION`, stored
+    in word 5 of the blob). **Bump it whenever a change here would yield a
+    different note track from the same audio**: `joysoundMelody.ts` reads an
+    older version as a cache miss, and both callers of
+    `ensureJoysoundGuideMelody` already hold the audio (the ogg on download,
+    the composited video on a cache hit), so healing costs an ffmpeg decode and
+    no network. Without the bump, every already-cached song silently keeps the
+    old chart forever.
+- **Comparing a derived chart against DAM's authored one for the same song**
+  (the two services' recordings drift by up to a second across a track, so
+  re-fit the offset per window or the melodies look like they disagree): the
+  charts agree on 97-99% of frames by pitch class, with no phantom notes. What
+  differs is segmentation — DAM subdivides held notes onto a ~200-300ms grid,
+  the extraction holds one long note — which costs about a point of pitch,
+  since `noteCredit`'s sustain rescue wants an unbroken on-pitch run of half
+  the note. Scratch tooling for this lived in `.claude/repro/chart-compare/`.
 - DAM streams are plain stereo (no isolated guide channel), so the guide is
   **synthesized locally** from the scoring reference data with scheduled
   oscillators, tracking the video clock across play/pause/seek.

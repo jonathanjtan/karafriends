@@ -6,6 +6,8 @@ import path from "path";
 import {
   buildScoringData,
   extractGuideMelodyNotes,
+  GUIDE_MELODY_EXTRACTION_VERSION,
+  scoringDataExtractionVersion,
 } from "../common/guideMelody";
 import { resourcePaths, TEMP_FOLDER } from "../common/videoDownloader";
 
@@ -51,17 +53,35 @@ function writeMelodyCache(songId: string, scoringData: Uint8Array): void {
   }
 }
 
+// A melody extracted by an older version of the extraction is not the melody
+// this build would produce, so it reads as absent and gets rebuilt. Both
+// callers of ensureJoysoundGuideMelody already hold the audio (the ogg on
+// download, the composited video on a cache hit), so healing costs an ffmpeg
+// decode and a pitch-track pass -- no refetch, nothing the room waits on.
+function isCurrent(scoringData: Uint8Array, songId: string): boolean {
+  const version = scoringDataExtractionVersion(scoringData);
+  if (version === GUIDE_MELODY_EXTRACTION_VERSION) return true;
+  console.info(
+    `Guide melody for ${songId} was extracted by version ${version}; re-extracting for ${GUIDE_MELODY_EXTRACTION_VERSION}`,
+  );
+  return false;
+}
+
 // The cached melody from wherever it survived. A mirror hit is restored into
 // the temp dir on the way past, so the next read is local again and the file
 // sits beside its video as the rest of the pipeline expects.
 function readMelodyCache(songId: string): Uint8Array | null {
   try {
-    return fs.readFileSync(melodyCacheFilename(songId));
+    const cached = fs.readFileSync(melodyCacheFilename(songId));
+    if (isCurrent(cached, songId)) return cached;
+    // Stale in temp says nothing about the mirror, which may have been written
+    // by a different build; fall through and check it too.
   } catch {
     // Not in temp; fall through to the mirror.
   }
   try {
     const mirrored = fs.readFileSync(melodyMirrorFilename(songId));
+    if (!isCurrent(mirrored, songId)) return null;
     try {
       fs.writeFileSync(melodyCacheFilename(songId), mirrored);
     } catch (e) {

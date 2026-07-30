@@ -45,11 +45,23 @@ const MIN_NOTE_MS = 100;
 // Adjacent equal-pitch segments closer than this are one note with a flutter
 // in the middle (vibrato dip, tracker dropout), not two notes.
 const NOTE_MERGE_GAP_MS = 60;
-// A note this far from the melody's weighted-median pitch is assumed to be a
-// residual octave-tracking error and folded back in. Kept just above a
-// typical vocal melody's span (~±9 semitones around its median) so genuine
-// high-chorus notes survive.
+// A note this far from the pitch of the notes *around* it is assumed to be a
+// residual octave-tracking error and folded back in.
+//
+// Measured against the median of the whole song this misfires on any melody
+// wider than its threshold: Dancing Queen spans 21 semitones in DAM's chart, so
+// its lowest genuine notes sit more than 11 below the median and were folded an
+// octave up (18 of 204 notes moved), while the real tracking errors -- a fifth
+// lower again -- were folded twice and landed past where they started. Local
+// context separates the two cleanly, because a wide melody arrives at its
+// extremes through its neighbours and a tracking error does not: the errors are
+// isolated notes 15-25 semitones below the notes on either side of them.
 const OCTAVE_FOLD_THRESHOLD_SEMIS = 11;
+// How much of the melody either side of a note counts as its context. Wide
+// enough that a run of two or three consecutive bad notes can't outvote the
+// phrase they sit in, short enough to be local to the register the song is in
+// at that moment.
+const OCTAVE_CONTEXT_SECS = 4;
 // Notes separated by less than this are part of one sung phrase; the phrase
 // spans become the "lyrics intervals" that the piano roll uses to shade
 // no-singing stretches as free time.
@@ -58,6 +70,18 @@ const PHRASE_GAP_MS = 4000;
 // guide melody (e.g. the channel is missing or silent) and is discarded.
 const MIN_TOTAL_NOTES = 24;
 const MIN_TOTAL_VOICED_MS = 20000;
+
+// Bump when a change to this module would produce a different note track from
+// the same audio. Cached melodies carry it (see buildScoringData), and
+// joysoundMelody.ts treats an older one as a cache miss -- re-extraction runs
+// off the ogg or the composited video, both already on disk, so healing the
+// cache costs an ffmpeg decode and no network.
+//
+// 1: original extraction.
+// 2: octave outliers folded against local context rather than the song's
+//    overall median, which was clipping any melody wider than the threshold
+//    (40 of 53 cached melodies sat pinned exactly at it).
+export const GUIDE_MELODY_EXTRACTION_VERSION = 2;
 
 export interface GuideMelodyNote {
   startMs: number;
@@ -209,18 +233,52 @@ function segmentNotes(frames: (FramePitch | null)[]): GuideMelodyNote[] {
   return merged.filter((note) => note.endMs - note.startMs >= MIN_NOTE_MS);
 }
 
+// Duration-weighted median pitch of the notes within OCTAVE_CONTEXT_SECS of
+// `notes[index]`, excluding the note itself. Weighted by duration so a spray of
+// passing sixteenths can't outvote the held note they decorate. Null when the
+// note has too little company to judge it by -- the ends of the song, and songs
+// so sparse there is no local register to speak of.
+function localMedianPitch(
+  notes: readonly GuideMelodyNote[],
+  index: number,
+): number | null {
+  const centre = (notes[index].startMs + notes[index].endMs) / 2;
+  const weighted: number[] = [];
+
+  for (let i = index - 1; i >= 0; i--) {
+    if (centre - notes[i].endMs > OCTAVE_CONTEXT_SECS * 1000) break;
+    const frames = Math.max(
+      1,
+      Math.round((notes[i].endMs - notes[i].startMs) / 20),
+    );
+    for (let f = 0; f < frames; f++) weighted.push(notes[i].midi);
+  }
+  for (let i = index + 1; i < notes.length; i++) {
+    if (notes[i].startMs - centre > OCTAVE_CONTEXT_SECS * 1000) break;
+    const frames = Math.max(
+      1,
+      Math.round((notes[i].endMs - notes[i].startMs) / 20),
+    );
+    for (let f = 0; f < frames; f++) weighted.push(notes[i].midi);
+  }
+
+  if (weighted.length < 10) return null;
+  weighted.sort((a, b) => a - b);
+  return weighted[Math.floor(weighted.length / 2)];
+}
+
 function foldOctaveOutliers(notes: GuideMelodyNote[]): void {
   if (notes.length === 0) return;
 
-  const weighted: number[] = [];
-  for (const note of notes) {
-    const frames = Math.round((note.endMs - note.startMs) / 20);
-    for (let i = 0; i < frames; i++) weighted.push(note.midi);
-  }
-  weighted.sort((a, b) => a - b);
-  const median = weighted[Math.floor(weighted.length / 2)];
+  // Read every context off the original pitches, then apply: folding in place
+  // would let an early correction feed the next note's context and walk a whole
+  // phrase an octave.
+  const medians = notes.map((_, i) => localMedianPitch(notes, i));
 
-  for (const note of notes) {
+  for (let i = 0; i < notes.length; i++) {
+    const median = medians[i];
+    if (median === null) continue;
+    const note = notes[i];
     while (note.midi - median > OCTAVE_FOLD_THRESHOLD_SEMIS) note.midi -= 12;
     while (median - note.midi > OCTAVE_FOLD_THRESHOLD_SEMIS) note.midi += 12;
   }
@@ -279,6 +337,15 @@ export function parseScoringData(data: ArrayLike<number>): GuideMelodyNote[] {
   return notes;
 }
 
+// The extraction version a cached melody was built by, or 1 for blobs written
+// before the field existed (word 5 was left zero then). Only call this on our
+// own cache files: DAM's blobs carry an unrelated value in the same word.
+export function scoringDataExtractionVersion(data: ArrayLike<number>): number {
+  const words = new Uint32Array(Uint8Array.from(data).buffer);
+  if (words.length < 6) return 0;
+  return words[5] === 0 ? 1 : words[5];
+}
+
 // Serializes notes into the same binary layout as DAM's scoring reference
 // data (see PianoRoll.tsx): little-endian uint32 words with counts in the
 // header, note records (startMs, endMs, midi, flags) from word 6, then
@@ -289,6 +356,12 @@ export function buildScoringData(notes: GuideMelodyNote[]): Uint8Array {
   const words = new Uint32Array(6 + notes.length * 4 + intervals.length * 2);
   words[1] = notes.length;
   words[2] = intervals.length;
+  // DAM's real blobs do put something in word 5 (6333 and 6500 on the two
+  // surveyed), but nothing reads it: parseScoringData takes every count it
+  // needs from words 1-4. So it is free for our version in the blobs *we*
+  // write, and the version check only ever runs against our own cache files --
+  // a DAM blob never reaches it.
+  words[5] = GUIDE_MELODY_EXTRACTION_VERSION;
 
   let w = 6;
   for (const note of notes) {
