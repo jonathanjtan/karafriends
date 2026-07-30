@@ -47,15 +47,29 @@ const MIN_SCOREABLE_NOTES = 24;
 // single lucky frame earns little.
 const SUSTAIN_FRACTION = 0.5;
 
-// One accepted mic sample, kept rather than reduced away.
+// One accepted mic sample, exactly as the poll loop read it.
 //
-// The accumulator used to collapse each sample to a single absolute deviation
-// on arrival, which made every metric something addSample had to know how to
-// accumulate, and made anything it didn't already track unrecoverable after
-// the fact. Keeping the sample instead means a new metric is a pure function
-// of the finished trace, and a recorded take can be re-scored offline under a
-// different formula.
+// Deliberately un-processed: the compensation is NOT applied here and the
+// sample is not yet attached to a reference note. Both happen in
+// placeSamples(), which finalize() runs more than once at different
+// compensations to find the one that actually fits the take -- and it can only
+// do that if the samples are still where the singer put them.
 export interface ScoreSample {
+  // Video-clock time the sample was read, in seconds, uncompensated.
+  timeSecs: number;
+  // The detected pitch as it arrived, unfolded, so a metric can recover what
+  // octave folding would hide -- which register the singer was actually in.
+  midiNumber: number;
+  // The pitch shift in force when this sample was read. Per-sample rather than
+  // per-take because it is a synced setting somebody can turn mid-song.
+  pitchShiftSemis: number;
+  // Input level at this sample, or null when the caller didn't supply one
+  // (the native addon's rms is absent if Parcel reused a cached index.node).
+  rms: number | null;
+}
+
+// A sample attached to a reference note at a particular compensation.
+export interface PlacedSample {
   // Absolute frame-slot index on the SAMPLE_SLOT_MS grid. Absolute rather
   // than per-note, so "consecutive" (n then n+1) still means something across
   // a note boundary and not only inside one note.
@@ -63,29 +77,89 @@ export interface ScoreSample {
   // Which reference note this sample was credited to.
   noteIndex: number;
   // Octave-folded distance from the reference pitch in semitones, **signed**.
-  // The sign is most of the reason to keep the sample at all: it is what
-  // separates a scoop into a note from a fall out of one, and a wobble around
-  // the pitch from a drift off it. The old absolute value discarded it.
+  // The sign is what separates a scoop into a note from a fall out of one, and
+  // a wobble around the pitch from a drift off it.
   deviation: number;
-  // The detected pitch as it arrived, unfolded, so a metric can recover what
-  // the folding hid -- which octave the singer was actually in, say.
   midiNumber: number;
-  // Input level at this sample, or null when the caller didn't supply one
-  // (the native addon's rms is absent if Parcel reused a cached index.node).
   rms: number | null;
+}
+
+// note index -> (frame slot -> the one sample kept for that slot)
+export type Placement = Map<number, Map<number, PlacedSample>>;
+
+// Attach raw samples to reference notes at a given compensation.
+//
+// Exported and pure so the metrics that don't live in finalize() -- long tone,
+// timing, vibrato -- work from exactly the placement the headline scored, and
+// so a recorded take can be re-placed offline at any offset.
+//
+// Samples falling in a gap between phrases are dropped rather than credited to
+// the nearest note: a rest is not a note, and crediting humming between
+// phrases would score it.
+export function placeSamples(
+  notes: readonly ScoringNote[],
+  samples: readonly ScoreSample[],
+  compensationMs: number,
+): Placement {
+  const placement: Placement = new Map();
+  // Time-ordered, so one forward-only pass over the notes suffices. Sorting
+  // here also makes the result independent of the order several mics' polls
+  // happened to interleave in, which the old arrival-time cursor was not.
+  const ordered = [...samples].sort((a, b) => a.timeSecs - b.timeSecs);
+  let cursor = 0;
+
+  for (const sample of ordered) {
+    const t = sample.timeSecs - compensationMs / 1000;
+    while (cursor < notes.length && notes[cursor].endTime < t) cursor++;
+    if (cursor >= notes.length) break;
+
+    const note = notes[cursor];
+    if (t < note.startTime) continue;
+
+    const slot = Math.floor((t * 1000) / SAMPLE_SLOT_MS);
+    const deviation = signedOctaveFoldedDeviation(
+      sample.midiNumber,
+      note.midiNumber + sample.pitchShiftSemis,
+    );
+
+    let slots = placement.get(cursor);
+    if (slots === undefined) {
+      slots = new Map();
+      placement.set(cursor, slots);
+    }
+    // One sample per note per slot: several open mics report the same instant,
+    // and keeping them all would inflate coverage. The closest read wins
+    // rather than the last one, so an idle channel's bleed can't displace the
+    // singer.
+    const existing = slots.get(slot);
+    if (
+      existing === undefined ||
+      Math.abs(deviation) < Math.abs(existing.deviation)
+    ) {
+      slots.set(slot, {
+        slot,
+        noteIndex: cursor,
+        deviation,
+        midiNumber: sample.midiNumber,
+        rms: sample.rms,
+      });
+    }
+  }
+
+  return placement;
 }
 
 // Longest run of consecutive on-pitch slots within one note. Slots are keyed
 // by absolute slot index, so "consecutive" is index n immediately followed by
 // n+1 (a gap, whether silent or off-pitch, breaks the run).
-function longestOnPitchRun(slots: Map<number, ScoreSample>): number {
+function longestOnPitchRun(slots: Map<number, PlacedSample>): number {
   const indices = [...slots.keys()].sort((a, b) => a - b);
   let best = 0;
   let run = 0;
   let prev: number | null = null;
   for (const idx of indices) {
     const onPitch =
-      Math.abs((slots.get(idx) as ScoreSample).deviation) <=
+      Math.abs((slots.get(idx) as PlacedSample).deviation) <=
       ON_PITCH_TOLERANCE_SEMIS;
     run =
       onPitch && prev !== null && idx === prev + 1 ? run + 1 : onPitch ? 1 : 0;
@@ -190,20 +264,20 @@ function bandFor(overall: number): ScoreBand {
   return "D";
 }
 
-// Accumulates mic samples against the reference notes over one song.
+// Records one song's worth of mic samples, and scores them when it ends.
 //
 // Fed from PianoRoll's poll loop (all mics into one accumulator -- whoever is
-// singing counts) and read once when the song ends. Samples arriving outside
-// any note are discarded rather than credited to the nearest one: the poll
-// loop's own note cursor reports the *upcoming* note during a rest, so
-// crediting by cursor position would score humming between phrases.
+// singing counts) and read once when the song ends. addSample only records;
+// attaching samples to reference notes is placeSamples' job, run from
+// finalize(), because the placement depends on a compensation that finalize
+// gets to choose.
 export class ScoreAccumulator {
   private notes: readonly ScoringNote[];
   private windowStart: number;
   private windowEnd: number;
-  // note index -> (frame slot -> the sample kept for that slot)
-  private hits: Map<number, Map<number, ScoreSample>> = new Map();
-  private cursor = 0;
+  // The raw take, in arrival order. Placing samples against notes is
+  // finalize()'s job now, not addSample's -- see placeSamples.
+  private trace: ScoreSample[] = [];
   private compensationMs: number;
 
   // compensationMs shifts every sample back before it is placed against a
@@ -238,83 +312,36 @@ export class ScoreAccumulator {
     pitchShiftSemis: number,
     rms?: number,
   ) {
-    const t = timeSecs - this.compensationMs / 1000;
-
-    // Advance past notes that have already finished. The cursor only moves
-    // forward; a seek resets it via reset().
-    while (
-      this.cursor < this.notes.length &&
-      this.notes[this.cursor].endTime < t
-    ) {
-      this.cursor++;
-    }
-    if (this.cursor >= this.notes.length) return;
-
-    const note = this.notes[this.cursor];
-    // In a gap between phrases the cursor sits on the upcoming note; a sample
-    // there belongs to no note at all.
-    if (t < note.startTime) return;
-
-    const slot = Math.floor((t * 1000) / SAMPLE_SLOT_MS);
-    const deviation = signedOctaveFoldedDeviation(
+    this.trace.push({
+      timeSecs,
       midiNumber,
-      note.midiNumber + pitchShiftSemis,
-    );
-
-    let slots = this.hits.get(this.cursor);
-    if (slots === undefined) {
-      slots = new Map();
-      this.hits.set(this.cursor, slots);
-    }
-    // One sample per note per slot: several open mics report the same instant,
-    // and keeping them all would inflate coverage. The closest read wins
-    // rather than the last one, so an idle channel's bleed can't displace the
-    // singer.
-    const existing = slots.get(slot);
-    if (
-      existing === undefined ||
-      Math.abs(deviation) < Math.abs(existing.deviation)
-    ) {
-      slots.set(slot, {
-        slot,
-        noteIndex: this.cursor,
-        deviation,
-        midiNumber,
-        // typeof rather than a default parameter: an addon predating the rms
-        // field leaves it absent, and callers on that path would otherwise
-        // record a level of zero, which is a lie a dynamics metric would read.
-        rms: typeof rms === "number" ? rms : null,
-      });
-    }
+      pitchShiftSemis,
+      // typeof rather than a default parameter: an addon predating the rms
+      // field leaves it absent, and callers on that path would otherwise
+      // record a level of zero, which is a lie a dynamics metric would read.
+      rms: typeof rms === "number" ? rms : null,
+    });
   }
 
-  // The take so far, slot-ordered. This is the raw material for metrics that
-  // don't live in finalize() -- an offline re-score under a different formula,
-  // or the long-tone/timing/vibrato work the proposal in
-  // docs/scoring-scorecard-proposal.md describes. Ordered by (slot, note) so
-  // a caller can walk it as a timeline; a slot can carry two samples when a
-  // note boundary falls inside it.
-  samples(): ScoreSample[] {
-    const out: ScoreSample[] = [];
-    for (const slots of this.hits.values()) {
-      for (const sample of slots.values()) out.push(sample);
-    }
-    return out.sort((a, b) =>
-      a.slot === b.slot ? a.noteIndex - b.noteIndex : a.slot - b.slot,
-    );
+  // The take so far, in arrival order and uncompensated. Raw material for
+  // metrics that don't live in finalize() and for an offline re-score under a
+  // different formula; pair it with placeSamples() to attach it to notes.
+  samples(): readonly ScoreSample[] {
+    return this.trace;
   }
 
-  // Seeking invalidates the forward-only cursor and would otherwise strand it
-  // past notes the singer is about to sing.
+  // A performance that skipped part of the song can't be judged against the
+  // whole melody, so a seek starts the take over.
   reset() {
-    this.hits.clear();
-    this.cursor = 0;
+    this.trace = [];
   }
 
   finalize(): ScoreResult | null {
     if (!isScoreable(this.notes) || this.windowEnd <= this.windowStart) {
       return null;
     }
+
+    const hits = placeSamples(this.notes, this.trace, this.compensationMs);
 
     let onPitchFrames = 0;
     let voicedFrames = 0;
@@ -332,7 +359,7 @@ export class ScoreAccumulator {
       const expected = Math.max(1, Math.round(durationMs / SAMPLE_SLOT_MS));
       expectedFrames += expected;
 
-      const slots = this.hits.get(i);
+      const slots = hits.get(i);
       if (slots === undefined) continue;
       notesAttempted++;
 
