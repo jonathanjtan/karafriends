@@ -126,6 +126,17 @@ type Query {
   # remocon or renderer sidebar without restarting or re-downloading the song.
   joysoundRomajiWordSegmentation: Boolean!
   songHistory(first: Int, after: String): SongHistoryConnection!
+  # How many times this singer has already sung this song, counted over
+  # songHistory and including the play in progress. Zero only when history
+  # recording is off, so callers should read 0 and 1 the same way ("first
+  # time"). Matched on personId when both sides have one, otherwise nickname --
+  # entries from before the singer registry carry no personId.
+  songPlayCount(
+    songType: String!
+    songId: String!
+    nickname: String!
+    personId: String
+  ): Int!
   suggestedYoutubeVideos(songId: String!): SuggestedYoutubeVideosResult!
   videoDownloadProgress(
     videoDownloadType: Int!

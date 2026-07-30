@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { commitMutation, fetchQuery, graphql } from "react-relay";
 import YoutubePlayer from "youtube-player";
 import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.graphql";
+import { PlayerSongPlayCountQuery } from "./__generated__/PlayerSongPlayCountQuery.graphql";
 
 import environment from "../common/graphqlEnvironment";
 import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
@@ -32,6 +33,22 @@ import QueueIntermission from "./QueueIntermission";
 import ScoreCard, { ScoredPerformance } from "./ScoreCard";
 import KarafriendsAudio from "./webAudio";
 
+const songPlayCountQuery = graphql`
+  query PlayerSongPlayCountQuery(
+    $songType: String!
+    $songId: String!
+    $nickname: String!
+    $personId: String
+  ) {
+    songPlayCount(
+      songType: $songType
+      songId: $songId
+      nickname: $nickname
+      personId: $personId
+    )
+  }
+`;
+
 const popSongMutation = graphql`
   mutation PlayerPopSongMutation {
     popSong {
@@ -49,6 +66,7 @@ const popSongMutation = graphql`
         userIdentity {
           nickname
           profilePictureUrl
+          personId
         }
       }
       ... on JoysoundQueueItem {
@@ -63,6 +81,7 @@ const popSongMutation = graphql`
         userIdentity {
           nickname
           profilePictureUrl
+          personId
         }
       }
       ... on YoutubeQueueItem {
@@ -341,7 +360,11 @@ function Player(props: {
     // Youtube/Nico (no reference data at all) from ever showing a card.
     const armScoring = (
       songScoringData: readonly number[],
-      meta: Omit<ScoredPerformance, "result" | "instrumentalBreaks">,
+      meta: Omit<
+        ScoredPerformance,
+        "result" | "instrumentalBreaks" | "timesSung"
+      >,
+      song: { songType: string; songId: string; personId: string | null },
     ) => {
       const { notes, lyricsIntervals, freeTimeIntervals } =
         parseScoringData(songScoringData);
@@ -356,10 +379,37 @@ function Player(props: {
       // each call site: this function already has the parsed data, and the
       // component-level `instrumentalBreaks` memo tracks the *current* song,
       // which by reveal time is the next one.
-      scoredSongMetaRef.current = {
+      const armed: Omit<ScoredPerformance, "result"> = {
         ...meta,
         instrumentalBreaks: findInstrumentalBreaks(freeTimeIntervals),
+        timesSung: 0,
       };
+      scoredSongMetaRef.current = armed;
+
+      // Fetched now rather than at reveal: the pop that started this song has
+      // already written it to the history, so the count is settled and
+      // includes this play. It also means a slow query can't delay the card.
+      //
+      // Zero when history recording is off (the dev default), which the card
+      // reads the same as one -- see the copy in ScoreCard.
+      fetchQuery<PlayerSongPlayCountQuery>(environment, songPlayCountQuery, {
+        songType: song.songType,
+        songId: song.songId,
+        nickname: meta.nickname,
+        personId: song.personId,
+      }).subscribe({
+        next: (response) => {
+          // Only if this is still the armed song: the fetch outlives a skip,
+          // and writing into the ref blindly would label the next singer's
+          // card with this one's count.
+          if (scoredSongMetaRef.current === armed) {
+            armed.timesSung = response.songPlayCount;
+          }
+        },
+        // A missing count is a missing line on the card, not a broken song.
+        error: (err: Error) =>
+          console.error("Song play count query failed:", err),
+      });
     };
 
     // Finalize whatever the accumulator collected and put the card up. Always
@@ -493,13 +543,21 @@ function Player(props: {
               setScoringData(popSong.scoringData);
               setScoringSongId(popSong.songId);
 
-              armScoring(popSong.scoringData, {
-                songName: popSong.name,
-                artistName: popSong.artistName,
-                nickname: popSong.userIdentity.nickname,
-                profilePictureUrl:
-                  popSong.userIdentity.profilePictureUrl ?? null,
-              });
+              armScoring(
+                popSong.scoringData,
+                {
+                  songName: popSong.name,
+                  artistName: popSong.artistName,
+                  nickname: popSong.userIdentity.nickname,
+                  profilePictureUrl:
+                    popSong.userIdentity.profilePictureUrl ?? null,
+                },
+                {
+                  songType: popSong.__typename,
+                  songId: popSong.songId,
+                  personId: popSong.userIdentity.personId ?? null,
+                },
+              );
 
               // DAM streams carry no audible guide melody; synthesize one
               // from the scoring notes, at the shared guide melody volume.
@@ -632,13 +690,21 @@ function Player(props: {
               setShouldShowJoysound(true);
               setShouldShowAdhocLyrics(false);
 
-              armScoring(popSong.scoringData ?? [], {
-                songName: popSong.name,
-                artistName: popSong.artistName,
-                nickname: popSong.userIdentity.nickname,
-                profilePictureUrl:
-                  popSong.userIdentity.profilePictureUrl ?? null,
-              });
+              armScoring(
+                popSong.scoringData ?? [],
+                {
+                  songName: popSong.name,
+                  artistName: popSong.artistName,
+                  nickname: popSong.userIdentity.nickname,
+                  profilePictureUrl:
+                    popSong.userIdentity.profilePictureUrl ?? null,
+                },
+                {
+                  songType: popSong.__typename,
+                  songId: popSong.songId,
+                  personId: popSong.userIdentity.personId ?? null,
+                },
+              );
 
               props.audio.gain(NON_DAM_GAIN);
 

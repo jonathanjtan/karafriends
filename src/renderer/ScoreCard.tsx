@@ -18,6 +18,28 @@ export interface ScoredPerformance {
   // Shaded on the ribbon. Passed in rather than derived here because Player
   // already parses the scoring data and computes these for the piano roll.
   instrumentalBreaks: readonly InstrumentalBreak[];
+  // How many times this singer has sung this song, this play included. 0 when
+  // history recording is off, or when the count query hasn't answered; both
+  // read as "first time", which is why the copy below never prints the number
+  // below 2.
+  timesSung: number;
+}
+
+// A detail, not a metric: no ranking, nothing comparing one singer to another.
+// Ordinals stop at "4th" and then go plain, because "23rd time" is funnier than
+// a superscript.
+function timesSungLabel(timesSung: number): string {
+  switch (timesSung) {
+    case 0:
+    case 1:
+      return "first time on this one";
+    case 2:
+      return "2nd time you've sung this";
+    case 3:
+      return "3rd time you've sung this";
+    default:
+      return `${timesSung}th time you've sung this`;
+  }
 }
 
 function nicknameBadge(nickname: string) {
@@ -88,6 +110,7 @@ export default function ScoreCard(props: {
     nickname,
     profilePictureUrl,
     instrumentalBreaks,
+    timesSung,
   } = props.performance;
   const portraitUrl =
     profilePictureUrl === null
@@ -131,6 +154,7 @@ export default function ScoreCard(props: {
           <span className="scoreCardOverallFraction">{fraction}</span>
           <span className="scoreCardOverallUnit">pts</span>
         </div>
+        <div className="scoreCardTimesSung">{timesSungLabel(timesSung)}</div>
       </div>
 
       <div className="scoreCardMain">

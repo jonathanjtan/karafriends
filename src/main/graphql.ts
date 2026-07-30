@@ -2428,6 +2428,31 @@ const resolvers = {
         __typename: "KarafriendsConfig",
       };
     },
+    // Counted server-side rather than by paging songHistory to the client: the
+    // history only grows, and the card wants one number.
+    songPlayCount: (
+      _: any,
+      args: {
+        songType: string;
+        songId: string;
+        nickname: string;
+        personId: string | null;
+      },
+    ): number =>
+      db.songHistory.filter(({ song }) => {
+        if (song.__typename !== args.songType || song.songId !== args.songId) {
+          return false;
+        }
+        const singer = song.userIdentity;
+        // personId is the real identity -- a phone handed around, or a cleared
+        // localStorage, still resolves to the same singer. It is absent on
+        // entries from before the registry existed, and on those the nickname
+        // is the best available answer.
+        if (args.personId && singer.personId) {
+          return singer.personId === args.personId;
+        }
+        return singer.nickname === args.nickname;
+      }).length,
     songHistory: (
       _: any,
       args: { first: number | null; after: string | null },

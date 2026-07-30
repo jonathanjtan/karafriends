@@ -315,3 +315,12 @@
 .scoreCardLegendRight {
   margin-left: auto;
 }
+
+/* Times sung. Sits under the score as a quiet aside -- it is colour, not a
+   result, so it must not compete with the number above it. */
+.scoreCardTimesSung {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.5vh;
+  color: #7b81a3;
+  margin-top: 0.4vh;
+}
