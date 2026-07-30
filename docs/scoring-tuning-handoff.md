@@ -88,6 +88,27 @@ terminal), each line is songId-tagged so a whole session splits cleanly by
 song, and the per-day file is in userData (survives an OS temp sweep). Turn the
 flag off when done collecting to stop the writes.
 
+## The corpus is not durable — mirror the melodies
+
+**The 29-take corpus this formula was tuned on is no longer replayable.** The
+probe logs survive (they are in `userData`), but `replayScoring.mjs` also needs
+`<temp>/karafriends_tmp/joysound-<songId>-melody.bin`, and macOS sweeps
+`/var/folders/.../T/` by **age**, not only on reboot — roughly three days
+untouched. The 25–26 July melodies were gone by 30 July, and the tool now
+reports "no cached melody" for every take.
+
+Regenerating them means re-queueing each song so the JOYSOUND fetch and melody
+extraction run again. Before the next tuning session, either do that or — better
+— **mirror `-melody.bin` into `userData` the way `song-history.json` is
+mirrored**. A melody is a few KB, deterministic per song, and it is the only
+input to offline scoring work that we can't reconstruct from a log. The
+composited videos are a genuine cache and should keep expiring.
+
+Numbers already recorded in this doc and in
+`docs/scoring-scorecard-proposal.md` came from that corpus while it existed;
+they are still the measurements the formula was calibrated on, but they can't be
+re-derived until the melodies are back.
+
 ## Gotchas (learned the hard way this session)
 
 - **`measureMicLatency.mjs` is now largely redundant for tuning.** The app
