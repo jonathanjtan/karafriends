@@ -180,6 +180,17 @@ TCP proxy (`.claude/tcp-proxy-8080.js`, port 3002 → app :8080) that
 carries both HTTP and graphql-ws, letting the preview browser drive the real
 running app's remocon.
 
+When the app on :8080 belongs to a **different checkout** (another worktree
+owns the port), that proxy serves _their_ remocon — the app reverse-proxies
+page requests to whichever dev static server holds :3000. Use
+**`karafriends-remocon-local-build`** instead
+(`.claude/remocon-preview-3006.js`, port 3006): it serves this checkout's
+`build/dev/remocon` and forwards only what it can't serve (`/graphql` incl.
+the websocket upgrade, `/portraits/*`) to :8080. Build the bundle first with
+`parcel build --target remocon --dist-dir build/dev --public-url .` — and
+**`rm -rf .parcel-cache` before the next full build**, or `run-dev` dies with
+`bundleInfoMap[bundleId] is not iterable` on the single-target cache.
+
 ## The temp/cache dir
 
 Everything downloaded/composited lives in a `karafriends_tmp/` folder under

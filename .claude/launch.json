@@ -8,6 +8,12 @@
       "port": 3002
     },
     {
+      "name": "karafriends-remocon-local-build",
+      "runtimeExecutable": "/Users/jtan/.local/node-v24.18.0-darwin-arm64/bin/node",
+      "runtimeArgs": [".claude/remocon-preview-3006.js"],
+      "port": 3006
+    },
+    {
       "name": "karafriends-remocon-static",
       "runtimeExecutable": "/Users/jtan/.local/node-v24.18.0-darwin-arm64/bin/node",
       "runtimeArgs": ["scripts/devStaticServer.mjs", "3005", "build/dev"],
