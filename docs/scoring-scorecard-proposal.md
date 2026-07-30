@@ -5,7 +5,14 @@ before/after cards). This file is the code-level half: what to change, where,
 and which claims are backed by measurement rather than taste.
 
 Complements `scoring-tuning-handoff.md`, which describes the current formula and
-the probe capture loop. Nothing here has been implemented.
+the probe capture loop.
+
+**Status.** Findings 1–5 are implemented: the formula is now
+`0.65·pitch + 0.20·longTone + 0.15·timing` on a display curve, with the
+compensation fitted per take. On the corpus that gives 58.5–96.3 (mean 81.5,
+bands C:3 B:7 A:9 S:7 SS:3) against the old 61.8–91.1 (mean 77.2, four bands
+used). The history-recording gate is in. Still open: the card redesign (mocks
+only), persisted scores, and everything blocked on the pitch hop.
 
 ## The corpus this rests on
 

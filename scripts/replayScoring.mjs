@@ -293,12 +293,16 @@ for (const [key, take] of [...takes.entries()].sort()) {
   const round = (n) => +n.toFixed(9);
   results[key] = {
     name: names.get(take.songId) || take.songId,
+    display: round(result.display),
     overall: round(result.overall),
     band: result.band,
-    accuracy: round(result.accuracy),
+    pitch: round(result.pitch),
+    longTone: result.longTone === null ? null : round(result.longTone),
+    timing: result.timing === null ? null : round(result.timing),
     coverage: round(result.coverage),
     notesAttempted: result.notesAttempted,
     notesTotal: result.notesTotal,
+    compensationMs: result.compensationMs,
     buckets: result.buckets.map((b) => (b === null ? null : round(b))),
   };
   rows.push({ key, ...results[key], samples: accumulator.samples().length });
@@ -320,18 +324,19 @@ if (args.out && args.out !== "-") {
   const pad = (s, n) => String(s).slice(0, n).padEnd(n);
   const num = (n, w, d = 1) => n.toFixed(d).padStart(w);
   console.log(
-    `${pad("take", 22)} ${pad("song", 24)} ${"score".padStart(6)} ${"band".padStart(4)} ${"pitch".padStart(6)} ${"cover".padStart(6)} ${"att".padStart(5)} ${"trace".padStart(6)}`,
+    `${pad("take", 22)} ${pad("song", 24)} ${"score".padStart(6)} ${"band".padStart(4)} ${"pitch".padStart(6)} ${"long".padStart(6)} ${"time".padStart(6)} ${"cover".padStart(6)} ${"fit".padStart(5)}`,
   );
-  for (const r of rows.sort((a, b) => a.overall - b.overall)) {
+  for (const r of rows.sort((a, b) => a.display - b.display)) {
     console.log(
-      `${pad(r.key, 22)} ${pad(r.name, 24)} ${num(r.overall * 100, 6)} ${r.band.padStart(4)} ${num(r.accuracy * 100, 6)} ${num(r.coverage * 100, 6)} ${num((r.notesAttempted / r.notesTotal) * 100, 5, 0)} ${String(r.samples).padStart(6)}`,
+      `${pad(r.key, 22)} ${pad(r.name, 24)} ${num(r.display, 6)} ${r.band.padStart(4)} ${num(r.pitch * 100, 6)} ${r.longTone === null ? "     -" : num(r.longTone * 100, 6)} ${r.timing === null ? "     -" : num(r.timing * 100, 6)} ${num(r.coverage * 100, 6)} ${num(r.compensationMs, 5, 0)}`,
     );
   }
   const bands = {};
   for (const r of rows) bands[r.band] = (bands[r.band] || 0) + 1;
-  const overalls = rows.map((r) => r.overall * 100).sort((a, b) => a - b);
+  const overalls = rows.map((r) => r.display).sort((a, b) => a - b);
+  const fits = rows.map((r) => r.compensationMs).sort((a, b) => a - b);
   console.log(
-    `\nn=${rows.length} at ${compensationMs}ms compensation · ${overalls[0].toFixed(1)}-${overalls[overalls.length - 1].toFixed(1)} · mean ${(overalls.reduce((a, b) => a + b, 0) / overalls.length).toFixed(1)} · ${Object.entries(
+    `\nn=${rows.length} seeded ${compensationMs}ms, fitted ${fits[0]}-${fits[fits.length - 1]} (median ${fits[Math.floor(fits.length / 2)]}) · ${overalls[0].toFixed(1)}-${overalls[overalls.length - 1].toFixed(1)} · mean ${(overalls.reduce((a, b) => a + b, 0) / overalls.length).toFixed(1)} · ${Object.entries(
       bands,
     )
       .map(([b, c]) => `${b}:${c}`)

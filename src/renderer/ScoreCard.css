@@ -164,3 +164,10 @@
   border-radius: 0.3vh;
   background: rgba(255, 255, 255, 0.15);
 }
+
+/* The raw fact behind an axis -- held-note count, attack spread. Quieter than
+   the value it annotates: it is evidence, not a second score. */
+.scoreCardBreakdownNote {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1.7vh;
+}

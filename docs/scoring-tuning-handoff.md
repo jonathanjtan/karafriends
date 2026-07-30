@@ -20,23 +20,43 @@ rules — the formula is entirely ours (`src/common/scoring.ts`).
   (start/end/midi) + lyrics intervals. No thresholds or weights in the data.
 - **Pitch**: native addon detects pitch over **25ms** windows (`sample_rate/40`);
   PianoRoll polls every 25ms and feeds `ScoreAccumulator.addSample`.
-- **Formula**: `overall = 0.7·accuracy + 0.3·coverage`.
-  - **accuracy**: per note, `max(frame-average on-pitch, best sustained
-on-pitch stretch)`, pooled across notes by voiced-frame count. The
-    best-sustained-stretch term (`SUSTAIN_FRACTION` in scoring.ts) was added
-    this session so short notes the singer hit aren't dragged down by the
-    boundary frames where the 25ms window blends adjacent pitches.
-  - **coverage**: per note, fraction of its expected 25ms slots that got any
-    sample, summed across notes (so it's time-weighted — long notes dominate).
+- **Formula**: `overall = 0.65·pitch + 0.20·longTone + 0.15·timing`, then a
+  display curve. Each axis is 0..1.
+  - **pitch**: per note, `max(graded frame average, best sustained on-pitch
+stretch)`, averaged over **every** reference note (an unsung note counts
+    zero). Note-averaged, not frame-pooled, so one held note can't outweigh a
+    verse, and so the headline and the 24-window graph are the same measurement.
+    Credit is **graded** — full inside 50 cents, ramping to zero at 125 — which
+    removed the boundary jitter the old hard 1.0-semitone step caused.
+  - **longTone**: over reference notes ≥1s, how much of each the singer held on
+    pitch. `null` when the song has no held notes.
+  - **timing**: consistency (interquartile spread) of note attacks, only for
+    notes with a locatable onset — a gap in front and quiet before it. `null`
+    below 6 such notes, which is common; the median attack error is reported as
+    a tendency but never scored.
+  - A `null` axis is filled with the take's own **pitch**, not renormalized
+    away: renormalizing makes a song with no held notes systematically easier.
+  - **coverage** is no longer in the headline. Across the corpus it varied
+    mostly with what the pitch tracker managed to voice, not with the singing;
+    it survives on `ScoreResult` as a diagnostic.
 - **Latency compensation**: a sung pitch reaches the scorer late (output path
-  the singer reacts to + input/ADC/USB capture path). `ScoreAccumulator` shifts
-  every sample back by `micLatencyCalibrationMs` (config, fixed, per-machine)
-  `+` live `AudioContext.outputLatency` (added in Player at song start).
+  the singer reacts to + input/ADC/USB capture path). The config value
+  (`micLatencyCalibrationMs` + live `AudioContext.outputLatency`) is now only a
+  **seed**: `finalize()` fits the compensation per take within ±120ms of it,
+  judged on `pitchScore` — the same axis the headline leads with, so a fitted
+  take can never score worse on pitch than the seed would have. The fit walks
+  out from the peak and returns the plateau midpoint (the surface is flat and
+  wide around the truth, so the argmax is noise), and refuses any fit that
+  wouldn't beat the seed.
   **macOS/cpal cannot report the input path** (its capture timestamp is just
-  the buffer size), so the fixed part is _measured_, not derived. Dev machine:
-  ~80ms calibration (measured total ~105ms − ~25ms live output).
-- **Bands** (`BAND_THRESHOLDS`): SSS ≥0.95, SS ≥0.90, S ≥0.80, A ≥0.70,
-  B ≥0.55, C ≥0.40, else D.
+  the buffer size), so the seed is still _measured_, not derived. Dev machine:
+  ~80ms calibration (measured total ~105ms − ~25ms live output). The **median
+  of `ScoreResult.compensationMs` across a night is an estimate of the
+  machine's real latency**, which is a cheaper way to re-derive that constant
+  than a probe session.
+- **Bands** (`BAND_THRESHOLDS`) sit on the **displayed** number, not the raw
+  composite, so retuning the formula means re-fitting `DISPLAY_CURVE` and
+  leaves the ladder alone: SSS ≥97, SS ≥93, S ≥87, A ≥78, B ≥68, C ≥55, else D.
 
 ## The data-collection loop
 
@@ -70,12 +90,12 @@ flag off when done collecting to stop the writes.
 
 ## Gotchas (learned the hard way this session)
 
-- **The sweep's "estimate" is a latency measurement, not the score the app
-  shows.** It reports a deliberately-conservative plateau midpoint; the app
-  applies the config offset, which can read a few points higher. The overall
-  score jitters ~20pts of coverage across a few ms near note-slot boundaries.
-  To know what the app scored, run the real `ScoreAccumulator` at the app's
-  actual compensation — don't quote the sweep number.
+- **`measureMicLatency.mjs` is now largely redundant for tuning.** The app
+  fits the compensation itself per take, so the config value only has to be in
+  the right ballpark; `ScoreResult.compensationMs` across a night is the better
+  estimate. The sweep is still the way to establish that ballpark on a new
+  machine. Either way, don't quote the sweep number as a score — run
+  `replayScoring.mjs` for that.
 - **Per-machine / per-output-device.** The calibration is specific to this
   machine and its current output. Bluetooth vs wired output alone swings the
   live term tens of ms (that part auto-adjusts; the fixed part doesn't).
@@ -91,9 +111,11 @@ flag off when done collecting to stop the writes.
 1. ~~Tag songId in the probe and split multi-song logs.~~ **Done** — each
    PROBE_PITCH line is `PROBE_PITCH <songId> <videoTime> <midi> <shift>`, and
    `measureMicLatency.mjs` splits by song (`--song` to pick when several).
-2. **Re-tune band thresholds.** Best-frame credit lifted overall scores ~5pts,
-   so the S ladder set earlier is now slightly easy. Needs several more takes
-   across song types to recalibrate against real distributions.
+2. ~~Re-tune band thresholds.~~ **Superseded.** The ladder now sits on the
+   displayed number with `DISPLAY_CURVE` in between, so the formula and the
+   scale move independently. On the 29-take corpus the current curve gives
+   58.5–96.3, mean 81.5, bands C:3 B:7 A:9 S:7 SS:3 — re-fit the curve, not the
+   ladder, if that distribution drifts.
 3. **Visually confirm a live-sung card.** Everything is offline-validated;
    nobody has watched a real card render with the compensation + best-frame
    applied. First sung song after this build settles it.

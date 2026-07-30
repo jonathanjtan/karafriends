@@ -16,22 +16,26 @@ import { ScoringInterval, ScoringNote } from "./scoringData";
 // graph. Verified on 96 songs: always 24, never song-length dependent.
 export const SCORE_BUCKET_COUNT = 24;
 
-// How far off a note a sample can land and still count as on-pitch. A
-// semitone is the natural unit here -- beyond it the singer is on a
-// different note.
-const ON_PITCH_TOLERANCE_SEMIS = 1.0;
+// Pitch credit is graded, not a step. A sample inside SOFT_FULL_SEMIS of the
+// note gets full credit; past it the credit ramps to zero at SOFT_ZERO_SEMIS.
+//
+// The old hard 1.0-semitone threshold scored 0.99 semitones as a perfect frame
+// and 1.01 as nothing, which is what made the score jitter by ~20 points of
+// coverage across a few milliseconds of compensation (docs/scoring-tuning-
+// handoff.md). 50 cents is about where a listener stops hearing "the note, a
+// bit off" and starts hearing "a different note"; 125 is comfortably past any
+// reading that deserves credit.
+const SOFT_FULL_SEMIS = 0.5;
+const SOFT_ZERO_SEMIS = 1.25;
+// The threshold for the yes/no questions that remain -- whether a slot counts
+// towards a sustained run, and whether a note was "landed". Half credit.
+const ON_PITCH_TOLERANCE_SEMIS = (SOFT_FULL_SEMIS + SOFT_ZERO_SEMIS) / 2;
 
 // Pitch is polled on this cadence (PianoRoll's setInterval), so it also
 // defines a "frame slot": at most one sample per note per slot counts. With
 // several mics open, the same instant otherwise contributes several samples
 // and inflates coverage.
 const SAMPLE_SLOT_MS = 25;
-
-// Accuracy answers "when they sang, were they on the note"; coverage answers
-// "did they sing the song at all". Scoring accuracy alone gives a full score
-// to someone who nails four notes and mumbles the rest, so both must count.
-const ACCURACY_WEIGHT = 0.7;
-const COVERAGE_WEIGHT = 0.3;
 
 // A song needs this much reference material for a score to mean anything.
 const MIN_SCOREABLE_NOTES = 24;
@@ -149,6 +153,262 @@ export function placeSamples(
   return placement;
 }
 
+// Graded pitch credit for one sample, 0..1. See SOFT_FULL_SEMIS.
+function pitchCredit(deviation: number): number {
+  const off = Math.abs(deviation);
+  if (off <= SOFT_FULL_SEMIS) return 1;
+  if (off >= SOFT_ZERO_SEMIS) return 0;
+  return (SOFT_ZERO_SEMIS - off) / (SOFT_ZERO_SEMIS - SOFT_FULL_SEMIS);
+}
+
+// How well one note was sung, 0..1: the better of its graded frame average and
+// how well the singer *sustained* the pitch (see SUSTAIN_FRACTION), so a short
+// note they clearly hit isn't dragged down by the boundary frames where the
+// 25ms detector window blends it with its neighbours.
+function noteCredit(
+  note: ScoringNote,
+  slots: Map<number, PlacedSample>,
+): number {
+  let graded = 0;
+  for (const sample of slots.values()) graded += pitchCredit(sample.deviation);
+
+  const expected = Math.max(
+    1,
+    Math.round(((note.endTime - note.startTime) * 1000) / SAMPLE_SLOT_MS),
+  );
+  const sustainSlots = Math.max(1, Math.ceil(expected * SUSTAIN_FRACTION));
+  const sustained = Math.min(1, longestOnPitchRun(slots) / sustainSlots);
+
+  return Math.max(graded / slots.size, sustained);
+}
+
+// The pitch axis: the mean of noteCredit over **every** reference note, a note
+// nobody sang counting as zero.
+//
+// Averaging over every note rather than only the attempted ones does two jobs.
+// It folds participation in for free -- sitting out the last chorus costs you
+// those notes -- and, more importantly, it makes this the same quantity the
+// compensation is fitted on, which is what guarantees fitting can never lower
+// a singer's pitch score. An average over *attempted* notes would let the fit
+// wander to an offset that strands most samples in the rests and then flatter
+// the handful that survived.
+//
+// Note-averaged rather than frame-pooled so one held note can't outweigh a
+// whole verse, and so this number and the per-note graph agree.
+export function pitchScore(
+  notes: readonly ScoringNote[],
+  placement: Placement,
+): number {
+  if (notes.length === 0) return 0;
+  let total = 0;
+  for (const [index, slots] of placement) {
+    total += noteCredit(notes[index], slots);
+  }
+  return total / notes.length;
+}
+
+// The compensation that best fits this take, searched within FIT_WINDOW_MS of
+// the caller's seed and judged on pitchScore -- the very axis the headline
+// leads with, so a fitted take can never score worse on pitch than the seed
+// would have.
+//
+// Returns the midpoint of the plateau rather than the argmax: the surface is
+// flat and wide around the truth, so the peak itself is noise. Falls back to
+// the seed when nothing landed on a note at all, which is the empty-room case.
+export function fitCompensation(
+  notes: readonly ScoringNote[],
+  samples: readonly ScoreSample[],
+  seedMs: number,
+): number {
+  const scored: [number, number][] = [];
+  let best = 0;
+  let peak = 0;
+  for (
+    let offset = seedMs - FIT_WINDOW_MS;
+    offset <= seedMs + FIT_WINDOW_MS;
+    offset += FIT_STEP_MS
+  ) {
+    const score = pitchScore(notes, placeSamples(notes, samples, offset));
+    if (score > best) {
+      best = score;
+      peak = scored.length;
+    }
+    scored.push([offset, score]);
+  }
+  if (best <= 0) return seedMs;
+
+  // Walk out from the peak while the score stays within tolerance, rather than
+  // filtering the whole sweep: a filter would include a second, separate hump
+  // and put the "midpoint" in the dip between the two, which is the one offset
+  // in the window that fits nothing.
+  const floor = best - FIT_PLATEAU_TOLERANCE;
+  let lo = peak;
+  let hi = peak;
+  while (lo > 0 && scored[lo - 1][1] >= floor) lo--;
+  while (hi < scored.length - 1 && scored[hi + 1][1] >= floor) hi++;
+  const fitted = (scored[lo][0] + scored[hi][0]) / 2;
+
+  // The plateau midpoint is normally the stable estimate, but it is not
+  // guaranteed to beat the seed on a lumpy surface. Since pitchScore is the
+  // criterion *and* the headline's leading axis, refusing a fit that would
+  // score worse than the seed makes "we scored you at the offset that suited
+  // you" unconditionally true.
+  const seedScore = pitchScore(notes, placeSamples(notes, samples, seedMs));
+  const fittedScore = pitchScore(notes, placeSamples(notes, samples, fitted));
+  return fittedScore >= seedScore ? fitted : seedMs;
+}
+
+// A reference note this long is a held note, and worth judging as one. Below
+// it there is nothing to sustain.
+const LONG_TONE_MIN_SECS = 1.0;
+// Fraction of a held note the singer has to stay on pitch for full credit.
+// Not 1.0: the attack and the release both cost frames nobody could hold.
+const LONG_TONE_HOLD_FRACTION = 0.7;
+
+// The long-tone axis: over reference notes at least LONG_TONE_MIN_SECS long,
+// how much of each one the singer actually held on pitch. Null when the song
+// has no held notes at all -- a fast song can't be judged on this, and saying
+// so is better than scoring it as a failure.
+//
+// This was the widest-spread axis after pitch on the corpus (12-92 against a
+// median 47), which is why it earns a place on the card.
+export function longToneScore(
+  notes: readonly ScoringNote[],
+  placement: Placement,
+): { score: number | null; count: number } {
+  let count = 0;
+  let total = 0;
+  for (let i = 0; i < notes.length; i++) {
+    const note = notes[i];
+    if (note.endTime - note.startTime < LONG_TONE_MIN_SECS) continue;
+    count++;
+    const slots = placement.get(i);
+    if (slots === undefined) continue;
+    const expected = Math.max(
+      1,
+      Math.round(((note.endTime - note.startTime) * 1000) / SAMPLE_SLOT_MS),
+    );
+    total += Math.min(
+      1,
+      longestOnPitchRun(slots) / (expected * LONG_TONE_HOLD_FRACTION),
+    );
+  }
+  return { score: count > 0 ? total / count : null, count };
+}
+
+// A note needs this much silence in front of it for its attack to be locatable
+// at all: mid-phrase, one note runs into the next and there is no onset to
+// measure. This is why the timing axis has so few samples per song.
+const ONSET_GAP_SECS = 0.15;
+// Slots of quiet required before the note starts, so the tail of the previous
+// phrase can't be mistaken for this note's attack.
+const ONSET_SILENT_SLOTS = 4;
+// How far either side of the note's start an attack is looked for.
+const ONSET_SEARCH_BEFORE_SLOTS = 4;
+const ONSET_SEARCH_AFTER_SLOTS = 12;
+// Fewer clean onsets than this and the spread is noise, not a rhythm reading.
+const ONSET_MIN_SAMPLES = 6;
+// Interquartile spread of attack error mapping to full marks and to zero.
+// 40ms is about as tight as the 25ms sampling can show; 260ms is ragged.
+const ONSET_TIGHT_MS = 40;
+const ONSET_LOOSE_MS = 260;
+
+// The timing axis: how *consistent* the singer's attacks are, not how early or
+// late. Consistency is the skill; a uniform lag is either the room's latency or
+// a stylistic choice, and the fitted compensation has already absorbed it.
+//
+// Returns the interquartile spread of attack error in ms alongside the score,
+// and the median as a tendency (negative = ahead of the beat, positive =
+// behind) for the card to show without scoring it. Null when too few notes have
+// a locatable attack.
+export function timingScore(
+  notes: readonly ScoringNote[],
+  samples: readonly ScoreSample[],
+  compensationMs: number,
+): {
+  score: number | null;
+  spreadMs: number | null;
+  medianMs: number | null;
+  count: number;
+} {
+  // Voiced slots across the whole take, so "was it quiet before this note" is
+  // answerable independently of which note a sample was placed against.
+  const voiced = new Map<number, ScoreSample>();
+  for (const sample of samples) {
+    const t = sample.timeSecs - compensationMs / 1000;
+    const slot = Math.floor((t * 1000) / SAMPLE_SLOT_MS);
+    if (!voiced.has(slot)) voiced.set(slot, sample);
+  }
+
+  const errors: number[] = [];
+  for (let i = 0; i < notes.length; i++) {
+    const gapBefore =
+      i === 0 ? Infinity : notes[i].startTime - notes[i - 1].endTime;
+    if (gapBefore < ONSET_GAP_SECS) continue;
+
+    const startSlot = Math.floor((notes[i].startTime * 1000) / SAMPLE_SLOT_MS);
+    let quiet = true;
+    for (let s = startSlot - ONSET_SILENT_SLOTS; s < startSlot - 1; s++) {
+      if (voiced.has(s)) {
+        quiet = false;
+        break;
+      }
+    }
+    if (!quiet) continue;
+
+    for (
+      let s = startSlot - ONSET_SEARCH_BEFORE_SLOTS;
+      s <= startSlot + ONSET_SEARCH_AFTER_SLOTS;
+      s++
+    ) {
+      const sample = voiced.get(s);
+      if (sample === undefined) continue;
+      // Require roughly the right pitch, so a cough or a neighbour's voice in
+      // the gap isn't taken for the attack.
+      const off = Math.abs(
+        signedOctaveFoldedDeviation(
+          sample.midiNumber,
+          notes[i].midiNumber + sample.pitchShiftSemis,
+        ),
+      );
+      if (off > SOFT_ZERO_SEMIS) continue;
+      const t = sample.timeSecs - compensationMs / 1000;
+      errors.push((t - notes[i].startTime) * 1000);
+      break;
+    }
+  }
+
+  if (errors.length < ONSET_MIN_SAMPLES) {
+    return {
+      score: null,
+      spreadMs: null,
+      medianMs: null,
+      count: errors.length,
+    };
+  }
+
+  const sorted = [...errors].sort((a, b) => a - b);
+  const at = (q: number) =>
+    sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+  const spreadMs = at(0.75) - at(0.25);
+  const mid = Math.floor(sorted.length / 2);
+  const medianMs =
+    sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+  return {
+    score: Math.max(
+      0,
+      Math.min(
+        1,
+        (ONSET_LOOSE_MS - spreadMs) / (ONSET_LOOSE_MS - ONSET_TIGHT_MS),
+      ),
+    ),
+    spreadMs,
+    medianMs,
+    count: errors.length,
+  };
+}
+
 // Longest run of consecutive on-pitch slots within one note. Slots are keyed
 // by absolute slot index, so "consecutive" is index n immediately followed by
 // n+1 (a gap, whether silent or off-pitch, breaks the run).
@@ -169,41 +429,129 @@ function longestOnPitchRun(slots: Map<number, PlacedSample>): number {
   return best;
 }
 
+// How far either side of the caller's compensation finalize() will look for a
+// better fit, and at what resolution.
+//
+// The corpus put the best-fitting compensation between 90 and 312ms against a
+// configured 105 (docs/scoring-scorecard-proposal.md, finding 3). Most of that
+// spread is not miscalibration -- it is singers sitting behind the beat, which
+// the old fixed offset charged to *pitch*. Fitting per take separates the two.
+//
+// The window is deliberately bounded rather than open: an unbounded search on
+// a repetitive song can find a flattering alignment a whole phrase away, which
+// would score the singer against the wrong bar of the song.
+const FIT_WINDOW_MS = 120;
+const FIT_STEP_MS = 5;
+// A candidate has to beat the peak by less than this to count as part of the
+// same plateau. The score surface around the true offset is flat and wide
+// (50-130ms across the corpus), so the argmax lands on noise inside it; the
+// midpoint of the plateau is the stable estimate. Measured in note-average
+// pitch credit, so 0.01 is one point.
+const FIT_PLATEAU_TOLERANCE = 0.01;
+
+// Axis weights, chosen by how well each one separated the 29-take corpus
+// rather than by taste: pitch spread 38-87, long tone 12-92, timing 36-251ms.
+// Timing is real but thin -- a median of six locatable attacks per song -- so
+// it carries the least.
+const WEIGHT_PITCH = 0.65;
+const WEIGHT_LONG_TONE = 0.2;
+const WEIGHT_TIMING = 0.15;
+
+// The display curve: raw composite -> the number shown.
+//
+// This exists so the formula and the scale are separate things. Band
+// thresholds sit on the *displayed* number, so retuning the formula means
+// re-fitting this table rather than moving every band -- which is the treadmill
+// the old design was on.
+//
+// The anchors come from the corpus: a raw composite in the low 0.5s is a take
+// that mostly worked, the high 0.7s is a strong one, and 0.9 raw is better than
+// anybody in the corpus managed. Every band is reachable, which was not true
+// before (49 saved cards used four of seven).
+const DISPLAY_CURVE: [number, number][] = [
+  [0.0, 0],
+  [0.3, 45],
+  [0.45, 62],
+  [0.55, 72],
+  [0.65, 80],
+  [0.72, 86],
+  [0.8, 92],
+  [0.88, 97],
+  [1.0, 100],
+];
+
+// Maps a raw 0..1 composite onto the 0..100 shown, piecewise-linearly.
+export function displayScore(raw: number): number {
+  if (raw <= 0) return 0;
+  for (let i = 1; i < DISPLAY_CURVE.length; i++) {
+    const [x1, y1] = DISPLAY_CURVE[i];
+    if (raw <= x1) {
+      const [x0, y0] = DISPLAY_CURVE[i - 1];
+      return y0 + ((raw - x0) / (x1 - x0)) * (y1 - y0);
+    }
+  }
+  return 100;
+}
+
 export type ScoreBand = "SSS" | "SS" | "S" | "A" | "B" | "C" | "D";
 
-// Calibrated against real singing rather than a theoretical 100%: a solid
-// full-voice take on this formula lands around 0.75, so A starts at 0.70 and
-// the S ladder sits above it. The headline percentage stays a true 0..1 --
-// the bands, not the number, carry "you did well".
+// Thresholds on the **displayed** number, not the raw composite, so retuning
+// the formula is a change to DISPLAY_CURVE and leaves this ladder alone.
 const BAND_THRESHOLDS: [ScoreBand, number][] = [
-  ["SSS", 0.95],
-  ["SS", 0.9],
-  ["S", 0.8],
-  ["A", 0.7],
-  ["B", 0.55],
-  ["C", 0.4],
+  ["SSS", 97],
+  ["SS", 93],
+  ["S", 87],
+  ["A", 78],
+  ["B", 68],
+  ["C", 55],
   ["D", 0],
 ];
 
 export interface ScoreResult {
-  // 0..1, the blended headline figure.
-  overall: number;
+  // The number to show, 0..100, after DISPLAY_CURVE. This is what `band` is
+  // derived from and what the card leads with.
+  display: number;
   band: ScoreBand;
-  // 0..1, how on-pitch the sung frames were, per note the better of the flat
-  // frame-average and the best sustained on-pitch stretch (see
-  // SUSTAIN_FRACTION), then pooled across notes weighted by voiced frames.
-  accuracy: number;
-  // 0..1, of the reference note time, how much received any voiced input.
+  // 0..1, the raw weighted composite before the display curve. Kept because
+  // it, not `display`, is the quantity to compare across formula versions.
+  overall: number;
+  // The axes, each 0..1. longTone and timing are null when the song can't be
+  // judged on them (no held notes; too few locatable attacks) -- the card shows
+  // that gap rather than hiding it, because a missing axis leans the headline
+  // harder on pitch.
+  pitch: number;
+  longTone: number | null;
+  timing: number | null;
+  // Held notes the long-tone axis looked at, and locatable attacks the timing
+  // axis measured, so the card can show the evidence beside the score.
+  longToneCount: number;
+  timingCount: number;
+  // Interquartile spread of attack error in ms (what timing scores), and its
+  // median as a tendency: negative is ahead of the beat, positive behind.
+  // Reported, never scored -- see timingScore.
+  timingSpreadMs: number | null;
+  timingMedianMs: number | null;
+  // 0..1, of the reference note time, how much received any voiced input. No
+  // longer part of the headline: across the corpus it varied mostly with what
+  // the pitch tracker managed to voice rather than with the singing (see
+  // finding 1 in docs/scoring-scorecard-proposal.md). Kept as a diagnostic.
   coverage: number;
-  // Per-bucket accuracy across the 24 display windows, null where the singer
-  // produced nothing at all in that window (an instrumental break, or a
-  // phrase they sat out) -- distinct from 0, which means they sang and
+  // Per-bucket note-average credit across the 24 display windows, null where
+  // the singer produced nothing at all in that window (an instrumental break,
+  // or a phrase they sat out) -- distinct from 0, which means they sang and
   // missed.
   buckets: (number | null)[];
   // Reference notes that had at least one voiced frame, and the total, so
   // the UI can say "you sang 41 of 58 phrases" without recomputing.
   notesAttempted: number;
   notesTotal: number;
+  // The compensation the take was actually scored at, after fitting (see
+  // fitCompensation), and the seed it was fitted from. The difference is the
+  // singer's own timing against this song; the median of `compensationMs`
+  // across a night is an estimate of the machine's real latency, which is what
+  // micLatencyCalibrationMs is trying to be.
+  compensationMs: number;
+  seedCompensationMs: number;
 }
 
 // Octave-agnostic distance from a sung pitch to a reference pitch, in
@@ -341,16 +689,27 @@ export class ScoreAccumulator {
       return null;
     }
 
-    const hits = placeSamples(this.notes, this.trace, this.compensationMs);
+    // Fit the alignment to this take rather than trusting the seed. A singer
+    // who sits behind the beat used to have that charged to pitch; scoring at
+    // the offset they actually sang at judges the timing once, and leaves the
+    // residual (compensationMs - seedCompensationMs) as the honest measure of
+    // it for the timing axis to read.
+    const compensationMs = fitCompensation(
+      this.notes,
+      this.trace,
+      this.compensationMs,
+    );
+    const hits = placeSamples(this.notes, this.trace, compensationMs);
 
-    let onPitchFrames = 0;
-    let voicedFrames = 0;
     let coveredFrames = 0;
     let expectedFrames = 0;
     let notesAttempted = 0;
 
-    const bucketOnPitch = new Array<number>(SCORE_BUCKET_COUNT).fill(0);
-    const bucketVoiced = new Array<number>(SCORE_BUCKET_COUNT).fill(0);
+    // The 24-window graph is note-averaged, exactly like the pitch axis, so a
+    // window's height and the headline are the same measurement at different
+    // resolutions.
+    const bucketCredit = new Array<number>(SCORE_BUCKET_COUNT).fill(0);
+    const bucketNotes = new Array<number>(SCORE_BUCKET_COUNT).fill(0);
     const windowSpan = this.windowEnd - this.windowStart;
 
     for (let i = 0; i < this.notes.length; i++) {
@@ -363,26 +722,6 @@ export class ScoreAccumulator {
       if (slots === undefined) continue;
       notesAttempted++;
 
-      let frameOnPitch = 0;
-      for (const sample of slots.values()) {
-        if (Math.abs(sample.deviation) <= ON_PITCH_TOLERANCE_SEMIS) {
-          frameOnPitch++;
-        }
-      }
-      // Credit the note by whichever is kinder: its flat frame-average, or how
-      // well the pitch was sustained (see SUSTAIN_FRACTION). creditedOnPitch is
-      // the equivalent on-pitch frame count -- feeding it to both the headline
-      // accuracy and the per-bucket graph keeps the two in agreement.
-      const frameAccuracy = frameOnPitch / slots.size;
-      const sustainSlots = Math.max(1, Math.ceil(expected * SUSTAIN_FRACTION));
-      const stretchCredit = Math.min(
-        1,
-        longestOnPitchRun(slots) / sustainSlots,
-      );
-      const noteOnPitch = Math.max(frameAccuracy, stretchCredit) * slots.size;
-
-      voicedFrames += slots.size;
-      onPitchFrames += noteOnPitch;
       // Capped: several mics, or a note shorter than one slot, can otherwise
       // report more frames than the note has room for.
       coveredFrames += Math.min(slots.size, expected);
@@ -397,24 +736,48 @@ export class ScoreAccumulator {
           ),
         ),
       );
-      bucketVoiced[bucket] += slots.size;
-      bucketOnPitch[bucket] += noteOnPitch;
+      bucketNotes[bucket]++;
+      bucketCredit[bucket] += noteCredit(note, slots);
     }
 
-    const accuracy = voicedFrames > 0 ? onPitchFrames / voicedFrames : 0;
+    const pitch = pitchScore(this.notes, hits);
+    const longTone = longToneScore(this.notes, hits);
+    const timing = timingScore(this.notes, this.trace, compensationMs);
     const coverage = expectedFrames > 0 ? coveredFrames / expectedFrames : 0;
-    const overall = ACCURACY_WEIGHT * accuracy + COVERAGE_WEIGHT * coverage;
+
+    // An unmeasurable axis is filled with the take's own pitch score, NOT
+    // renormalized away. Renormalizing made a song with no held notes
+    // systematically easier, because long tone is the axis singers score
+    // lowest on -- the first draft handed 言って。 and Bad Apple!! straight SS
+    // for the crime of being fast. Substituting pitch is the neutral choice;
+    // that it still leans the headline on pitch is why ScoreResult reports the
+    // gap for the card to show.
+    const axis = (value: number | null) => (value === null ? pitch : value);
+    const overall =
+      WEIGHT_PITCH * pitch +
+      WEIGHT_LONG_TONE * axis(longTone.score) +
+      WEIGHT_TIMING * axis(timing.score);
+    const display = displayScore(overall);
 
     return {
+      display,
+      band: bandFor(display),
       overall,
-      band: bandFor(overall),
-      accuracy,
+      pitch,
+      longTone: longTone.score,
+      timing: timing.score,
+      longToneCount: longTone.count,
+      timingCount: timing.count,
+      timingSpreadMs: timing.spreadMs,
+      timingMedianMs: timing.medianMs,
       coverage,
-      buckets: bucketVoiced.map((voiced, i) =>
-        voiced > 0 ? bucketOnPitch[i] / voiced : null,
+      buckets: bucketNotes.map((count, i) =>
+        count > 0 ? bucketCredit[i] / count : null,
       ),
       notesAttempted,
       notesTotal: this.notes.length,
+      compensationMs,
+      seedCompensationMs: this.compensationMs,
     };
   }
 }

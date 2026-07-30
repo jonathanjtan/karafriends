@@ -63,25 +63,39 @@ export default function ScoreCard(props: {
         {result.band}
       </div>
 
-      <div className="scoreCardOverall">{Math.round(result.overall * 100)}</div>
+      <div className="scoreCardOverall">{result.display.toFixed(1)}</div>
 
+      {/* One row per axis, each with the raw fact behind it: an unfamiliar
+          metric is only trustworthy next to its evidence. An axis the song
+          can't be judged on reads "—" rather than being quietly folded away
+          (see ScoreResult), because a missing axis leans the score on pitch. */}
       <div className="scoreCardBreakdown">
         <div>
           Pitch{" "}
           <span className="scoreCardBreakdownValue">
-            {Math.round(result.accuracy * 100)}%
+            {Math.round(result.pitch * 100)}
           </span>
         </div>
         <div>
-          Coverage{" "}
+          Long tone{" "}
           <span className="scoreCardBreakdownValue">
-            {Math.round(result.coverage * 100)}%
+            {result.longTone === null ? "—" : Math.round(result.longTone * 100)}
+          </span>{" "}
+          <span className="scoreCardBreakdownNote">
+            {result.longToneCount === 0
+              ? "no held notes"
+              : `${result.longToneCount} held`}
           </span>
         </div>
         <div>
-          Phrases{" "}
+          Timing{" "}
           <span className="scoreCardBreakdownValue">
-            {result.notesAttempted}/{result.notesTotal}
+            {result.timing === null ? "—" : Math.round(result.timing * 100)}
+          </span>{" "}
+          <span className="scoreCardBreakdownNote">
+            {result.timingSpreadMs === null
+              ? `${result.timingCount} attacks`
+              : `±${Math.round(result.timingSpreadMs)}ms`}
           </span>
         </div>
       </div>

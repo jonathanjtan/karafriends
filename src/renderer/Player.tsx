@@ -386,7 +386,7 @@ function Player(props: {
             .saveScoreCard({
               songName: meta.songName,
               band: result.band,
-              overall: Math.round(result.overall * 100),
+              overall: Math.round(result.display),
             })
             .catch((err) =>
               console.error("Score card screenshot request failed:", err),
