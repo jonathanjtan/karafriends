@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import { graphql, useLazyLoadQuery } from "react-relay";
-import { Link } from "react-router";
-import YouTubePlayer from "youtube-player";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
-import Button from "../Button";
+import useYouTubeEmbed, {
+  UNEMBEDDABLE_REASON_TEXT,
+} from "../../hooks/useYouTubeEmbed";
 import { withLoader } from "../Loader";
 import VideoMetadata from "../VideoMetadata";
 import * as styles from "./YouTubeInfo.module.scss";
@@ -46,9 +46,6 @@ interface Props {
 const YouTubeInfo = ({ videoId }: Props) => {
   const userIdentity = useUserIdentity();
 
-  const playerRef: React.MutableRefObject<ReturnType<
-    typeof YouTubePlayer
-  > | null> = useRef(null);
   const [adhocSongLyrics, setAdhocSongLyrics] = useState<string | null>(null);
   const [selectedCaption, setSelectedCaption] = useState<string | undefined>(
     undefined,
@@ -61,28 +58,15 @@ const YouTubeInfo = ({ videoId }: Props) => {
 
   const videoInfo = videoData.youtubeVideoInfo;
   // An embedded player shows a bare "Video unavailable" when the video is
-  // region-locked out of the US (phones usually aren't on the VPN) or when
-  // the uploader disabled embedding — fall back to the thumbnail instead.
-  // Neither condition affects playback: the download runs on the VPN'd host.
-  const canEmbed =
-    videoInfo.__typename === "YoutubeVideoInfo" &&
-    videoInfo.embeddable &&
-    videoInfo.availableInUs !== false;
-
-  useEffect(() => {
-    if (canEmbed) {
-      if (playerRef.current == null) {
-        playerRef.current = YouTubePlayer("youtube-player", { videoId });
-      } else {
-        playerRef.current.loadVideoById(videoId);
-        playerRef.current.stopVideo();
-      }
-    } else if (playerRef.current != null) {
-      // A previously embedded video may still be loaded (and even playing)
-      // in the now-hidden iframe.
-      playerRef.current.stopVideo();
-    }
-  }, [videoId, canEmbed]);
+  // region-locked out of the US (phones usually aren't on the VPN), when the
+  // uploader disabled embedding, or when the device trips a restriction the
+  // host didn't see — fall back to the thumbnail instead. None of that affects
+  // playback: the download runs on the VPN'd host.
+  const { canEmbed, unembeddableReason, showThumbnailsInstead } =
+    useYouTubeEmbed(
+      videoId,
+      videoInfo.__typename === "YoutubeVideoInfo" ? videoInfo : null,
+    );
 
   return (
     <div className={styles.container}>
@@ -91,6 +75,14 @@ const YouTubeInfo = ({ videoId }: Props) => {
       <div style={{ display: canEmbed ? "block" : "none" }}>
         <div id="youtube-player" />
       </div>
+      {videoInfo.__typename === "YoutubeVideoInfo" && canEmbed && (
+        <button
+          className={styles.embedFallbackButton}
+          onClick={showThumbnailsInstead}
+        >
+          Preview says "Video unavailable"? Show stills instead
+        </button>
+      )}
       {videoInfo.__typename === "YoutubeVideoInfo" && !canEmbed && (
         <>
           <img
@@ -111,9 +103,16 @@ const YouTubeInfo = ({ videoId }: Props) => {
             ))}
           </div>
           <p>
-            {videoInfo.availableInUs === false
-              ? "This video is region-locked outside Japan, so it can't be previewed here — but it can still be queued and played."
-              : "This video doesn't allow embedded previews — but it can still be queued and played."}
+            {unembeddableReason && UNEMBEDDABLE_REASON_TEXT[unembeddableReason]}{" "}
+            — but it can still be queued and played.{" "}
+            <a
+              className={styles.videoLink}
+              href={`https://www.youtube.com/watch?v=${videoId}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Watch on YouTube
+            </a>
           </p>
         </>
       )}

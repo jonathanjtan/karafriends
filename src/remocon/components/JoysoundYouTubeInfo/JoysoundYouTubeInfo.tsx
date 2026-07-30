@@ -1,7 +1,9 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect } from "react";
 import { graphql, useLazyLoadQuery } from "react-relay";
-import YouTubePlayer from "youtube-player";
 
+import useYouTubeEmbed, {
+  UNEMBEDDABLE_REASON_TEXT,
+} from "../../hooks/useYouTubeEmbed";
 import { withLoader } from "../Loader";
 import VideoMetadata from "../VideoMetadata";
 import * as styles from "./JoysoundYouTubeInfo.module.scss";
@@ -40,9 +42,6 @@ interface Props {
 }
 
 const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
-  const playerRef: React.MutableRefObject<ReturnType<
-    typeof YouTubePlayer
-  > | null> = useRef(null);
   const videoData = useLazyLoadQuery<JoysoundYouTubeInfoVideoInfoQuery>(
     joysoundYouTubeInfoVideoInfoQuery,
     { videoId },
@@ -50,39 +49,35 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
 
   const videoInfo = videoData.youtubeVideoInfo;
   // An embedded player shows a bare "Video unavailable" when the video is
-  // region-locked out of the US (phones usually aren't on the VPN) or when
-  // the uploader disabled embedding — fall back to the thumbnail instead.
-  // Neither condition affects the actual karaoke playback: the download runs
-  // on the (VPN'd) host machine.
-  const canEmbed =
-    videoInfo.__typename === "YoutubeVideoInfo" &&
-    videoInfo.embeddable &&
-    videoInfo.availableInUs !== false;
+  // region-locked out of the US (phones usually aren't on the VPN), when the
+  // uploader disabled embedding, or when the device trips a restriction the
+  // host didn't see — fall back to the thumbnail instead. None of that affects
+  // the actual karaoke playback: the download runs on the (VPN'd) host.
+  const { canEmbed, unembeddableReason, showThumbnailsInstead } =
+    useYouTubeEmbed(
+      videoId,
+      videoInfo.__typename === "YoutubeVideoInfo" ? videoInfo : null,
+    );
 
   useEffect(() => {
-    if (canEmbed) {
-      if (playerRef.current == null) {
-        playerRef.current = YouTubePlayer("youtube-player", {
-          videoId,
-        });
-      } else {
-        playerRef.current.loadVideoById(videoId);
-        playerRef.current.stopVideo();
-      }
-    } else if (playerRef.current != null) {
-      // A previously embedded video may still be loaded (and even playing)
-      // in the now-hidden iframe.
-      playerRef.current.stopVideo();
-    }
-
     if (videoId && videoInfo.__typename === "YoutubeVideoInfo") {
       setYoutubeVideoId(videoId);
     }
-  }, [videoId, canEmbed]);
+  }, [videoId, videoInfo.__typename]);
 
   return (
     <div className={styles.container}>
-      <h3>Selected background video: {videoId}</h3>
+      <h3>
+        Selected background video:{" "}
+        <a
+          className={styles.videoLink}
+          href={`https://www.youtube.com/watch?v=${videoId}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          {videoId}
+        </a>
+      </h3>
       {/* The YouTube API replaces #youtube-player with its iframe, so React
           must never unmount it; visibility is toggled on this wrapper. */}
       <div style={{ display: canEmbed ? "block" : "none" }}>
@@ -109,11 +104,18 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
               />
             ))}
           </div>
-          {!canEmbed && (
+          {canEmbed ? (
+            <button
+              className={styles.embedFallbackButton}
+              onClick={showThumbnailsInstead}
+            >
+              Preview says "Video unavailable"? Show stills instead
+            </button>
+          ) : (
             <p>
-              {videoInfo.availableInUs === false
-                ? "This video is region-locked outside Japan, so it can't be previewed here — but it will still work as the background video."
-                : "This video doesn't allow embedded previews — but it will still work as the background video."}
+              {unembeddableReason &&
+                UNEMBEDDABLE_REASON_TEXT[unembeddableReason]}{" "}
+              — but it will still work as the background video.
             </p>
           )}
         </>

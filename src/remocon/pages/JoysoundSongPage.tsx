@@ -141,6 +141,10 @@ const JoysoundSongPage = () => {
     // validated ID would otherwise queue the previously selected video (or
     // one whose validation failed) while the UI shows the new pick.
     setValidatedYoutubeVideoId("");
+    // Picking a suggestion IS setting the video. Leaving the URL form open
+    // behind it (with a "Set video" button still to press) reads as if the
+    // pick hadn't taken.
+    setWaitForVideoIdInput(false);
     clearLuckyState();
 
     history.replaceState(
@@ -229,7 +233,7 @@ const JoysoundSongPage = () => {
           >
             {waitForVideoIdInput
               ? "Cancel"
-              : "Set background video from YouTube"}
+              : "Set background video from YouTube URL"}
           </Button>
           <Button
             full
@@ -239,7 +243,7 @@ const JoysoundSongPage = () => {
           >
             {luckyLoading
               ? "Searching YouTube..."
-              : "Search background video from Youtube"}
+              : "Suggest background video from YouTube"}
           </Button>
         </>
       )}
