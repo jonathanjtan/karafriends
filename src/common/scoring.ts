@@ -47,16 +47,46 @@ const MIN_SCOREABLE_NOTES = 24;
 // single lucky frame earns little.
 const SUSTAIN_FRACTION = 0.5;
 
+// One accepted mic sample, kept rather than reduced away.
+//
+// The accumulator used to collapse each sample to a single absolute deviation
+// on arrival, which made every metric something addSample had to know how to
+// accumulate, and made anything it didn't already track unrecoverable after
+// the fact. Keeping the sample instead means a new metric is a pure function
+// of the finished trace, and a recorded take can be re-scored offline under a
+// different formula.
+export interface ScoreSample {
+  // Absolute frame-slot index on the SAMPLE_SLOT_MS grid. Absolute rather
+  // than per-note, so "consecutive" (n then n+1) still means something across
+  // a note boundary and not only inside one note.
+  slot: number;
+  // Which reference note this sample was credited to.
+  noteIndex: number;
+  // Octave-folded distance from the reference pitch in semitones, **signed**.
+  // The sign is most of the reason to keep the sample at all: it is what
+  // separates a scoop into a note from a fall out of one, and a wobble around
+  // the pitch from a drift off it. The old absolute value discarded it.
+  deviation: number;
+  // The detected pitch as it arrived, unfolded, so a metric can recover what
+  // the folding hid -- which octave the singer was actually in, say.
+  midiNumber: number;
+  // Input level at this sample, or null when the caller didn't supply one
+  // (the native addon's rms is absent if Parcel reused a cached index.node).
+  rms: number | null;
+}
+
 // Longest run of consecutive on-pitch slots within one note. Slots are keyed
 // by absolute slot index, so "consecutive" is index n immediately followed by
 // n+1 (a gap, whether silent or off-pitch, breaks the run).
-function longestOnPitchRun(slots: Map<number, number>): number {
+function longestOnPitchRun(slots: Map<number, ScoreSample>): number {
   const indices = [...slots.keys()].sort((a, b) => a - b);
   let best = 0;
   let run = 0;
   let prev: number | null = null;
   for (const idx of indices) {
-    const onPitch = (slots.get(idx) as number) <= ON_PITCH_TOLERANCE_SEMIS;
+    const onPitch =
+      Math.abs((slots.get(idx) as ScoreSample).deviation) <=
+      ON_PITCH_TOLERANCE_SEMIS;
     run =
       onPitch && prev !== null && idx === prev + 1 ? run + 1 : onPitch ? 1 : 0;
     best = Math.max(best, run);
@@ -103,17 +133,27 @@ export interface ScoreResult {
 }
 
 // Octave-agnostic distance from a sung pitch to a reference pitch, in
-// semitones. Deliberately stateless: PianoRoll's PitchDetectionBuffer keeps a
-// *running* octave offset tuned to stop a drawn trace jumping mid-phrase,
-// which carries state across notes and can drift after a bad frame. Scoring
-// wants each frame judged on its own.
-export function octaveFoldedDeviation(
+// semitones, keeping the direction: negative means the singer was under the
+// note, positive over it. Deliberately stateless: PianoRoll's
+// PitchDetectionBuffer keeps a *running* octave offset tuned to stop a drawn
+// trace jumping mid-phrase, which carries state across notes and can drift
+// after a bad frame. Scoring wants each frame judged on its own.
+export function signedOctaveFoldedDeviation(
   sungMidi: number,
   referenceMidi: number,
 ): number {
   const raw = sungMidi - referenceMidi;
-  const folded = ((((raw + 6) % 12) + 12) % 12) - 6;
-  return Math.abs(folded);
+  return ((((raw + 6) % 12) + 12) % 12) - 6;
+}
+
+// How far off the note a sample landed, direction discarded -- what the
+// pitch-accuracy terms below want. Anything that cares which side of the note
+// the singer was on wants signedOctaveFoldedDeviation instead.
+export function octaveFoldedDeviation(
+  sungMidi: number,
+  referenceMidi: number,
+): number {
+  return Math.abs(signedOctaveFoldedDeviation(sungMidi, referenceMidi));
 }
 
 // The span DAM's 24 display windows cover: the intersection of the note range
@@ -161,8 +201,8 @@ export class ScoreAccumulator {
   private notes: readonly ScoringNote[];
   private windowStart: number;
   private windowEnd: number;
-  // note index -> (frame slot -> best absolute deviation seen in that slot)
-  private hits: Map<number, Map<number, number>> = new Map();
+  // note index -> (frame slot -> the sample kept for that slot)
+  private hits: Map<number, Map<number, ScoreSample>> = new Map();
   private cursor = 0;
   private compensationMs: number;
 
@@ -188,8 +228,16 @@ export class ScoreAccumulator {
   // the raw detected pitch. pitchShiftSemis is applied to the reference note
   // here rather than baked into the stored notes: it is a synced setting that
   // can change mid-song, and the accumulator outlives the piano roll's GL
-  // effect (which rebuilds on every parent render).
-  addSample(timeSecs: number, midiNumber: number, pitchShiftSemis: number) {
+  // effect (which rebuilds on every parent render). rms is the input level, if
+  // the caller has one -- it is scored by nothing today and only recorded on
+  // the trace, since the dynamics metric that wants it can't be validated
+  // until real takes carry it.
+  addSample(
+    timeSecs: number,
+    midiNumber: number,
+    pitchShiftSemis: number,
+    rms?: number,
+  ) {
     const t = timeSecs - this.compensationMs / 1000;
 
     // Advance past notes that have already finished. The cursor only moves
@@ -208,7 +256,7 @@ export class ScoreAccumulator {
     if (t < note.startTime) return;
 
     const slot = Math.floor((t * 1000) / SAMPLE_SLOT_MS);
-    const deviation = octaveFoldedDeviation(
+    const deviation = signedOctaveFoldedDeviation(
       midiNumber,
       note.midiNumber + pitchShiftSemis,
     );
@@ -218,10 +266,42 @@ export class ScoreAccumulator {
       slots = new Map();
       this.hits.set(this.cursor, slots);
     }
+    // One sample per note per slot: several open mics report the same instant,
+    // and keeping them all would inflate coverage. The closest read wins
+    // rather than the last one, so an idle channel's bleed can't displace the
+    // singer.
     const existing = slots.get(slot);
-    if (existing === undefined || deviation < existing) {
-      slots.set(slot, deviation);
+    if (
+      existing === undefined ||
+      Math.abs(deviation) < Math.abs(existing.deviation)
+    ) {
+      slots.set(slot, {
+        slot,
+        noteIndex: this.cursor,
+        deviation,
+        midiNumber,
+        // typeof rather than a default parameter: an addon predating the rms
+        // field leaves it absent, and callers on that path would otherwise
+        // record a level of zero, which is a lie a dynamics metric would read.
+        rms: typeof rms === "number" ? rms : null,
+      });
     }
+  }
+
+  // The take so far, slot-ordered. This is the raw material for metrics that
+  // don't live in finalize() -- an offline re-score under a different formula,
+  // or the long-tone/timing/vibrato work the proposal in
+  // docs/scoring-scorecard-proposal.md describes. Ordered by (slot, note) so
+  // a caller can walk it as a timeline; a slot can carry two samples when a
+  // note boundary falls inside it.
+  samples(): ScoreSample[] {
+    const out: ScoreSample[] = [];
+    for (const slots of this.hits.values()) {
+      for (const sample of slots.values()) out.push(sample);
+    }
+    return out.sort((a, b) =>
+      a.slot === b.slot ? a.noteIndex - b.noteIndex : a.slot - b.slot,
+    );
   }
 
   // Seeking invalidates the forward-only cursor and would otherwise strand it
@@ -257,8 +337,10 @@ export class ScoreAccumulator {
       notesAttempted++;
 
       let frameOnPitch = 0;
-      for (const deviation of slots.values()) {
-        if (deviation <= ON_PITCH_TOLERANCE_SEMIS) frameOnPitch++;
+      for (const sample of slots.values()) {
+        if (Math.abs(sample.deviation) <= ON_PITCH_TOLERANCE_SEMIS) {
+          frameOnPitch++;
+        }
       }
       // Credit the note by whichever is kinder: its flat frame-average, or how
       // well the pitch was sustained (see SUSTAIN_FRACTION). creditedOnPitch is

@@ -17,11 +17,11 @@ through the real `ScoreAccumulator` the replay reproduces the saved cards
 against the saved cards' mean **76.4** / range **60–91** over 49 files, so the
 offline harness is a faithful stand-in for the app.
 
-Scratch harness used (not committed): compile `scoring.ts` + `scoringData.ts`
-with `tsc` to a temp dir the way `scripts/measureMicLatency.mjs` does, then
-replay the probe lines. If this work goes ahead, that harness is worth
-committing as `scripts/replayScoring.mjs` — it is the only way to compare two
-formulas on identical input.
+The harness is committed as **`scripts/replayScoring.mjs`**: it compiles the real
+`scoring.ts` (rather than reimplementing it, which drifts) and replays every take
+found in the probe logs. `--out before.json` / `--out after.json` / `--diff` is how
+a change is shown to move — or not move — the numbers; bare invocation prints the
+table.
 
 ## Findings
 

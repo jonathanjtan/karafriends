@@ -656,11 +656,15 @@ export default function PianoRoll(props: {
         }
         // Every open mic feeds one accumulator -- whoever is singing counts.
         // Duplicate samples from mic bleed are deduplicated by frame slot
-        // inside addSample, so extra mics can't inflate coverage.
+        // inside addSample, so extra mics can't inflate coverage. rms rides
+        // along on the trace (nothing scores it yet); it is undefined on an
+        // addon that predates the field, which addSample records as null
+        // rather than as a level of zero.
         props.scoreAccumulatorRef?.current?.addSample(
           props.videoRef.current.currentTime,
           midiNumber,
           props.pitchShiftSemis,
+          rms,
         );
       }
     }

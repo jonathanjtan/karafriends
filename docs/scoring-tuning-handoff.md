@@ -57,8 +57,11 @@ $TMPDIR/karafriends_tmp/joysound-<songId>-melody.bin [--song <songId>]` →
    is split automatically; with several songs the tool lists them and wants
    `--song` to pick one (and the matching `--melody`).
 5. For scoring behaviour (not latency), replay the samples through the real
-   `ScoreAccumulator` at the app's actual compensation, and/or bin per-note by
-   duration (throwaway scripts were used this session; not committed).
+   `ScoreAccumulator` at the app's actual compensation with
+   `node scripts/replayScoring.mjs` — it finds every take in the probe logs,
+   prints a table, and can snapshot/diff results across a change (`--out`,
+   `--diff`). `ScoreAccumulator.samples()` exposes the per-sample trace for
+   metrics that don't live in `finalize()`.
 
 **Leaving the probe on indefinitely**: fine — the app writes the log itself (no
 terminal), each line is songId-tagged so a whole session splits cleanly by
