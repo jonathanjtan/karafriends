@@ -139,7 +139,12 @@ plausible throughout while rate was nonsense. So JOYSOUND's 3×3 rate×depth gri
 is not deliverable today, but **depth and presence/duration probably are**, with a
 tightened detector (4.5–8 Hz band, coherence gate, ≥3 cycles).
 
-**What blocks rate is the framing, in two places in `lib.rs`:**
+**Update: this is fixed.** `native/karafriends-lib/src/pitch_framer.rs` now
+slides a 25ms window every 10ms and returns the whole batch per poll, and a unit
+test recovers a 5.5Hz vibrato from a synthetic tone. The detector that reads it
+still has to be written. What follows is the original diagnosis.
+
+**What blocked rate was the framing, in two places in `lib.rs`:**
 
 - `pitch_sample_count = sample_rate.div_ceil(40)` — a 25 ms window — and
   `get_pitch()` pops exactly one window per call. One estimate per JS poll,

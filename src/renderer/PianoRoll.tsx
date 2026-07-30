@@ -606,32 +606,44 @@ export default function PianoRoll(props: {
       micIndex: number,
     ) {
       if (!mic || !props.videoRef.current) return;
-      const { midiNumber, confidence, rms } = mic.getPitch();
-      // Publish the level before the gate can discard the frame — the whole
-      // point of the meter is to show what the gate is rejecting.
-      if (props.micLevelsRef && typeof rms === "number") {
-        props.micLevelsRef.current[micIndex] = rms;
+      // A batch, oldest first: the detector slides its window every 10ms while
+      // this poll runs every 25ms and late besides, so one call collects
+      // several readings. Each carries how far back it sits, which is what
+      // keeps them at the times they were sung instead of collapsing onto the
+      // instant they were collected.
+      const estimates = mic.getPitches();
+      if (estimates.length === 0) return;
+
+      // Publish the newest level before the gate can discard anything — the
+      // whole point of the meter is to show what the gate is rejecting.
+      const newest = estimates[estimates.length - 1];
+      if (props.micLevelsRef && typeof newest.rms === "number") {
+        props.micLevelsRef.current[micIndex] = newest.rms;
       }
-      // Confidence can't catch quiet-but-periodic bleed (YIN normalizes
-      // amplitude away), so the gate is an absolute level floor instead.
-      // rms is undefined when the addon behind us predates it (Parcel can
-      // reuse a cached index.node); the gate is then inert rather than
-      // gating everything.
-      if (
-        micRmsGateEnabledRef.current &&
-        typeof rms === "number" &&
-        rms < micRmsGateThresholdRef.current
-      ) {
-        return;
-      }
-      if (
-        confidence >= 0.8 &&
-        midiNumber !== 0 &&
-        !props.videoRef.current.paused
-      ) {
+
+      const videoTime = props.videoRef.current.currentTime;
+      if (props.videoRef.current.paused) return;
+
+      for (const { ageMs, midiNumber, confidence, rms } of estimates) {
+        // Confidence can't catch quiet-but-periodic bleed (YIN normalizes
+        // amplitude away), so the gate is an absolute level floor instead.
+        // rms is undefined when the addon behind us predates it (Parcel can
+        // reuse a cached index.node); the gate is then inert rather than
+        // gating everything.
+        if (
+          micRmsGateEnabledRef.current &&
+          typeof rms === "number" &&
+          rms < micRmsGateThresholdRef.current
+        ) {
+          continue;
+        }
+        if (confidence < 0.8 || midiNumber === 0) continue;
+
+        // Where this reading actually happened, not where the poll landed.
+        const sampleTime = videoTime - ageMs / 1000;
+
         while (
-          notes[currentNoteIndex].endTime <
-            props.videoRef.current.currentTime &&
+          notes[currentNoteIndex].endTime < sampleTime &&
           currentNoteIndex < notes.length - 2
         ) {
           currentNoteIndex++;
@@ -641,27 +653,27 @@ export default function PianoRoll(props: {
           midiNumber,
           medianMidiNumber,
           currentMidiNumber,
-          props.videoRef.current.currentTime,
+          sampleTime,
         );
         // Latency-calibration capture, off unless config.pitchProbeEnabled is
         // set (checked once when this effect ran, see pitchProbeEnabled). Each
         // accepted sample is buffered as
         //   PROBE_PITCH <songId> <videoTime> <midi> <shift>
         // and flushed to probe-logs/probe-<date>.log; the songId tag lets that
-        // log be split by song. Feed it to scripts/measureMicLatency.mjs.
+        // log be split by song. Feed it to scripts/replayScoring.mjs.
         if (pitchProbeEnabled) {
           probeBuffer.push(
-            `PROBE_PITCH ${probeSongId} ${props.videoRef.current.currentTime.toFixed(4)} ${midiNumber.toFixed(3)} ${props.pitchShiftSemis}`,
+            `PROBE_PITCH ${probeSongId} ${sampleTime.toFixed(4)} ${midiNumber.toFixed(3)} ${props.pitchShiftSemis}`,
           );
         }
         // Every open mic feeds one accumulator -- whoever is singing counts.
         // Duplicate samples from mic bleed are deduplicated by frame slot
-        // inside addSample, so extra mics can't inflate coverage. rms rides
+        // inside placeSamples, so extra mics can't inflate coverage. rms rides
         // along on the trace (nothing scores it yet); it is undefined on an
         // addon that predates the field, which addSample records as null
         // rather than as a level of zero.
         props.scoreAccumulatorRef?.current?.addSample(
-          props.videoRef.current.currentTime,
+          sampleTime,
           midiNumber,
           props.pitchShiftSemis,
           rms,

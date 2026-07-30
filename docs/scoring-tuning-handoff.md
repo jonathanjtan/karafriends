@@ -18,8 +18,22 @@ rules — the formula is entirely ours (`src/common/scoring.ts`).
 - **Reference melody**: JOYSOUND getFME ogg → extracted guide melody, or DAM's
   scoring blob. Both parse (`src/common/scoringData.ts`) to notes
   (start/end/midi) + lyrics intervals. No thresholds or weights in the data.
-- **Pitch**: native addon detects pitch over **25ms** windows (`sample_rate/40`);
-  PianoRoll polls every 25ms and feeds `ScoreAccumulator.addSample`.
+- **Pitch**: the native addon analyses **25ms** windows (`sample_rate/40`) and
+  slides them every **10ms** (`sample_rate/100`), in Rust. `get_pitches()`
+  returns every reading since the last call, each carrying an `ageMs` so
+  PianoRoll can place it at the moment it was sung rather than at the poll.
+  How often JS polls now affects only batching, not resolution — and nothing is
+  discarded when a poll runs late, which it does routinely.
+
+  **This changes what future probe logs look like.** They carry ~2.5x the lines
+  (a night is ~15-22MB rather than 6-9MB), and because `ScoreAccumulator` still
+  buckets to 25ms slots and keeps the _closest_ reading per slot, each slot now
+  picks the best of ~2.5 candidates instead of the only one. Expect live scores
+  to sit slightly above what the same singing would have scored before — small,
+  but unmeasured until there is a 10ms-hop corpus. **Re-check `DISPLAY_CURVE`
+  once one exists**; the current fit is from 25ms-hop traces, which replay
+  unchanged.
+
 - **Formula**: `overall = 0.65·pitch + 0.20·longTone + 0.15·timing`, then a
   display curve. Each axis is 0..1.
   - **pitch**: per note, `max(graded frame average, best sustained on-pitch
@@ -150,10 +164,16 @@ one offline-scoring input that can't be reconstructed from a log.
 3. **Visually confirm a live-sung card.** Everything is offline-validated;
    nobody has watched a real card render with the compensation + best-frame
    applied. First sung song after this build settles it.
-4. **100–150ms notes are unresolvable** (~8% of a typical song) — near the 25ms
-   detector's limit, hit only ~36% of the time even generously. Only a DSP
-   change (onset-aware / shorter adaptive detection window in the native addon)
-   would recover them; deferred as a real project.
+4. **100–150ms notes** (~8% of a typical song) were unresolvable at a 25ms hop,
+   hit only ~36% of the time even generously. The 10ms hop gives them 2-3x the
+   readings; whether that is enough is untested, and needs a corpus captured on
+   the new framing.
+5. **Vibrato is unblocked but unbuilt.** `PitchFramer` recovers a 5.5Hz / ±50
+   cent vibrato from a synthetic tone (a unit test asserts it), which the old
+   framing could not represent at all. Nothing yet reads that: the detector
+   described in the proposal — 4.5-8Hz band, coherence gate, ≥3 cycles — still
+   has to be written against `ScoreAccumulator.samples()`, and validated on real
+   singing rather than a synthesised tone.
 
 ## Data captured so far
 

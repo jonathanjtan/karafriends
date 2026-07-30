@@ -82,8 +82,8 @@ contextBridge.exposeInMainWorld("karafriends", {
       console.debug(`preload: deleting input device ${deviceId}`);
       delete inputDevices[deviceId];
     },
-    inputDevice_getPitch(deviceId: number) {
-      return nativeAudio.inputDevice_getPitch(inputDevices[deviceId]);
+    inputDevice_getPitches(deviceId: number) {
+      return nativeAudio.inputDevice_getPitches(inputDevices[deviceId]);
     },
     // Parcel rebuilds this bundle without necessarily re-copying index.node
     // (it will reuse a cached copy), so the addon behind us can be older than

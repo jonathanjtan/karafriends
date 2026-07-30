@@ -47,21 +47,31 @@ fn input_device__new(
     Ok(cx.boxed(RefCell::new(device)))
 }
 
-fn input_device__get_pitch(mut cx: FunctionContext) -> JsResult<JsObject> {
+// Every reading since the last call, oldest first. A batch rather than one
+// value because the analysis hop is finer than the caller's poll interval --
+// see karafriends_lib::pitch_framer.
+fn input_device__get_pitches(mut cx: FunctionContext) -> JsResult<JsArray> {
     let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
     let mut device = device.borrow_mut();
-    let (midi_number, confidence, rms) = match device.get_pitch() {
-        Ok((midi_number, confidence, rms)) => (midi_number, confidence, rms),
+    let estimates = match device.get_pitches() {
+        Ok(estimates) => estimates,
         Err(e) => return cx.throw_error(e.to_string()),
     };
-    let js_object = JsObject::new(&mut cx);
-    let midi_number = cx.number(midi_number);
-    let confidence = cx.number(confidence);
-    let rms = cx.number(rms);
-    js_object.set(&mut cx, "midiNumber", midi_number)?;
-    js_object.set(&mut cx, "confidence", confidence)?;
-    js_object.set(&mut cx, "rms", rms)?;
-    Ok(js_object)
+
+    let js_array = JsArray::new(&mut cx, estimates.len());
+    for (i, estimate) in estimates.iter().enumerate() {
+        let js_object = JsObject::new(&mut cx);
+        let age_ms = cx.number(estimate.age_ms);
+        let midi_number = cx.number(estimate.midi_number);
+        let confidence = cx.number(estimate.confidence);
+        let rms = cx.number(estimate.rms);
+        js_object.set(&mut cx, "ageMs", age_ms)?;
+        js_object.set(&mut cx, "midiNumber", midi_number)?;
+        js_object.set(&mut cx, "confidence", confidence)?;
+        js_object.set(&mut cx, "rms", rms)?;
+        js_array.set(&mut cx, i as u32, js_object)?;
+    }
+    Ok(js_array)
 }
 
 fn input_device__set_mic_output_enabled(mut cx: FunctionContext) -> JsResult<JsUndefined> {
@@ -84,7 +94,7 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("allocConsole", alloc_console)?;
     cx.export_function("inputDevices", input_devices)?;
     cx.export_function("inputDevice_new", input_device__new)?;
-    cx.export_function("inputDevice_getPitch", input_device__get_pitch)?;
+    cx.export_function("inputDevice_getPitches", input_device__get_pitches)?;
     cx.export_function(
         "inputDevice_setMicOutputEnabled",
         input_device__set_mic_output_enabled,

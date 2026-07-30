@@ -30,7 +30,15 @@ declare global {
         outputDevices: () => string[];
         inputDevice_new: (name: string, channelSelection: number) => number;
         inputDevice_delete: (deviceId: number) => void;
-        inputDevice_getPitch: (deviceId: number) => {
+        // Every reading since the last call, oldest first -- the analysis hop
+        // (10ms) is finer than the caller's poll interval, so a poll collects a
+        // batch rather than a value. Empty when less than one window has
+        // arrived.
+        inputDevice_getPitches: (deviceId: number) => {
+          // Milliseconds before the moment of this call that the reading's
+          // window ended. Subtract from the clock at poll time to place a
+          // reading where it was actually sung.
+          ageMs: number;
           midiNumber: number;
           confidence: number;
           // Absolute level (linear full-scale RMS) of the same window the
@@ -38,7 +46,7 @@ declare global {
           // it (Parcel can reuse a cached index.node); callers must treat a
           // missing value as "don't gate".
           rms?: number;
-        };
+        }[];
         inputDevice_setMicOutputEnabled: (
           deviceId: number,
           enabled: boolean,

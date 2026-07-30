@@ -1,6 +1,7 @@
 #![allow(non_snake_case)]
 
 mod pitch_detector;
+mod pitch_framer;
 mod reverb_module;
 
 use std::cmp::Ordering;
@@ -17,26 +18,29 @@ use rubato::Resampler;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
-// How many pitch-detection windows of headroom the input ring carries. One
-// window is what the detector consumes per call; the rest is slack for a late
-// poll, so the input callback never has to drop fresh audio. Four windows is
-// 100ms at 48kHz -- comfortably more jitter than a renderer setInterval shows
-// in practice, and still small enough that a stall discards audio rather than
-// letting a long backlog build up.
-const PITCH_RING_WINDOWS: usize = 4;
+// How many pitch-detection windows of headroom the input ring carries.
+//
+// Deep now, rather than just enough for jitter: nothing is discarded on the
+// consumer side any more, so the ring has to hold whatever a renderer stall
+// leaves unread. Forty windows is a full second at 48kHz (~176KB per mic),
+// past which PitchFramer's own cap drops the oldest audio anyway.
+const PITCH_RING_WINDOWS: usize = 40;
 
-// Discard everything in the pitch ring except the most recent `window`
-// samples. The ring carries several windows so the input callback never has
-// to drop fresh audio, but any backlog that accumulated since the last poll
-// is stale by definition -- the singer is at the newest end of it. Analysing
-// the oldest window instead would score the performance against audio that is
-// already one or more poll intervals late.
-fn skip_stale_pitch_samples(rx: &mut impl Consumer<Item = f32>, window: usize) {
-    let backlog = rx.occupied_len();
-    if backlog > window {
-        rx.skip(backlog - window);
-    }
-}
+// The detector's analysis window, as a divisor of the sample rate: 1/40th of a
+// second, 25ms. Bounded below by the lowest pitch worth resolving -- already
+// only two cycles at 80Hz -- so it does not shrink.
+const PITCH_WINDOW_DIVISOR: u32 = 40;
+
+// How far the window slides between readings: 1/100th of a second, 10ms. This,
+// not the window, is what sets how finely a *change* in pitch can be measured,
+// and it is why vibrato rate was unmeasurable while the two were the same
+// number. See pitch_framer.
+const PITCH_HOP_DIVISOR: u32 = 100;
+
+// Audio older than this is dropped unanalysed: a stall that long means the
+// singer has moved on, and it bounds both the work one poll can do and the
+// memory the framer holds.
+const PITCH_MAX_BACKLOG_SECS: f32 = 1.0;
 
 #[cfg(feature = "asio")]
 static CPAL_ASIO_HOST: LazyLock<std::result::Result<cpal::Host, cpal::HostUnavailable>> =
@@ -60,8 +64,7 @@ pub struct InputDevice {
     input_stream: Arc<Mutex<Stream>>,
     output_stream: Arc<Mutex<Stream>>,
     pitch_rx: ringbuf::HeapCons<f32>,
-    pitch_sample_count: usize,
-    pitch_detector: pitch_detector::PitchDetector,
+    pitch_framer: pitch_framer::PitchFramer,
     // Shared with the input callback, which reads it every buffer. Gates only
     // the mic's path out to the speakers (dry + reverb); pitch tracking
     // always sees the raw mic signal.
@@ -147,16 +150,13 @@ impl InputDevice {
             best_supported_output_config.sample_format(),
         );
 
-        let pitch_sample_count = input_config.sample_rate.div_ceil(40) as usize;
-        // Several windows deep, not one. The consumer (get_pitch) is a JS
-        // setInterval sharing a renderer with a WebGL draw loop, so it runs
-        // late routinely. At exactly one window the ring was full whenever
-        // that happened and push_slice -- which writes only what fits and
-        // drops the rest -- threw away the *newest* audio while get_pitch went
-        // on analysing the stale samples still sitting in the buffer. That
-        // both lost signal and added a jittery lateness on top of the
-        // systematic capture/output latency. The headroom absorbs the jitter;
-        // get_pitch discards all but the most recent window.
+        let pitch_sample_count = input_config.sample_rate.div_ceil(PITCH_WINDOW_DIVISOR) as usize;
+        // Deep enough to hold a stall. The consumer is a JS setInterval sharing
+        // a renderer with a WebGL draw loop, so it runs late routinely, and
+        // push_slice writes only what fits and drops the rest -- so a shallow
+        // ring loses the *newest* audio precisely when the poll is behind.
+        // Nothing is discarded on the read side any more, so the ring is sized
+        // to survive the stall rather than to paper over it.
         let (pitch_tx, pitch_rx) =
             ringbuf::HeapRb::new(pitch_sample_count * PITCH_RING_WINDOWS).split();
 
@@ -168,8 +168,14 @@ impl InputDevice {
         )
         .split();
 
-        let pitch_detector =
-            pitch_detector::PitchDetector::new(input_config.sample_rate as f32, pitch_sample_count);
+        // Windows overlap: 25ms of audio analysed every 10ms. See pitch_framer
+        // for why the hop is what matters.
+        let pitch_framer = pitch_framer::PitchFramer::new(
+            input_config.sample_rate as f32,
+            pitch_sample_count,
+            input_config.sample_rate.div_ceil(PITCH_HOP_DIVISOR) as usize,
+            (input_config.sample_rate as f32 * PITCH_MAX_BACKLOG_SECS) as usize,
+        );
 
         let error_callback = |e| panic!("{}", e);
 
@@ -440,8 +446,7 @@ impl InputDevice {
             input_stream: Arc::new(Mutex::new(Stream(input_stream))),
             output_stream: Arc::new(Mutex::new(Stream(output_stream))),
             pitch_rx,
-            pitch_sample_count,
-            pitch_detector,
+            pitch_framer,
             mic_output_enabled,
         })
     }
@@ -454,21 +459,23 @@ impl InputDevice {
             .store(enabled, AtomicOrdering::Relaxed);
     }
 
-    pub fn get_pitch(&mut self) -> Result<(f32, f32, f32)> {
-        skip_stale_pitch_samples(&mut self.pitch_rx, self.pitch_sample_count);
-
-        let mut samples = vec![0.0; self.pitch_sample_count];
+    /// Every pitch reading captured since the last call, oldest first.
+    ///
+    /// A batch rather than a single value because the analysis hop (10ms) is
+    /// finer than the caller's poll interval, and deliberately independent of
+    /// it: how often JS gets round to asking now affects only how many readings
+    /// come back at once, not how finely the singing was measured. Each carries
+    /// an age so the caller can place it at the moment it was sung.
+    ///
+    /// Empty when less than one window has arrived since the last call.
+    pub fn get_pitches(&mut self) -> Result<Vec<pitch_framer::PitchEstimate>> {
+        // Drain the whole ring: a backlog is real singing that happened while
+        // the poll was late, not staleness to skip past. PitchFramer caps how
+        // far back that goes.
+        let available = self.pitch_rx.occupied_len();
+        let mut samples = vec![0.0; available];
         let popped = self.pitch_rx.pop_slice(&mut samples);
-        // RMS over only the samples actually captured this window: the poll
-        // and the input callback aren't synchronized, so a partially-filled
-        // window would otherwise understate the level (zeros diluting it) and
-        // make an absolute-level gate flap on loud singing. YIN itself is
-        // amplitude-invariant, so callers need this to tell a singer from
-        // quiet-but-periodic bleed (e.g. a mixer's FX return on an idle
-        // channel).
-        let level = rms(&samples[..popped]);
-        let (midi_number, confidence) = self.pitch_detector.detect(samples);
-        Ok((midi_number, confidence, level))
+        Ok(self.pitch_framer.analyze(&samples[..popped]))
     }
 
     pub fn stop(&self) -> Result<()> {
@@ -610,7 +617,7 @@ impl InputDevice {
     }
 }
 
-fn rms(samples: &[f32]) -> f32 {
+pub(crate) fn rms(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return 0.0;
     }
@@ -783,50 +790,29 @@ mod tests {
     // hears nothing, but the pitch feed keeps getting the raw mic signal so
     // scoring and the piano roll survive being mixed through outboard gear.
     #[test]
-    // A late poll must be scored against what the singer is doing *now*, not
-    // against whatever was sitting at the front of the ring. Before the ring
-    // carried headroom, a backlog meant the newest audio was dropped on the
-    // producer side and the oldest was analysed on the consumer side -- the
-    // worst of both.
+    // A late poll must not cost the singing that happened while it was late.
+    // The ring is what buys that: nothing is discarded on the read side any
+    // more (PitchFramer analyses the whole backlog), so the ring has to be deep
+    // enough to hold a stall without the *producer* dropping the newest audio.
     #[test]
-    fn test_backlogged_pitch_ring_yields_the_newest_window() -> Result<()> {
+    fn test_pitch_ring_holds_a_stall_without_dropping_audio() -> Result<()> {
         let sample_rate = 44100u32;
         let window = (sample_rate as usize).div_ceil(40);
 
-        let (mut tx, mut rx) = ringbuf::HeapRb::<f32>::new(window * PITCH_RING_WINDOWS).split();
+        let (mut tx, rx) = ringbuf::HeapRb::<f32>::new(window * PITCH_RING_WINDOWS).split();
 
-        // Simulate a poll arriving three windows late: an old tone the singer
-        // has already moved on from, then the current one.
-        let stale = wf!(f32, sample_rate as f32, sine!(220.0))
+        // Half a second arriving before anyone reads: twenty windows, far more
+        // than the four the ring used to carry.
+        let stalled = wf!(f32, sample_rate as f32, sine!(220.0_f32))
             .iter()
-            .take(window * 2)
+            .take(window * 20)
             .collect::<Vec<f32>>();
-        let fresh = wf!(f32, sample_rate as f32, sine!(440.0))
-            .iter()
-            .take(window)
-            .collect::<Vec<f32>>();
-
-        // Nothing is dropped on the way in -- that is what the headroom buys.
-        assert_eq!(tx.push_slice(&stale), stale.len());
-        assert_eq!(tx.push_slice(&fresh), fresh.len());
-
-        skip_stale_pitch_samples(&mut rx, window);
-        assert_eq!(rx.occupied_len(), window);
-
-        let mut samples = vec![0.0; window];
-        let popped = rx.pop_slice(&mut samples);
-        assert_eq!(popped, window);
-
-        let mut detector = PitchDetector::new(sample_rate as f32, window);
-        let (midi_number, confidence) = detector.detect(samples);
-        assert!(
-            confidence > 0.5,
-            "expected a confident read, got {confidence}"
+        assert_eq!(
+            tx.push_slice(&stalled),
+            stalled.len(),
+            "the ring dropped audio during a stall it should have absorbed"
         );
-        assert!(
-            (midi_number - freq2midi(440.0)).abs() < 0.5,
-            "expected the newest window (440Hz), got midi {midi_number}"
-        );
+        assert_eq!(rx.occupied_len(), stalled.len());
         Ok(())
     }
 

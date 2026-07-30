@@ -17,8 +17,10 @@ export class InputDevice {
     registry.register(this, this.deviceId);
   }
 
-  getPitch() {
-    return window.karafriends.nativeAudio.inputDevice_getPitch(this.deviceId);
+  // Every reading since the last call, oldest first. Batched because the
+  // detector's hop is finer than this poll -- see the Rust pitch_framer.
+  getPitches() {
+    return window.karafriends.nativeAudio.inputDevice_getPitches(this.deviceId);
   }
 
   // Mutes/unmutes this mic in the room's speakers only; getPitch keeps
