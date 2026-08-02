@@ -283,14 +283,20 @@
   min-height: 0;
 }
 
-/* A third of the card. Letting it absorb all the leftover height instead put it
-   at nearly 60% on a 720p screen, which drowned the numbers; a fixed share
-   keeps the balance the design was drawn at while still being big enough to
-   read a melody contour in. */
+/* Letting this absorb all the leftover height put it at nearly 60% on a 720p
+   screen, which drowned the numbers -- so it takes a fixed share. But 32vh left
+   the card 26% empty: measured off a rendered card, 12.1% above the score block
+   and 14.1% of dead band between it and the ribbon. The rows are centred, so
+   every vh here comes half off each gap; 42vh brings them to 7.1% and 9.1%,
+   which reads as deliberate space rather than a hole, and leaves the ribbon and
+   its legend at 44% -- well short of the 58% that drowned the numbers.
+
+   The height is also not just decoration: the ribbon's vertical axis is pitch,
+   so the extra 10vh is 30% more room to separate one note from the next. */
 .scoreCardRibbon {
   display: block;
   width: 100%;
-  height: 32vh;
+  height: 42vh;
 }
 
 .scoreCardLegend {
