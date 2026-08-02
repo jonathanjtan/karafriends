@@ -95,16 +95,21 @@ function compileScoring() {
     ],
     { cwd: REPO, stdio: "pipe" },
   );
-  // tsc emits extensionless relative specifiers, which Node's ESM loader
-  // rejects.
+  // Emitted as .mjs, not .js: the temp dir has no package.json, so Node reads a
+  // .js there as CommonJS, and the scoring <-> scoringData import cycle then
+  // trips the require(esm) cycle guard (ERR_REQUIRE_CYCLE_MODULE on Node 24).
+  // The rewrite is because tsc emits extensionless relative specifiers, which
+  // Node's ESM loader rejects.
   for (const file of fs.readdirSync(outDir)) {
+    if (!file.endsWith(".js")) continue;
     const p = path.join(outDir, file);
     fs.writeFileSync(
-      p,
+      p.replace(/\.js$/, ".mjs"),
       fs
         .readFileSync(p, "utf8")
-        .replace(/from "\.\/([^".]+)"/g, 'from "./$1.js"'),
+        .replace(/from "\.\/([^".]+)"/g, 'from "./$1.mjs"'),
     );
+    fs.rmSync(p);
   }
   return outDir;
 }
@@ -138,8 +143,8 @@ function readSamplesBySong(logPath) {
 
 const args = parseArgs();
 const outDir = compileScoring();
-const { ScoreAccumulator } = await import(path.join(outDir, "scoring.js"));
-const { parseScoringData } = await import(path.join(outDir, "scoringData.js"));
+const { ScoreAccumulator } = await import(path.join(outDir, "scoring.mjs"));
+const { parseScoringData } = await import(path.join(outDir, "scoringData.mjs"));
 
 const bySong = readSamplesBySong(args.log);
 if (bySong.size === 0) {
@@ -234,7 +239,7 @@ const best =
   ) ?? argmax;
 
 const peak = Math.max(...results.map((r) => r.overall));
-console.log("  comp    overall  accuracy  coverage");
+console.log("  comp    overall     pitch  coverage");
 for (const r of results) {
   // Coarse rows keep the curve readable; the peak is always shown.
   if (r.ms % 10 !== 0 && r !== best) continue;
@@ -242,7 +247,7 @@ for (const r of results) {
   const mark = r === best ? " <- best" : "";
   console.log(
     `  ${String(r.ms).padStart(5)}ms  ${(r.overall * 100).toFixed(1).padStart(5)}%   ` +
-      `${(r.accuracy * 100).toFixed(1).padStart(5)}%    ${(r.coverage * 100).toFixed(1).padStart(5)}%  ${bar}${mark}`,
+      `${(r.pitch * 100).toFixed(1).padStart(5)}%    ${(r.coverage * 100).toFixed(1).padStart(5)}%  ${bar}${mark}`,
   );
 }
 

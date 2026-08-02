@@ -103,16 +103,21 @@ function compileScoring() {
     ],
     { cwd: REPO, stdio: "pipe" },
   );
-  // tsc emits extensionless relative specifiers, which Node's ESM loader
-  // rejects.
+  // Emitted as .mjs, not .js: the temp dir has no package.json, so Node reads a
+  // .js there as CommonJS, and the scoring <-> scoringData import cycle then
+  // trips the require(esm) cycle guard (ERR_REQUIRE_CYCLE_MODULE on Node 24).
+  // The rewrite is because tsc emits extensionless relative specifiers, which
+  // Node's ESM loader rejects.
   for (const file of fs.readdirSync(outDir)) {
+    if (!file.endsWith(".js")) continue;
     const p = path.join(outDir, file);
     fs.writeFileSync(
-      p,
+      p.replace(/\.js$/, ".mjs"),
       fs
         .readFileSync(p, "utf8")
-        .replace(/from "\.\/([^".]+)"/g, 'from "./$1.js"'),
+        .replace(/from "\.\/([^".]+)"/g, 'from "./$1.mjs"'),
     );
+    fs.rmSync(p);
   }
   return outDir;
 }
@@ -265,9 +270,9 @@ if (!melodyDirs.some((dir) => fs.existsSync(dir))) {
 
 const outDir = compileScoring();
 const { ScoreAccumulator, isScoreable } = await import(
-  path.join(outDir, "scoring.js")
+  path.join(outDir, "scoring.mjs")
 );
-const { parseScoringData } = await import(path.join(outDir, "scoringData.js"));
+const { parseScoringData } = await import(path.join(outDir, "scoringData.mjs"));
 
 const names = readSongNames();
 const takes = readTakes(logTarget);
