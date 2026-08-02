@@ -4,9 +4,13 @@
 .scoreCard {
   position: absolute;
   inset: 0;
-  /* Above the queue intermission (z-index 10): the score is the first thing
-     shown when a song ends, and the intermission carries on underneath it. */
-  z-index: 20;
+  /* Above the queue intermission (z-index 10) -- the score is the first thing
+     shown when a song ends, and the intermission carries on underneath it --
+     and above the "history off" badge (z-index 30), which is pinned to the same
+     bottom-left corner as the ribbon's caption and legend and lands on top of
+     both. All four corners of the card are spoken for, so there is nowhere to
+     move the badge to; it gives up its nine seconds instead. */
+  z-index: 40;
   display: grid;
   grid-template-columns: 30vh 1fr;
   grid-template-rows: auto 1fr auto;
