@@ -319,7 +319,7 @@ if (!melodyDirs.some((dir) => fs.existsSync(dir))) {
 }
 
 const outDir = compileScoring();
-const { ScoreAccumulator, isScoreable } = await import(
+const { ScoreAccumulator, isScoreable, timingConfidence } = await import(
   path.join(outDir, "scoring.mjs")
 );
 const { parseScoringData } = await import(path.join(outDir, "scoringData.mjs"));
@@ -382,6 +382,13 @@ for (const [key, take] of [...takes.entries()].sort()) {
     pitch: round(result.pitch),
     longTone: result.longTone === null ? null : round(result.longTone),
     timing: result.timing === null ? null : round(result.timing),
+    // How many onsets that timing reading rests on, and how much of it the
+    // headline therefore took. Timing is the axis whose sample size varies
+    // wildly by song -- 1 to 40 across the corpus -- and a reading from a
+    // handful is biased high, so the count is what tells you whether a timing
+    // number means anything.
+    timingCount: result.timingCount,
+    timingConfidence: round(timingConfidence(result.timingCount)),
     coverage: round(result.coverage),
     notesAttempted: result.notesAttempted,
     notesTotal: result.notesTotal,

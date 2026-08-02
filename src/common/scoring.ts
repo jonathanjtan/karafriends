@@ -24,7 +24,10 @@ import { ScoringInterval, ScoringNote } from "./scoringData";
 //    slot grid, and quartiles interpolated. Version 1 timing was a coin toss --
 //    a 1ms change in fitted compensation moved it 12 points and flipped the
 //    band -- so v1 scores are not comparable to these.
-export const SCORING_FORMULA_VERSION = 2;
+// 3: timing onset gate widened (150ms -> 80ms of reference rest) and the axis
+//    blended with pitch in proportion to how many onsets the song actually
+//    offered, since a spread from a handful of them is an unreliable reading.
+export const SCORING_FORMULA_VERSION = 3;
 
 // DAM divides the sung span into exactly 24 windows for its end-of-song
 // graph. Verified on 96 songs: always 24, never song-length dependent.
@@ -310,22 +313,65 @@ export function longToneScore(
   return { score: count > 0 ? total / count : null, count };
 }
 
-// A note needs this much silence in front of it for its attack to be locatable
-// at all: mid-phrase, one note runs into the next and there is no onset to
-// measure. This is why the timing axis has so few samples per song.
-const ONSET_GAP_SECS = 0.15;
+// A note needs this much of a rest in front of it in the *reference melody* for
+// its attack to be locatable at all: mid-phrase, one note runs into the next
+// and there is no onset to measure.
+//
+// Was 150ms, which left the corpus a median of 7 qualifying onsets per take and
+// 18 takes of 55 with too few to score at all. 80ms takes the median to 10 and
+// the unscorable takes to 12. Loosening this is safe in a way that loosening
+// ONSET_SILENT_SLOTS is not -- see there.
+const ONSET_GAP_SECS = 0.08;
 // Slots of quiet required before the note starts, so the tail of the previous
 // phrase can't be mistaken for this note's attack.
+//
+// Do not lower this to buy more onsets. Measured across the corpus by how far
+// each take's median attack error moves from its strict-gate value -- a real
+// attack sits at a consistent offset, so a median that wanders means the events
+// being found are not attacks. Relaxing ONSET_GAP_SECS from 150ms to 80ms
+// drifts the median 0.4ms; relaxing this from 4 slots to 2 drifts it 8-17ms at
+// every gap setting. It admits notes the singer was already phonating into.
 const ONSET_SILENT_SLOTS = 4;
 // How far either side of the note's start an attack is looked for.
 const ONSET_SEARCH_BEFORE_SLOTS = 4;
 const ONSET_SEARCH_AFTER_SLOTS = 12;
 // Fewer clean onsets than this and the spread is noise, not a rhythm reading.
 const ONSET_MIN_SAMPLES = 6;
+// ...and this many before the reading is trusted on its own. Between the two,
+// timing is blended with pitch in proportion (see timingConfidence).
+//
+// An interquartile spread from a handful of points is both noisy and mildly
+// optimistic -- it is easy to keep tight when there is little to be spread.
+// Measured *within* the corpus takes, widening the gates raised the median
+// count from 7 to 10 and pulled the median timing score from 80.0 to 77.3, at
+// 0.4ms of median drift (so the extra onsets are real attacks, not junk): the
+// same singing scores lower once there is more of it to judge.
+//
+// Note the effect is small next to song-to-song variation. *Between* takes,
+// timing correlates positively with onset count (r = +0.199) -- takes that
+// happen to offer few onsets do not score higher, they score slightly lower.
+// So this is shrinkage of an unreliable estimate toward the fallback the null
+// case already uses, not a correction of some large systematic inflation.
+const ONSET_FULL_CONFIDENCE = 24;
 // Interquartile spread of attack error mapping to full marks and to zero.
 // 40ms is about as tight as the 25ms sampling can show; 260ms is ragged.
 const ONSET_TIGHT_MS = 40;
 const ONSET_LOOSE_MS = 260;
+
+// How far to trust a timing reading built from `count` onsets, 0..1.
+//
+// Zero at ONSET_MIN_SAMPLES, which is exactly where timingScore starts
+// returning null, so the blend below meets the null-axis fallback continuously
+// instead of stepping at the threshold.
+export function timingConfidence(count: number): number {
+  return Math.max(
+    0,
+    Math.min(
+      1,
+      (count - ONSET_MIN_SAMPLES) / (ONSET_FULL_CONFIDENCE - ONSET_MIN_SAMPLES),
+    ),
+  );
+}
 
 // The timing axis: how *consistent* the singer's attacks are, not how early or
 // late. Consistency is the skill; a uniform lag is either the room's latency or
@@ -838,10 +884,21 @@ export class ScoreAccumulator {
     // that it still leans the headline on pitch is why ScoreResult reports the
     // gap for the card to show.
     const axis = (value: number | null) => (value === null ? pitch : value);
+    // Timing gets the same treatment by degree rather than all-or-nothing: how
+    // many onsets a song offers is a property of the song, not the singer, and
+    // a reading from a handful of them is biased high (see
+    // ONSET_FULL_CONFIDENCE). Confidence is 0 at the null threshold, so this is
+    // the same fallback, ramped.
+    const confidence =
+      timing.score === null ? 0 : timingConfidence(timing.count);
+    const timingAxis =
+      timing.score === null
+        ? pitch
+        : confidence * timing.score + (1 - confidence) * pitch;
     const overall =
       WEIGHT_PITCH * pitch +
       WEIGHT_LONG_TONE * axis(longTone.score) +
-      WEIGHT_TIMING * axis(timing.score);
+      WEIGHT_TIMING * timingAxis;
     const display = displayScore(overall);
 
     return {
