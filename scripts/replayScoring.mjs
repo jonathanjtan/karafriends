@@ -55,7 +55,7 @@ function usage(msg) {
     `usage:
   node scripts/replayScoring.mjs [--out <file|->] [--logs <dir|file>]
                                  [--melody-dir <dir>] [--compensation <ms>]
-                                 [--song <songId>]
+                                 [--song <songId>] [--decimate-hop <ms>]
   node scripts/replayScoring.mjs --diff <before.json> <after.json>`,
   );
   process.exit(1);
@@ -199,6 +199,56 @@ function readTakes(logTarget) {
   return takes;
 }
 
+// Thins a take's readings until consecutive ones are at least `hopMs` apart,
+// so a capture taken at the 10ms hop can be scored as if it had been taken at
+// the old 25ms one.
+//
+// This exists to separate a scoring change from a *sampling* change. The
+// accumulator still buckets to 25ms slots and keeps the reading closest to the
+// reference note in each; at a 10ms hop a slot holds ~2.5 candidates instead of
+// one, so it is picking the best of several noisy estimates rather than
+// accepting the only one. That is a free lift on the pitch axis that nobody
+// sang for, and the only way to size it is to score one take both ways --
+// identical singing, two densities. Decimation only runs dense -> sparse:
+// readings that were never captured cannot be invented, which is why the
+// pre-existing corpus (median gap 24.4ms) can't answer this on its own.
+//
+// Two details this has to get right, both of which silently halve the retained
+// rate if you reach for the obvious "keep it if it's `hop` after the last one":
+//
+//   * Snap to a fixed grid, don't chain off the last kept sample. Timestamps
+//     jitter, so a reading 24.8ms after its predecessor fails a `>= 25ms` test
+//     and the next kept one lands at ~50ms. That aliases a 25ms request into a
+//     50ms capture -- which is what dropped a corpus take from 83.7/A to
+//     69.7/B on the first version of this function.
+//   * Keep a poll's whole cluster. Every open mic contributes a reading at
+//     essentially the same instant, and the old framing gave each mic its own
+//     reading per poll. Readings within CLUSTER_SECS are one poll, not
+//     successive samples to be thinned against each other.
+//
+// Caveat: PROBE_PITCH lines carry no mic index, so the cluster is inferred from
+// timing. Sound for a solo take; read a duet's number as approximate.
+const CLUSTER_SECS = 0.002;
+
+function decimate(samples, hopMs) {
+  const hop = hopMs / 1000;
+  const kept = [];
+  let currentBucket = null;
+  let pollStart = -Infinity;
+  for (const s of samples) {
+    if (s.t - pollStart < CLUSTER_SECS) {
+      kept.push(s); // another mic in the poll already emitted
+      continue;
+    }
+    const bucket = Math.floor(s.t / hop);
+    if (bucket === currentBucket) continue;
+    currentBucket = bucket;
+    pollStart = s.t;
+    kept.push(s);
+  }
+  return kept;
+}
+
 // songId -> display name, so a table is readable. Best-effort: the mirror only
 // covers what the app has actually played.
 function readSongNames() {
@@ -306,7 +356,13 @@ for (const [key, take] of [...takes.entries()].sort()) {
     lyricsIntervals,
     compensationMs,
   );
-  for (const s of take.samples) {
+  // Gated on the captured count above, not this one, so that a decimated run
+  // and a full one select the same takes and stay diffable.
+  const samples =
+    args.decimateHop === undefined
+      ? take.samples
+      : decimate(take.samples, Number(args.decimateHop));
+  for (const s of samples) {
     accumulator.addSample(s.t, s.midi, s.shift);
   }
   const result = accumulator.finalize();
