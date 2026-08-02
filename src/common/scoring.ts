@@ -20,7 +20,11 @@ import { ScoringInterval, ScoringNote } from "./scoringData";
 // same scale as.
 //
 // 1: pitch/longTone/timing on a display curve, fitted to the 54-take corpus.
-export const SCORING_FORMULA_VERSION = 1;
+// 2: timing onsets located in continuous time rather than on the sliding 25ms
+//    slot grid, and quartiles interpolated. Version 1 timing was a coin toss --
+//    a 1ms change in fitted compensation moved it 12 points and flipped the
+//    band -- so v1 scores are not comparable to these.
+export const SCORING_FORMULA_VERSION = 2;
 
 // DAM divides the sung span into exactly 24 windows for its end-of-song
 // graph. Verified on 96 songs: always 24, never song-length dependent.
@@ -341,14 +345,33 @@ export function timingScore(
   medianMs: number | null;
   count: number;
 } {
-  // Voiced slots across the whole take, so "was it quiet before this note" is
-  // answerable independently of which note a sample was placed against.
-  const voiced = new Map<number, ScoreSample>();
-  for (const sample of samples) {
-    const t = sample.timeSecs - compensationMs / 1000;
-    const slot = Math.floor((t * 1000) / SAMPLE_SLOT_MS);
-    if (!voiced.has(slot)) voiced.set(slot, sample);
-  }
+  // Samples are located in continuous time here, not on the 25ms slot grid.
+  //
+  // The grid used to be built as floor((timeSecs - compensation) / 25ms), which
+  // slides wholesale when the fitted compensation moves by a single
+  // millisecond: samples near a boundary change slots, notes change their
+  // "was it quiet before" answer, and the qualifying set churns. Measured on a
+  // real take, a 100 -> 110ms sweep moved the set 25 -> 22 and swung the
+  // interquartile spread from 71.6ms to 45.1ms -- twelve score points and an
+  // SS/SSS band flip, out of one millisecond of compensation the pitch axis
+  // could not even distinguish. Seeking by time means a 1ms nudge admits or
+  // drops only what genuinely lies within that millisecond, and it reads
+  // attacks at the sampling hop rather than at the slot size.
+  const ordered = [...samples].sort((a, b) => a.timeSecs - b.timeSecs);
+  const times = ordered.map((sample) => sample.timeSecs);
+  const compSecs = compensationMs / 1000;
+  const slotSecs = SAMPLE_SLOT_MS / 1000;
+  // Index of the first sample at or after t.
+  const seek = (t: number): number => {
+    let lo = 0;
+    let hi = times.length;
+    while (lo < hi) {
+      const probe = Math.floor((lo + hi) / 2);
+      if (times[probe] < t) lo = probe + 1;
+      else hi = probe;
+    }
+    return lo;
+  };
 
   const errors: number[] = [];
   for (let i = 0; i < notes.length; i++) {
@@ -356,34 +379,33 @@ export function timingScore(
       i === 0 ? Infinity : notes[i].startTime - notes[i - 1].endTime;
     if (gapBefore < ONSET_GAP_SECS) continue;
 
-    const startSlot = Math.floor((notes[i].startTime * 1000) / SAMPLE_SLOT_MS);
-    let quiet = true;
-    for (let s = startSlot - ONSET_SILENT_SLOTS; s < startSlot - 1; s++) {
-      if (voiced.has(s)) {
-        quiet = false;
-        break;
-      }
-    }
-    if (!quiet) continue;
+    // A note at time tau is sung into the microphone at tau + compensation.
+    const start = notes[i].startTime + compSecs;
 
+    // Nothing voiced in the run-up, or the tail of the previous phrase gets
+    // mistaken for this note's attack. Ends one slot short of the note so the
+    // attack itself doesn't disqualify it.
+    const firstInRunUp = seek(start - ONSET_SILENT_SLOTS * slotSecs);
+    if (firstInRunUp < times.length && times[firstInRunUp] < start - slotSecs) {
+      continue;
+    }
+
+    const searchTo = start + ONSET_SEARCH_AFTER_SLOTS * slotSecs;
     for (
-      let s = startSlot - ONSET_SEARCH_BEFORE_SLOTS;
-      s <= startSlot + ONSET_SEARCH_AFTER_SLOTS;
-      s++
+      let k = seek(start - ONSET_SEARCH_BEFORE_SLOTS * slotSecs);
+      k < ordered.length && times[k] <= searchTo;
+      k++
     ) {
-      const sample = voiced.get(s);
-      if (sample === undefined) continue;
       // Require roughly the right pitch, so a cough or a neighbour's voice in
       // the gap isn't taken for the attack.
       const off = Math.abs(
         signedOctaveFoldedDeviation(
-          sample.midiNumber,
-          notes[i].midiNumber + sample.pitchShiftSemis,
+          ordered[k].midiNumber,
+          notes[i].midiNumber + ordered[k].pitchShiftSemis,
         ),
       );
       if (off > SOFT_ZERO_SEMIS) continue;
-      const t = sample.timeSecs - compensationMs / 1000;
-      errors.push((t - notes[i].startTime) * 1000);
+      errors.push((times[k] - compSecs - notes[i].startTime) * 1000);
       break;
     }
   }
@@ -398,8 +420,16 @@ export function timingScore(
   }
 
   const sorted = [...errors].sort((a, b) => a - b);
-  const at = (q: number) =>
-    sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+  // Interpolated rather than floor-indexed: at the two dozen onsets a song
+  // typically offers, floor indexing steps the quartiles onto a different
+  // reading whenever the set gains or loses one, which is a jump in the score
+  // that no change in the singing produced.
+  const at = (q: number) => {
+    const pos = (sorted.length - 1) * q;
+    const lo = Math.floor(pos);
+    const hi = Math.ceil(pos);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+  };
   const spreadMs = at(0.75) - at(0.25);
   const mid = Math.floor(sorted.length / 2);
   const medianMs =
