@@ -174,6 +174,15 @@ function readTakes(logTarget) {
     : [logTarget];
 
   const takes = new Map();
+  // Sing the same song twice in one night and the video clock restarts, which
+  // is the only marker in the log that one take ended and another began. Without
+  // this the two share a key and their samples concatenate into a single
+  // impossible take -- 31k samples covering 26s..246s twice over -- which
+  // scores, and scores wrongly, rather than failing.
+  const RESTART_GAP_SECS = 5;
+  const lastTime = new Map();
+  const takeIndex = new Map();
+
   for (const file of files) {
     const stem = path.basename(file).replace(/\.log$/, "");
     for (const line of fs.readFileSync(file, "utf8").split("\n")) {
@@ -182,7 +191,17 @@ function readTakes(logTarget) {
       );
       if (!m) continue;
       const [, songId, t, midi, shift] = m;
-      const key = `${stem}/${songId}`;
+      const seen = `${stem}/${songId}`;
+      const time = parseFloat(t);
+      const previous = lastTime.get(seen);
+      let index = takeIndex.get(seen) ?? 0;
+      if (previous !== undefined && time < previous - RESTART_GAP_SECS) {
+        takeIndex.set(seen, ++index);
+      }
+      lastTime.set(seen, time);
+      // The first take keeps the bare key so snapshots taken before this
+      // existed still diff against new ones.
+      const key = index === 0 ? seen : `${seen}#${index + 1}`;
       let take = takes.get(key);
       if (take === undefined) {
         take = { songId, samples: [] };
