@@ -194,7 +194,7 @@ const JoysoundSongPage = () => {
 
   return (
     <div>
-      <h2>
+      <h2 data-subject>
         <WeebText bold text={song.name} yomi={song.nameYomi} />
       </h2>
       <Link to={`/search/artist/${song.artistName}`}>

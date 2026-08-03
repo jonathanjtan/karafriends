@@ -56,7 +56,7 @@ const Artist = ({ id }: Props) => {
 
   return (
     <div>
-      <h2>{artist.name}</h2>
+      <h2 data-subject>{artist.name}</h2>
       <span>
         {artist.songCount} {artist.songCount === 1 ? "song" : "songs"}
       </span>

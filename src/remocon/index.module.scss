@@ -14,6 +14,22 @@ a {
   color: inherit;
 }
 
+// A screen's <h2> is almost always its label — "Find a song", "Search by
+// song title", "DAM Top 100" — and on a phone that belongs in the middle,
+// over the centered search box and filter chips beneath it. Global rather
+// than per page so a new screen can't miss it.
+main h2 {
+  text-align: center;
+}
+
+// The exception is a detail page, whose <h2> is the *subject* rather than a
+// label: the song or artist you're looking at, followed by a left-aligned
+// artist link, lyric quote and queue buttons. Centering just the first line
+// of that block reads as a mistake, so those headings opt out.
+main h2[data-subject] {
+  text-align: left;
+}
+
 // Form controls don't inherit type or color by default, so in dark mode a
 // bare <input> would render as the UA's own light-on-dark (or, worse,
 // dark-on-dark) pairing. `color-scheme` on :root (see theme.scss) fixes the

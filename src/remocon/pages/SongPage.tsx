@@ -35,7 +35,7 @@ const SongPage = () => {
 
   return (
     <div>
-      <h2>{song.name}</h2>
+      <h2 data-subject>{song.name}</h2>
       <Link to={`/search/artist/${song.artistName}`}>{song.artistName}</Link>
       {!!song.tieUp && <span> • {song.tieUp}</span>}
       {!!song.lyricsPreview && (

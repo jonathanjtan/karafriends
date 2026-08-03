@@ -58,7 +58,7 @@ const JoysoundArtist = ({ id }: Props) => {
 
   return (
     <div>
-      <h2>{songs.edges[0].node.artistName}</h2>
+      <h2 data-subject>{songs.edges[0].node.artistName}</h2>
       <List>
         {songs.edges.map(({ node }) => (
           <JoysoundArtistSongItem key={node.id} {...node} />

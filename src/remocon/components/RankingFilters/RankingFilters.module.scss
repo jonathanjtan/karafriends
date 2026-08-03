@@ -5,9 +5,13 @@
   gap: 6px;
 }
 
+// Centered under the centered page heading. These rows wrap to two or three
+// lines on a narrow phone, and a ragged-left last line under a centered title
+// is what made the header block look accidental.
 .row {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
 }
 

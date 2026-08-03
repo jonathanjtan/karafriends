@@ -3,10 +3,13 @@
 $joysound-red: #ef4b4b;
 $dam-red: #8e1f2f;
 
+// Centered to match the chart pages' filters and the centered heading and
+// search box above it (see RankingFilters .row).
 .filters {
   margin: 8px 0;
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
 }
 
