@@ -1,27 +1,41 @@
 import React from "react";
 import { Link } from "react-router";
 
+import SourceBadge from "../../../common/components/SourceBadge";
 import { ListItem } from "../List";
 import WeebText from "../WeebText";
-import { SongSearchResults_songsByName$data } from "./__generated__/SongSearchResults_songsByName.graphql";
+import * as styles from "./SongSearchResults.module.scss";
+import { SongSearchResults_searchSongs$data } from "./__generated__/SongSearchResults_searchSongs.graphql";
 
 type Props =
-  SongSearchResults_songsByName$data["songsByName"]["edges"][0]["node"];
+  SongSearchResults_searchSongs$data["searchSongs"]["edges"][0]["node"];
 
+// The two catalogs' song pages are separate routes — they queue through
+// different mutations and only JOYSOUND takes a background MV — so a merged
+// row still opens its own service's page. `songId` rather than `id` because
+// `id` is source-qualified for Relay's benefit (see schema.graphql).
 const SongSearchResultsItem = ({
-  id,
+  songId,
+  source,
   name,
   nameYomi,
   artistName,
   artistNameYomi,
 }: Props) => (
-  <Link to={`/song/${id}`}>
+  <Link
+    to={source === "JOYSOUND" ? `/joysoundSong/${songId}` : `/song/${songId}`}
+  >
     <ListItem>
-      <div>
-        <WeebText bold text={name} yomi={nameYomi} />
-      </div>
-      <div>
-        <WeebText text={artistName} yomi={artistNameYomi} />
+      <div className={styles.item}>
+        <div className={styles.text}>
+          <div>
+            <WeebText bold text={name} yomi={nameYomi} />
+          </div>
+          <div>
+            <WeebText text={artistName} yomi={artistNameYomi} />
+          </div>
+        </div>
+        <SourceBadge typename={source} fontSize="11px" />
       </div>
     </ListItem>
   </Link>

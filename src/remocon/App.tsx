@@ -14,10 +14,8 @@ import HistoryPage from "./pages/HistoryPage";
 import HomePage from "./pages/HomePage";
 import JoinPage from "./pages/JoinPage";
 import JoysoundArtistPage from "./pages/JoysoundArtistPage";
-import JoysoundArtistSearchPage from "./pages/JoysoundArtistSearchPage";
 import JoysoundRankingPage from "./pages/JoysoundRankingPage";
 import JoysoundSongPage from "./pages/JoysoundSongPage";
-import JoysoundSongSearchPage from "./pages/JoysoundSongSearchPage";
 import NiconicoPage from "./pages/NiconicoPage";
 import OriconRankingPage from "./pages/OriconRankingPage";
 import OriconSongPage from "./pages/OriconSongPage";
@@ -87,13 +85,27 @@ const App = () => {
                   path="/search/niconico/:videoId?"
                   element={<NiconicoPage />}
                 />
+                {/* The service-specific search routes now open the merged
+                    search with that catalog preselected, so old links, the
+                    back button and anything still pointing at them keep
+                    working. */}
                 <Route
                   path="/search/joysoundSong/:query?"
-                  element={<JoysoundSongSearchPage />}
+                  element={
+                    <SongSearchPage
+                      initialSource="JOYSOUND"
+                      routeBase="/search/joysoundSong"
+                    />
+                  }
                 />
                 <Route
                   path="/search/joysoundArtist/:query?"
-                  element={<JoysoundArtistSearchPage />}
+                  element={
+                    <ArtistSearchPage
+                      initialSource="JOYSOUND"
+                      routeBase="/search/joysoundArtist"
+                    />
+                  }
                 />
                 <Route
                   path="/ranking/joysound/:category?/:period?/:month?"

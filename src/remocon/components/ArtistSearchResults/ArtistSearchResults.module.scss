@@ -1,3 +1,19 @@
+// Name takes the slack, the badge keeps its intrinsic width at the right edge
+// of every row so the column of badges reads as a column.
+.item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.text {
+  min-width: 0;
+}
+
+// The count used to float right on the name's line, which the badge now
+// occupies; as its own muted line it also matches the song rows' second line.
 .songCount {
-  float: right;
+  display: block;
+  color: var(--text-muted);
 }

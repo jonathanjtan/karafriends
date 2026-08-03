@@ -15,8 +15,6 @@ $ranking-platinum: #a8aab4;
 $search-method-colors: (
   song: #a5b6ef,
   artist: #9ce7bb,
-  joysoundSong: #fd6aa5,
-  joysoundArtist: #f77403,
   youtube: #e79ca1,
   niconico: #ababab,
   oricon: #b39ddb,
@@ -36,16 +34,29 @@ $banner-width: 30px;
   gap: 8px;
 }
 
-// One service's block: a thin vertical brand banner down the left spanning
-// both rows, Title/Artist squares in row 1, the TOP 100 rectangle (same
-// height as the squares, same gradient/label/icon treatment as the Title
-// and Artist buttons) across row 2. The invisible rankingRowSizer square is
-// what stretches row 2 to the squares' height — the TOP 100 button itself
-// has no intrinsic height.
-.serviceSection {
+// Title and Artist: one row of two, no brand banner, because one search now
+// covers both catalogs.
+.searchSection {
   display: grid;
-  grid-template-columns: $banner-width 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
+
+  a {
+    text-decoration: none;
+    display: block;
+    height: 100%;
+  }
+}
+
+// One service's chart: the thin vertical brand banner, then a full-width TOP
+// 100 button. Shorter than the search tiles above — a chart is one
+// destination, not half a row of them — so it sets its own height rather than
+// borrowing the tiles' golden-ratio square.
+.rankingSection {
+  display: grid;
+  grid-template-columns: $banner-width 1fr;
+  gap: 8px;
+  height: 72px;
 
   a {
     text-decoration: none;
@@ -84,7 +95,6 @@ $banner-width: 30px;
 }
 
 .serviceBanner {
-  grid-row: 1 / 3;
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -94,10 +104,14 @@ $banner-width: 30px;
 
   img {
     display: block;
-    width: 150px;
+    // Rotation swaps the axes, so the pre-rotation WIDTH is what has to fit
+    // the banner's height — it can't exceed the chart row (see
+    // .rankingSection) or the logo's ends get clipped off. It used to be
+    // 150px because the banner then spanned two rows of search tiles.
+    width: 64px;
     // The flex strip is far narrower than the pre-rotation logo box; don't
     // let it shrink the image before the rotation swaps its axes.
-    min-width: 150px;
+    min-width: 64px;
     transform: rotate(-90deg);
   }
 
@@ -109,31 +123,19 @@ $banner-width: 30px;
     background: $dam-red;
 
     img {
-      width: 126px;
-      min-width: 126px;
+      width: 54px;
+      min-width: 54px;
     }
   }
 }
 
-// Golden ratio width:height (both the single-column squares-turned-buttons
-// and the sizer that stretches row 2 to match their height — Top 100 itself
-// stays visually double-wide because it spans both columns, unaffected by
-// this ratio).
+// Golden ratio width:height for the Title/Artist/media tiles. The chart rows
+// opt out (their section sets a height) — a full-width button at this ratio
+// would be half the screen tall.
 $golden-ratio: 1.618;
 
 .gridItem {
   aspect-ratio: $golden-ratio;
-}
-
-.rankingRowSizer {
-  grid-column: 2;
-  grid-row: 2;
-  aspect-ratio: $golden-ratio;
-}
-
-.rankingItem {
-  grid-column: 2 / 4;
-  grid-row: 2;
 }
 
 // Each tile is a color chip: a flat fill with a slight vertical sheen, a ring

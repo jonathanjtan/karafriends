@@ -1,0 +1,12 @@
+// Title/artist take the slack, the badge keeps its intrinsic width at the
+// right edge of every row so the column of badges reads as a column.
+.item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.text {
+  min-width: 0;
+}

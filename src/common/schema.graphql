@@ -86,6 +86,19 @@ type Query {
   sidebarCollapsed: Boolean!
   songById(id: String!): Song!
   songsByName(name: String, first: Int, after: String): SongConnection!
+  # Both catalogs in one list, ranked together by how well each title matches
+  # the keyword. The per-service `songsByName`/`joysoundSongsByKeyword` above
+  # still back the Oricon lookup and anything that wants one catalog only.
+  searchSongs(
+    keyword: String
+    first: Int
+    after: String
+  ): SearchedSongConnection!
+  searchArtists(
+    keyword: String
+    first: Int
+    after: String
+  ): SearchedArtistConnection!
   # JOYSOUND's public Top 100 karaoke charts (joysound.com), with ids mapped
   # back to the catalog so entries open like search results. `month` (YYYYMM)
   # selects a past monthly archive; null uses the current chart.
@@ -620,6 +633,62 @@ type SongPageInfo {
   hasNextPage: Boolean!
   startCursor: String!
   endCursor: String!
+}
+
+# Which catalog a merged search row came from: what its badge says, and which
+# detail route it opens (/song vs /joysoundSong).
+enum SongSource {
+  DAM
+  JOYSOUND
+}
+
+# A row in a merged search. `id` is source-qualified ("DAM:1234") because
+# Relay normalizes its store by type+id and the two catalogs hand out
+# overlapping numeric ids — same-id rows from the two services would otherwise
+# collapse into one record and render as duplicates of whichever arrived last.
+# `songId` is the raw service id the routes and mutations want.
+type SearchedSong {
+  id: ID!
+  songId: String!
+  source: SongSource!
+  name: String!
+  nameYomi: String!
+  artistName: String!
+  artistNameYomi: String!
+}
+
+type SearchedSongEdge {
+  node: SearchedSong!
+  cursor: String!
+}
+
+type SearchedSongConnection {
+  edges: [SearchedSongEdge!]!
+  pageInfo: SongPageInfo!
+  # Catalogs that failed to answer this search. A blocked exit IP takes DAM
+  # down routinely, and one dead service must degrade to a notice above the
+  # other service's results rather than an empty page.
+  unavailableSources: [SongSource!]!
+}
+
+type SearchedArtist {
+  id: ID!
+  artistId: String!
+  source: SongSource!
+  name: String!
+  nameYomi: String!
+  songCount: Int!
+}
+
+type SearchedArtistEdge {
+  node: SearchedArtist!
+  cursor: String!
+}
+
+type SearchedArtistConnection {
+  edges: [SearchedArtistEdge!]!
+  pageInfo: ArtistPageInfo!
+  unavailableSources: [SongSource!]!
 }
 
 type StreamingUrlInfo {

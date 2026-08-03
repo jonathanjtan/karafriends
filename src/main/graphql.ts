@@ -448,6 +448,78 @@ function stripTitleAnnotations(text: string): string {
   return text.replace(/[[［][^\]］]*[\]］]/g, " ").trim();
 }
 
+type ReadingPair = readonly [string, string];
+
+// Beyond folding in every returned name, credit the searched name itself
+// when results differ from it only by bracket annotations: all such
+// matches must agree on a single reading (else it's ambiguous and skipped).
+// This is what lets a ranking entry like "BILLIE JEAN" pick up DAM's
+// reading from "Billie Jean [ビリー・ジーン]" under its own cache key.
+function withKeywordSelfCredit(
+  keyword: string,
+  pairs: ReadingPair[],
+  matched: ReadingPair[],
+): ReadingPair[] {
+  const target = normalizeForYomiMatch(stripTitleAnnotations(keyword));
+  if (!target) return pairs;
+
+  const matchYomis = new Set(
+    matched
+      .filter(
+        ([name]) =>
+          normalizeForYomiMatch(stripTitleAnnotations(name)) === target,
+      )
+      .map(([, yomi]) => yomi),
+  );
+  return matchYomis.size === 1
+    ? [...pairs, [keyword, [...matchYomis][0]] as const]
+    : pairs;
+}
+
+// The name→reading pairs a DAM song/artist search yields. Split out from
+// primeDamReadings so the merged search can fold in the readings from the DAM
+// leg it already fetched, instead of paying a second identical request.
+function damSongReadingPairs(
+  keyword: string,
+  list: ReadonlyArray<{
+    title: string;
+    titleYomi: string;
+    artist: string;
+    artistYomi: string;
+  }>,
+): ReadingPair[] {
+  return withKeywordSelfCredit(
+    keyword,
+    list.flatMap((song) => [
+      [song.title, song.titleYomi] as const,
+      [song.artist, song.artistYomi] as const,
+    ]),
+    list.map((song) => [song.title, song.titleYomi] as const),
+  );
+}
+
+function damArtistReadingPairs(
+  keyword: string,
+  list: ReadonlyArray<{ artist: string; artistYomi: string }>,
+): ReadingPair[] {
+  const pairs = list.map(
+    (artist) => [artist.artist, artist.artistYomi] as const,
+  );
+  return withKeywordSelfCredit(keyword, pairs, pairs);
+}
+
+// Fold canonical readings into the cache and mark the keyword primed, so a
+// later per-service search for the same keyword skips its own lookup.
+function applyDamReadings(
+  mode: "song" | "artist",
+  keyword: string,
+  pairs: ReadingPair[],
+): void {
+  for (const [name, yomi] of pairs) cacheReading(name, yomi, true);
+  markDamPrimed(mode, keyword);
+  damPrimeCache.set(`${mode}:${keyword}`, Promise.resolve(true));
+}
+
 // Resolves true when the DAM search itself succeeded (regardless of whether
 // any result matched the keyword by name), false on failure.
 function primeDamReadings(
@@ -459,52 +531,14 @@ function primeDamReadings(
   const cached = damPrimeCache.get(cacheKey);
   if (cached) return cached;
 
-  // Beyond folding in every returned name, credit the searched name itself
-  // when results differ from it only by bracket annotations: all such
-  // matches must agree on a single reading (else it's ambiguous and skipped).
-  // This is what lets a ranking entry like "BILLIE JEAN" pick up DAM's
-  // reading from "Billie Jean [ビリー・ジーン]" under its own cache key.
-  const target = normalizeForYomiMatch(stripTitleAnnotations(keyword));
   const pairsPromise =
     mode === "song"
-      ? dkwebsys.getMusicByKeyword(keyword, 30, 0).then((result) => {
-          const pairs = result.list.flatMap((song) => [
-            [song.title, song.titleYomi] as const,
-            [song.artist, song.artistYomi] as const,
-          ]);
-          const matchYomis = new Set(
-            result.list
-              .filter(
-                (song) =>
-                  normalizeForYomiMatch(stripTitleAnnotations(song.title)) ===
-                  target,
-              )
-              .map((song) => song.titleYomi),
-          );
-          if (target && matchYomis.size === 1) {
-            pairs.push([keyword, [...matchYomis][0]] as const);
-          }
-          return pairs;
-        })
-      : dkwebsys.getArtistByKeyword(keyword, 30, 0).then((result) => {
-          const pairs = result.list.map(
-            (artist) => [artist.artist, artist.artistYomi] as const,
-          );
-          const matchYomis = new Set(
-            result.list
-              .filter(
-                (artist) =>
-                  normalizeForYomiMatch(
-                    stripTitleAnnotations(artist.artist),
-                  ) === target,
-              )
-              .map((artist) => artist.artistYomi),
-          );
-          if (target && matchYomis.size === 1) {
-            pairs.push([keyword, [...matchYomis][0]] as const);
-          }
-          return pairs;
-        });
+      ? dkwebsys
+          .getMusicByKeyword(keyword, 30, 0)
+          .then((result) => damSongReadingPairs(keyword, result.list))
+      : dkwebsys
+          .getArtistByKeyword(keyword, 30, 0)
+          .then((result) => damArtistReadingPairs(keyword, result.list));
 
   const promise = pairsPromise
     .then((pairs) => {
@@ -688,6 +722,177 @@ function sortByTitleMatchTier<Item>(
   );
 }
 
+// Rows fetched per catalog per page of a merged search — so a page holds up
+// to twice this many rows. Equal shares matter: JOYSOUND's own default was
+// 100 against DAM's 30, which in one list reads as "JOYSOUND with a few DAM
+// rows mixed in" rather than a merge.
+const SEARCH_PAGE_SIZE = 30;
+
+// Where one catalog's search is up to. Not just an offset: a romaji query is
+// really searched as a kana reading of itself (see searchWithRomajiFallback),
+// and the next page has to continue *that* keyword — resuming the literal one
+// re-runs the search that found nothing and returns an empty page.
+interface SearchPosition {
+  readonly keyword: string;
+  readonly offset: number;
+}
+
+// The two catalogs count rows from different origins: DAM from 0, JOYSOUND
+// from 1 (its argument reads like a page number and isn't — passing 2 for the
+// second page of 30 re-serves rows 2..31, the first page shifted by one).
+const DAM_FIRST_OFFSET = 0;
+const JOYSOUND_FIRST_OFFSET = 1;
+
+// Cursors are base64 JSON: a keyword is arbitrary text with no separator safe
+// to split on. They're opaque to clients, which only echo them back — decode
+// one by hand with
+// `JSON.parse(Buffer.from(cursor.split("#")[0], "base64").toString())`.
+function encodeCursor(value: unknown): string {
+  return Buffer.from(JSON.stringify(value)).toString("base64");
+}
+
+// Edge cursors carry a "#<row>" suffix to stay distinct within a page, which
+// is meaningless for resuming — a page is the smallest unit a catalog can be
+// asked for — so it's dropped here. base64's alphabet has no "#", so the
+// split is safe.
+function decodeCursor(after: string | null): unknown {
+  if (!after) return null;
+  try {
+    return JSON.parse(
+      Buffer.from(after.split("#")[0], "base64").toString("utf8"),
+    );
+  } catch (e) {
+    return null;
+  }
+}
+
+function isSearchPosition(value: unknown): value is SearchPosition {
+  const position = value as SearchPosition | null;
+  return (
+    !!position &&
+    typeof position.keyword === "string" &&
+    typeof position.offset === "number" &&
+    Number.isFinite(position.offset)
+  );
+}
+
+// A merged search advances both catalogs at once, so its cursor carries a
+// position for each — independently, since the two may end up paging
+// different readings of the same romaji query.
+interface SearchCursor {
+  readonly dam: SearchPosition;
+  readonly joysound: SearchPosition;
+}
+
+function initialSearchCursor(keyword: string): SearchCursor {
+  return {
+    dam: { keyword, offset: DAM_FIRST_OFFSET },
+    joysound: { keyword, offset: JOYSOUND_FIRST_OFFSET },
+  };
+}
+
+function formatSearchCursor(cursor: SearchCursor): string {
+  return encodeCursor(cursor);
+}
+
+function parseSearchCursor(
+  after: string | null,
+  keyword: string,
+): SearchCursor {
+  const initial = initialSearchCursor(keyword);
+  const decoded = decodeCursor(after) as Partial<SearchCursor> | null;
+  if (!decoded) return initial;
+
+  return {
+    dam: isSearchPosition(decoded.dam) ? decoded.dam : initial.dam,
+    joysound: isSearchPosition(decoded.joysound)
+      ? decoded.joysound
+      : initial.joysound,
+  };
+}
+
+// Each leg advances to the keyword its rows actually came from, at the next
+// page of offsets. Only a catalog that answered advances — otherwise a failed
+// leg would silently skip a page of its own results once it comes back.
+function advanceSearchPosition<T>(
+  position: SearchPosition,
+  first: number,
+  result: PromiseSettledResult<RomajiSearch<T>>,
+): SearchPosition {
+  return result.status === "fulfilled"
+    ? {
+        keyword: result.value.effectiveKeyword,
+        offset: position.offset + first,
+      }
+    : position;
+}
+
+function advanceSearchCursor<D, J>(
+  cursor: SearchCursor,
+  first: number,
+  damResult: PromiseSettledResult<RomajiSearch<D>>,
+  joysoundResult: PromiseSettledResult<RomajiSearch<J>>,
+): SearchCursor {
+  return {
+    dam: advanceSearchPosition(cursor.dam, first, damResult),
+    joysound: advanceSearchPosition(cursor.joysound, first, joysoundResult),
+  };
+}
+
+// The single-catalog searches have the same resume problem, minus the second
+// leg.
+function formatPositionCursor(position: SearchPosition): string {
+  return encodeCursor(position);
+}
+
+function parsePositionCursor(
+  after: string | null,
+  keyword: string,
+  firstOffset: number,
+): SearchPosition {
+  const decoded = decodeCursor(after);
+  return isSearchPosition(decoded) ? decoded : { keyword, offset: firstOffset };
+}
+
+// Round-robin the two catalogs before the match-tier sort. That sort is
+// stable, so whatever order it's handed survives within a tier — and handing
+// it one catalog's whole block followed by the other's would render as two
+// blocks with a seam rather than a merged list.
+function interleave<Item>(a: Item[], b: Item[]): Item[] {
+  const merged: Item[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (i < a.length) merged.push(a[i]);
+    if (i < b.length) merged.push(b[i]);
+  }
+  return merged;
+}
+
+// A merged search reports which catalogs didn't answer instead of failing:
+// a blocked exit IP takes DAM down routinely, and the room can still sing off
+// JOYSOUND. Logged too — a silent half-empty list is miserable to diagnose.
+function failedSources(
+  keyword: string,
+  damResult: PromiseSettledResult<unknown>,
+  joysoundResult: PromiseSettledResult<unknown>,
+): string[] {
+  const sources: string[] = [];
+  if (damResult.status === "rejected") {
+    sources.push("DAM");
+    console.error(
+      `[search] DAM search failed for "${keyword}"`,
+      damResult.reason,
+    );
+  }
+  if (joysoundResult.status === "rejected") {
+    sources.push("JOYSOUND");
+    console.error(
+      `[search] JOYSOUND search failed for "${keyword}"`,
+      joysoundResult.reason,
+    );
+  }
+  return sources;
+}
+
 // DAM and Joysound's search backends only match Japanese-script keywords;
 // a pure-romaji query like "aidoru" returns zero results even though the
 // target title is stored as "アイドル". But not every romaji-looking query
@@ -698,19 +903,35 @@ function sortByTitleMatchTier<Item>(
 // being what the user meant (e.g. "umapyoi" matching an English-titled
 // cover on DAM as well as "ウマぴょい伝説") — so if the query looks like
 // romaji, we also try a few kana readings and merge their results in
-// rather than only falling back when the literal search is empty. Only
-// attempted on the first page of a search; later pages only continue the
-// literal search.
+// rather than only falling back when the literal search is empty.
+//
+// The readings are only tried on the first page. Later pages continue a
+// single keyword, and `effectiveKeyword` is which one: the caller stores it
+// in its cursor and passes it back as `keyword`. Without that, page 2 of
+// "aidoru" re-ran the *literal* search, which is exactly the search that
+// found nothing in the first place — so a full first page was followed by an
+// empty second one and a "More" button that loaded nothing.
+interface RomajiSearch<T> {
+  readonly result: T;
+  // The keyword these rows actually came from — the literal one, or the kana
+  // reading that produced the most of them. When several readings contribute
+  // (uncommon: DAM and JOYSOUND both match by reading, so あいどる and
+  // アイドル usually return the same rows and dedupe into one set), paging
+  // follows the dominant one and the stragglers are dropped rather than
+  // repeated.
+  readonly effectiveKeyword: string;
+}
+
 async function searchWithRomajiFallback<T>(
   keyword: string,
   isFirstPage: boolean,
-  isEmpty: (result: Awaited<T>) => boolean,
+  count: (result: Awaited<T>) => number,
   merge: (a: Awaited<T>, b: Awaited<T>) => Awaited<T>,
   search: (keyword: string) => Promise<T>,
-): Promise<Awaited<T>> {
+): Promise<RomajiSearch<Awaited<T>>> {
   const literalResult = await search(keyword);
   if (!isFirstPage || !keyword || !isRomaji(keyword)) {
-    return literalResult;
+    return { result: literalResult, effectiveKeyword: keyword };
   }
 
   // A romaji query is ambiguous about which mora should land in which kana
@@ -733,12 +954,22 @@ async function searchWithRomajiFallback<T>(
   ];
 
   let result = literalResult;
+  let effectiveKeyword = keyword;
+  let bestCount = count(literalResult);
+
   for (const candidate of candidates) {
     const candidateResult = await search(candidate);
-    if (isEmpty(candidateResult)) continue;
-    result = isEmpty(result) ? candidateResult : merge(result, candidateResult);
+    const candidateCount = count(candidateResult);
+    if (candidateCount === 0) continue;
+
+    result =
+      count(result) === 0 ? candidateResult : merge(result, candidateResult);
+    if (candidateCount > bestCount) {
+      effectiveKeyword = candidate;
+      bestCount = candidateCount;
+    }
   }
-  return result;
+  return { result, effectiveKeyword };
 }
 
 // Auto-generated "- Topic" uploads are audio-only (album art, no MV) and
@@ -1086,6 +1317,41 @@ interface SongParent {
   readonly vocalTypes?: string[];
   readonly tieUp?: string | null;
   readonly playtime?: number | null;
+}
+
+// A row of a merged search. `id` is source-qualified so Relay's store keeps
+// the two catalogs' overlapping numeric ids apart (see schema.graphql);
+// `songId`/`artistId` is the raw one the routes and mutations take. Only DAM
+// hands out readings at search time, so the yomi fields are optional and the
+// JOYSOUND rows fall through to the reading cache like they do today.
+interface SearchedSongParent {
+  readonly id: string;
+  readonly songId: string;
+  readonly source: "DAM" | "JOYSOUND";
+  readonly name: string;
+  readonly nameYomi?: string | null;
+  readonly artistName: string;
+  readonly artistNameYomi?: string | null;
+}
+
+interface SearchedArtistParent {
+  readonly id: string;
+  readonly artistId: string;
+  readonly source: "DAM" | "JOYSOUND";
+  readonly name: string;
+  readonly nameYomi?: string | null;
+  readonly songCount?: number;
+}
+
+interface SearchedConnection<Node> {
+  readonly edges: ReadonlyArray<{ node: Node; cursor: string }>;
+  readonly pageInfo: {
+    hasPreviousPage: boolean;
+    hasNextPage: boolean;
+    startCursor: string;
+    endCursor: string;
+  };
+  readonly unavailableSources: string[];
 }
 
 interface ArtistParent {
@@ -2015,6 +2281,31 @@ const resolvers = {
       return getJoysoundArtistSongCount(parent.id, dataSources.joysound);
     },
   },
+
+  SearchedSong: {
+    ...nameYomiResolvers,
+  },
+
+  SearchedArtist: {
+    // Only nameYomi, not the full spread — SearchedArtist has no artistName,
+    // and schema-building rejects a resolver for a field the type doesn't
+    // declare (same reason as RankingArtist above).
+    nameYomi(parent: SearchedArtistParent) {
+      return parent.nameYomi || toYomi(parent.name);
+    },
+    // DAM reports its catalog size in the search response; JOYSOUND doesn't,
+    // so its rows pay the same per-artist (cached, in-flight-deduped) lookup
+    // the JOYSOUND-only artist search already does.
+    songCount(
+      parent: SearchedArtistParent,
+      _: any,
+      { dataSources }: IDataSources,
+    ) {
+      return parent.source === "JOYSOUND"
+        ? getJoysoundArtistSongCount(parent.artistId, dataSources.joysound)
+        : (parent.songCount ?? 0);
+    },
+  },
   DamQueueItem: {
     // These are fetched live from DAM on every popSong call rather than
     // cached at queue time, since streaming URLs expire. If DAM is
@@ -2169,7 +2460,11 @@ const resolvers = {
       { dataSources }: IDataSources,
     ): Promise<Connection<JoysoundSongParent, string>> => {
       const firstInt = args.first || 100;
-      const afterInt = args.after ? parseInt(args.after, 10) : 1;
+      const position = parsePositionCursor(
+        args.after,
+        args.keyword,
+        JOYSOUND_FIRST_OFFSET,
+      );
 
       // Prime DAM's canonical readings into the cache in parallel with the
       // JOYSOUND search so it adds no latency of its own.
@@ -2182,18 +2477,18 @@ const resolvers = {
       return searchWithRomajiFallback<
         Awaited<ReturnType<JoysoundAPI["getSongListByKeyword"]>>
       >(
-        args.keyword,
-        afterInt === 1,
-        (result) => result.length === 0,
+        position.keyword,
+        position.offset === JOYSOUND_FIRST_OFFSET,
+        (result) => result.length,
         (a, b) =>
           dedupeBy([...a, ...b], (song) => song.selSongNo).slice(0, firstInt),
         (keyword) =>
           dataSources.joysound.getSongListByKeyword(
             keyword,
-            afterInt,
+            position.offset,
             firstInt,
           ),
-      ).then(async (result) => {
+      ).then(async ({ result, effectiveKeyword }) => {
         const sorted = sortByTitleMatchTier(
           result as any[],
           args.keyword,
@@ -2204,6 +2499,11 @@ const resolvers = {
         // resolvers run; time-boxed so a slow DAM can't stall the response.
         await withTimeout(damPrimePromise, DAM_YOMI_TIMEOUT_MS, undefined);
 
+        const endCursor = formatPositionCursor({
+          keyword: effectiveKeyword,
+          offset: position.offset + firstInt,
+        });
+
         return {
           edges: sorted.map((song, i) => ({
             node: {
@@ -2211,13 +2511,16 @@ const resolvers = {
               name: song.songName,
               artistName: song.artistName,
             },
-            cursor: (firstInt + i).toString(),
+            cursor: `${endCursor}#${i}`,
           })),
           pageInfo: {
             hasPreviousPage: false,
             hasNextPage: result.length === firstInt,
-            startCursor: "1",
-            endCursor: (firstInt + afterInt).toString(),
+            startCursor: formatPositionCursor({
+              keyword: args.keyword,
+              offset: JOYSOUND_FIRST_OFFSET,
+            }),
+            endCursor,
           },
         };
       });
@@ -2228,7 +2531,11 @@ const resolvers = {
       { dataSources }: IDataSources,
     ): Promise<Connection<JoysoundArtistParent, string>> => {
       const firstInt = args.first || 100;
-      const afterInt = args.after ? parseInt(args.after, 10) : 1;
+      const position = parsePositionCursor(
+        args.after,
+        args.keyword,
+        JOYSOUND_FIRST_OFFSET,
+      );
 
       const damPrimePromise = primeDamReadings(
         "artist",
@@ -2239,9 +2546,9 @@ const resolvers = {
       return searchWithRomajiFallback<
         Awaited<ReturnType<JoysoundAPI["getArtistListByKeyword"]>>
       >(
-        args.keyword,
-        afterInt === 1,
-        (result) => result.length === 0,
+        position.keyword,
+        position.offset === JOYSOUND_FIRST_OFFSET,
+        (result) => result.length,
         (a, b) =>
           dedupeBy([...a, ...b], (artist) => artist.artistId_digi).slice(
             0,
@@ -2250,13 +2557,18 @@ const resolvers = {
         (keyword) =>
           dataSources.joysound.getArtistListByKeyword(
             keyword,
-            afterInt,
+            position.offset,
             firstInt,
           ),
-      ).then(async (result) => {
+      ).then(async ({ result, effectiveKeyword }) => {
         // Ensure DAM's readings are cached before the per-row nameYomi field
         // resolvers run; time-boxed so a slow DAM can't stall the response.
         await withTimeout(damPrimePromise, DAM_YOMI_TIMEOUT_MS, undefined);
+
+        const endCursor = formatPositionCursor({
+          keyword: effectiveKeyword,
+          offset: position.offset + firstInt,
+        });
 
         return {
           edges: result.map((artist, i) => ({
@@ -2264,13 +2576,16 @@ const resolvers = {
               id: artist.artistId_digi,
               name: artist.artistName,
             },
-            cursor: (firstInt + i).toString(),
+            cursor: `${endCursor}#${i}`,
           })),
           pageInfo: {
             hasPreviousPage: false,
             hasNextPage: result.length === firstInt,
-            startCursor: "1",
-            endCursor: (firstInt + afterInt).toString(),
+            startCursor: formatPositionCursor({
+              keyword: args.keyword,
+              offset: JOYSOUND_FIRST_OFFSET,
+            }),
+            endCursor,
           },
         };
       });
@@ -2281,14 +2596,18 @@ const resolvers = {
       { dataSources }: IDataSources,
     ): Promise<Connection<SongParent, string>> => {
       const firstInt = args.first || 0;
-      const afterInt = args.after ? parseInt(args.after, 10) : 0;
+      const position = parsePositionCursor(
+        args.after,
+        args.name,
+        DAM_FIRST_OFFSET,
+      );
 
       return searchWithRomajiFallback<
         Awaited<ReturnType<DkwebsysAPI["getMusicByKeyword"]>>
       >(
-        args.name,
-        afterInt === 0,
-        (result) => result.list.length === 0,
+        position.keyword,
+        position.offset === DAM_FIRST_OFFSET,
+        (result) => result.list.length,
         (a, b) => ({
           data: {
             totalCount: Math.max(a.data.totalCount, b.data.totalCount),
@@ -2299,13 +2618,22 @@ const resolvers = {
           ).slice(0, firstInt),
         }),
         (keyword) =>
-          dataSources.dkwebsys.getMusicByKeyword(keyword, firstInt, afterInt),
-      ).then((result) => {
+          dataSources.dkwebsys.getMusicByKeyword(
+            keyword,
+            firstInt,
+            position.offset,
+          ),
+      ).then(({ result, effectiveKeyword }) => {
         const sorted = sortByTitleMatchTier(
           result.list,
           args.name,
           (song) => song.title,
         );
+
+        const endCursor = formatPositionCursor({
+          keyword: effectiveKeyword,
+          offset: position.offset + firstInt,
+        });
 
         return {
           edges: sorted.map((song, i) => ({
@@ -2316,14 +2644,292 @@ const resolvers = {
               artistName: song.artist,
               artistNameYomi: song.artistYomi,
             },
-            cursor: (firstInt + i).toString(),
+            cursor: `${endCursor}#${i}`,
           })),
           pageInfo: {
             hasPreviousPage: false, // We can always do this because we don't support backward pagination
-            hasNextPage: firstInt + afterInt < result.data.totalCount,
-            startCursor: "0",
-            endCursor: (firstInt + afterInt).toString(),
+            hasNextPage: position.offset + firstInt < result.data.totalCount,
+            startCursor: formatPositionCursor({
+              keyword: args.name,
+              offset: DAM_FIRST_OFFSET,
+            }),
+            endCursor,
           },
+        };
+      });
+    },
+    searchSongs: (
+      _: any,
+      args: {
+        keyword: string | null;
+        first: number | null;
+        after: string | null;
+      },
+      { dataSources }: IDataSources,
+    ): Promise<SearchedConnection<SearchedSongParent>> => {
+      const keyword = args.keyword || "";
+      const first = args.first || SEARCH_PAGE_SIZE;
+      const cursor = parseSearchCursor(args.after, keyword);
+
+      return Promise.allSettled([
+        searchWithRomajiFallback<
+          Awaited<ReturnType<DkwebsysAPI["getMusicByKeyword"]>>
+        >(
+          cursor.dam.keyword,
+          cursor.dam.offset === DAM_FIRST_OFFSET,
+          (result) => result.list.length,
+          (a, b) => ({
+            data: {
+              totalCount: Math.max(a.data.totalCount, b.data.totalCount),
+            },
+            list: dedupeBy(
+              [...a.list, ...b.list],
+              (song) => song.requestNo,
+            ).slice(0, first),
+          }),
+          (candidate) =>
+            dataSources.dkwebsys.getMusicByKeyword(
+              candidate,
+              first,
+              cursor.dam.offset,
+            ),
+        ),
+        searchWithRomajiFallback<
+          Awaited<ReturnType<JoysoundAPI["getSongListByKeyword"]>>
+        >(
+          cursor.joysound.keyword,
+          cursor.joysound.offset === JOYSOUND_FIRST_OFFSET,
+          (result) => result.length,
+          (a, b) =>
+            dedupeBy([...a, ...b], (song) => song.selSongNo).slice(0, first),
+          (candidate) =>
+            dataSources.joysound.getSongListByKeyword(
+              candidate,
+              cursor.joysound.offset,
+              first,
+            ),
+        ),
+      ]).then(([damResult, joysoundResult]) => {
+        const unavailableSources = failedSources(
+          keyword,
+          damResult,
+          joysoundResult,
+        );
+
+        const damSongs =
+          damResult.status === "fulfilled" ? damResult.value.result.list : [];
+        const joysoundSongs =
+          joysoundResult.status === "fulfilled"
+            ? joysoundResult.value.result
+            : [];
+
+        // The DAM leg carries DAM's curated readings for both catalogs' rows,
+        // so fold them in here rather than paying primeDamReadings' separate
+        // (identical) request the way the per-service resolvers do. Ordered
+        // before the return, so the JOYSOUND rows' nameYomi field resolvers
+        // see the cache already warm. Keyed by the keyword the rows actually
+        // came from, which for a romaji query is the kana reading — the
+        // self-credit in damSongReadingPairs compares result titles against
+        // it, and "aidoru" would never match one.
+        if (damResult.status === "fulfilled") {
+          const damKeyword = damResult.value.effectiveKeyword;
+          if (damKeyword) {
+            applyDamReadings(
+              "song",
+              damKeyword,
+              damSongReadingPairs(damKeyword, damSongs),
+            );
+          }
+        }
+
+        const merged = sortByTitleMatchTier(
+          interleave(
+            joysoundSongs.map(
+              (song): SearchedSongParent => ({
+                id: `JOYSOUND:${song.selSongNo}`,
+                songId: song.selSongNo,
+                source: "JOYSOUND",
+                name: song.songName,
+                artistName: song.artistName,
+              }),
+            ),
+            damSongs.map(
+              (song): SearchedSongParent => ({
+                id: `DAM:${song.requestNo}`,
+                songId: song.requestNo,
+                source: "DAM",
+                name: song.title,
+                nameYomi: song.titleYomi,
+                artistName: song.artist,
+                artistNameYomi: song.artistYomi,
+              }),
+            ),
+          ),
+          keyword,
+          (song) => song.name,
+        );
+
+        const next = advanceSearchCursor(
+          cursor,
+          first,
+          damResult,
+          joysoundResult,
+        );
+        const endCursor = formatSearchCursor(next);
+        const hasNextPage =
+          (damResult.status === "fulfilled" &&
+            cursor.dam.offset + first <
+              damResult.value.result.data.totalCount) ||
+          (joysoundResult.status === "fulfilled" &&
+            joysoundResult.value.result.length === first);
+
+        return {
+          edges: merged.map((node, i) => ({
+            node,
+            cursor: `${endCursor}#${i}`,
+          })),
+          pageInfo: {
+            hasPreviousPage: false,
+            hasNextPage,
+            startCursor: formatSearchCursor(initialSearchCursor(keyword)),
+            endCursor,
+          },
+          unavailableSources,
+        };
+      });
+    },
+    searchArtists: (
+      _: any,
+      args: {
+        keyword: string | null;
+        first: number | null;
+        after: string | null;
+      },
+      { dataSources }: IDataSources,
+    ): Promise<SearchedConnection<SearchedArtistParent>> => {
+      const keyword = args.keyword || "";
+      const first = args.first || SEARCH_PAGE_SIZE;
+      const cursor = parseSearchCursor(args.after, keyword);
+
+      return Promise.allSettled([
+        searchWithRomajiFallback<
+          Awaited<ReturnType<DkwebsysAPI["getArtistByKeyword"]>>
+        >(
+          cursor.dam.keyword,
+          cursor.dam.offset === DAM_FIRST_OFFSET,
+          (result) => result.list.length,
+          (a, b) => ({
+            data: {
+              totalCount: Math.max(a.data.totalCount, b.data.totalCount),
+            },
+            list: dedupeBy(
+              [...a.list, ...b.list],
+              (artist) => artist.artistCode,
+            ).slice(0, first),
+          }),
+          (candidate) =>
+            dataSources.dkwebsys.getArtistByKeyword(
+              candidate,
+              first,
+              cursor.dam.offset,
+            ),
+        ),
+        searchWithRomajiFallback<
+          Awaited<ReturnType<JoysoundAPI["getArtistListByKeyword"]>>
+        >(
+          cursor.joysound.keyword,
+          cursor.joysound.offset === JOYSOUND_FIRST_OFFSET,
+          (result) => result.length,
+          (a, b) =>
+            dedupeBy([...a, ...b], (artist) => artist.artistId_digi).slice(
+              0,
+              first,
+            ),
+          (candidate) =>
+            dataSources.joysound.getArtistListByKeyword(
+              candidate,
+              cursor.joysound.offset,
+              first,
+            ),
+        ),
+      ]).then(([damResult, joysoundResult]) => {
+        const unavailableSources = failedSources(
+          keyword,
+          damResult,
+          joysoundResult,
+        );
+
+        const damArtists =
+          damResult.status === "fulfilled" ? damResult.value.result.list : [];
+        const joysoundArtists =
+          joysoundResult.status === "fulfilled"
+            ? joysoundResult.value.result
+            : [];
+
+        if (damResult.status === "fulfilled") {
+          const damKeyword = damResult.value.effectiveKeyword;
+          if (damKeyword) {
+            applyDamReadings(
+              "artist",
+              damKeyword,
+              damArtistReadingPairs(damKeyword, damArtists),
+            );
+          }
+        }
+
+        // Artist names aren't titles, but the same exact/prefix/other tiering
+        // is what floats a literal name match over the catalogs' own ordering.
+        const merged = sortByTitleMatchTier(
+          interleave(
+            joysoundArtists.map(
+              (artist): SearchedArtistParent => ({
+                id: `JOYSOUND:${artist.artistId_digi}`,
+                artistId: artist.artistId_digi,
+                source: "JOYSOUND",
+                name: artist.artistName,
+              }),
+            ),
+            damArtists.map(
+              (artist): SearchedArtistParent => ({
+                id: `DAM:${artist.artistCode}`,
+                artistId: artist.artistCode.toString(),
+                source: "DAM",
+                name: artist.artist,
+                nameYomi: artist.artistYomi,
+                songCount: artist.holdMusicCount,
+              }),
+            ),
+          ),
+          keyword,
+          (artist) => artist.name,
+        );
+
+        const next = advanceSearchCursor(
+          cursor,
+          first,
+          damResult,
+          joysoundResult,
+        );
+        const endCursor = formatSearchCursor(next);
+        const hasNextPage =
+          (damResult.status === "fulfilled" &&
+            cursor.dam.offset + first <
+              damResult.value.result.data.totalCount) ||
+          (joysoundResult.status === "fulfilled" &&
+            joysoundResult.value.result.length === first);
+
+        return {
+          edges: merged.map((node, i) => ({
+            node,
+            cursor: `${endCursor}#${i}`,
+          })),
+          pageInfo: {
+            hasPreviousPage: false,
+            hasNextPage,
+            startCursor: formatSearchCursor(initialSearchCursor(keyword)),
+            endCursor,
+          },
+          unavailableSources,
         };
       });
     },
@@ -2363,14 +2969,18 @@ const resolvers = {
       { dataSources }: IDataSources,
     ): Promise<Connection<ArtistParent, string>> => {
       const firstInt = args.first || 0;
-      const afterInt = args.after ? parseInt(args.after, 10) : 0;
+      const position = parsePositionCursor(
+        args.after,
+        args.name,
+        DAM_FIRST_OFFSET,
+      );
 
       return searchWithRomajiFallback<
         Awaited<ReturnType<DkwebsysAPI["getArtistByKeyword"]>>
       >(
-        args.name,
-        afterInt === 0,
-        (result) => result.list.length === 0,
+        position.keyword,
+        position.offset === DAM_FIRST_OFFSET,
+        (result) => result.list.length,
         (a, b) => ({
           data: {
             totalCount: Math.max(a.data.totalCount, b.data.totalCount),
@@ -2381,24 +2991,38 @@ const resolvers = {
           ).slice(0, firstInt),
         }),
         (keyword) =>
-          dataSources.dkwebsys.getArtistByKeyword(keyword, firstInt, afterInt),
-      ).then((result) => ({
-        edges: result.list.map((artist, i) => ({
-          node: {
-            id: artist.artistCode.toString(),
-            name: artist.artist,
-            nameYomi: artist.artistYomi,
-            songCount: artist.holdMusicCount,
+          dataSources.dkwebsys.getArtistByKeyword(
+            keyword,
+            firstInt,
+            position.offset,
+          ),
+      ).then(({ result, effectiveKeyword }) => {
+        const endCursor = formatPositionCursor({
+          keyword: effectiveKeyword,
+          offset: position.offset + firstInt,
+        });
+
+        return {
+          edges: result.list.map((artist, i) => ({
+            node: {
+              id: artist.artistCode.toString(),
+              name: artist.artist,
+              nameYomi: artist.artistYomi,
+              songCount: artist.holdMusicCount,
+            },
+            cursor: `${endCursor}#${i}`,
+          })),
+          pageInfo: {
+            hasPreviousPage: false, // We can always do this because we don't support backward pagination
+            hasNextPage: position.offset + firstInt < result.data.totalCount,
+            startCursor: formatPositionCursor({
+              keyword: args.name,
+              offset: DAM_FIRST_OFFSET,
+            }),
+            endCursor,
           },
-          cursor: (firstInt + i).toString(),
-        })),
-        pageInfo: {
-          hasPreviousPage: false, // We can always do this because we don't support backward pagination
-          hasNextPage: firstInt + afterInt < result.data.totalCount,
-          startCursor: "0",
-          endCursor: (firstInt + afterInt).toString(),
-        },
-      }));
+        };
+      });
     },
     artistById: (
       _: any,

@@ -15,20 +15,12 @@ import * as styles from "./SearchMethodGrid.module.scss";
 const backgroundIcons = {
   song: <MdMusicVideo />,
   artist: <BsPersonSquare />,
-  joysoundSong: <MdMusicVideo />,
-  joysoundArtist: <BsPersonSquare />,
   youtube: <FaYoutube />,
   niconico: <SiNiconico />,
 };
 
 interface Props {
-  method:
-    | "song"
-    | "artist"
-    | "joysoundSong"
-    | "joysoundArtist"
-    | "youtube"
-    | "niconico";
+  method: "song" | "artist" | "youtube" | "niconico";
   text: string;
 }
 

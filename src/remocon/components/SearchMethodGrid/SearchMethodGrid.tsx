@@ -10,30 +10,29 @@ import RankingGridItem from "./RankingGridItem";
 import * as styles from "./SearchMethodGrid.module.scss";
 import SearchMethodGridItem from "./SearchMethodGridItem";
 
-// Each service gets a thin vertical brand banner running down the left of
-// its section, spanning both the Title/Artist row and the TOP 100 row. The
-// last section has no banner and no catalog behind it — Oricon, YouTube and
-// Niconico share a full-width row of three.
+// Title and Artist each search both catalogs at once, so they're one row of
+// two rather than a per-service block — the service a result came from is a
+// badge on the row and a filter chip above the list, not a decision you make
+// before typing. The brand banners survive on the charts below, which really
+// are per-service: DAM and JOYSOUND publish different Top 100s.
 const SearchMethodGrid = () => (
   <div>
     <h2>Find a song</h2>
     <div className={styles.grid}>
-      <div className={styles.serviceSection}>
+      <div className={styles.searchSection}>
+        <SearchMethodGridItem method="song" text="Title" />
+        <SearchMethodGridItem method="artist" text="Artist" />
+      </div>
+      <div className={styles.rankingSection}>
         <div className={classnames(styles.serviceBanner, styles.joysound)}>
           <img src={joysoundLogo} alt="JOYSOUND" />
         </div>
-        <SearchMethodGridItem method="joysoundSong" text="Title" />
-        <SearchMethodGridItem method="joysoundArtist" text="Artist" />
-        <div className={styles.rankingRowSizer} aria-hidden="true" />
         <RankingGridItem service="joysound" />
       </div>
-      <div className={styles.serviceSection}>
+      <div className={styles.rankingSection}>
         <div className={classnames(styles.serviceBanner, styles.dam)}>
           <img src={damLogo} alt="DAM" />
         </div>
-        <SearchMethodGridItem method="song" text="Title" />
-        <SearchMethodGridItem method="artist" text="Artist" />
-        <div className={styles.rankingRowSizer} aria-hidden="true" />
         <RankingGridItem service="dam" />
       </div>
       <div className={styles.mediaSection}>

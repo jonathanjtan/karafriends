@@ -2,7 +2,6 @@ import React from "react";
 import { useParams } from "react-router";
 
 import { oriconSearchQuery } from "../../common/oriconChart";
-import JoysoundSongSearchResults from "../components/JoysoundSongSearchResults";
 import SongSearchResults from "../components/SongSearchResults";
 import * as styles from "./OriconRankingPage.module.scss";
 
@@ -19,8 +18,10 @@ type OriconSongParams = {
 // rather than used to filter, because the three sources spell credits
 // differently ("WhiteFlame feat.初音ミク" vs the catalogs' own forms) — a
 // strict artist match would hide real results, so the caller picks instead.
-// Each results list is independently withLoader-wrapped, so one service being
-// unreachable still leaves the other usable.
+// This used to be two per-service lists under two headings; the merged search
+// covers the same ground in one ranked list, and carries the same "one
+// service being unreachable still leaves the other usable" property in its
+// unavailableSources notice.
 const OriconSongPage = () => {
   const params = useParams<OriconSongParams>();
   const charted = params.query ? decodeURIComponent(params.query) : null;
@@ -39,10 +40,6 @@ const OriconSongPage = () => {
         it.
       </p>
 
-      <h3 className={styles.serviceHeading}>JOYSOUND</h3>
-      <JoysoundSongSearchResults query={query} />
-
-      <h3 className={styles.serviceHeading}>DAM</h3>
       <SongSearchResults query={query} />
     </>
   );

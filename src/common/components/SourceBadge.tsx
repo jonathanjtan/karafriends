@@ -10,6 +10,14 @@ const SOURCE_COLORS: Record<string, string> = {
   NicoQueueItem: "#5f5e5a",
 };
 
+// Merged search rows are typed by catalog (the SongSource enum) rather than
+// by QueueItem typename. Both name the same two services, so they share the
+// colors and labels below.
+const SOURCE_ALIASES: Record<string, string> = {
+  DAM: "DamQueueItem",
+  JOYSOUND: "JoysoundQueueItem",
+};
+
 const YOUTUBE_RED = "#ff0000";
 
 const pillStyle: React.CSSProperties = {
@@ -38,7 +46,8 @@ function PlayIcon() {
 }
 
 interface Props {
-  // A QueueItem __typename; unknown/missing values render nothing.
+  // A QueueItem __typename or a SongSource; unknown/missing values render
+  // nothing.
   typename: string | undefined;
   // JOYSOUND only: set when a YouTube MV is composited behind the song.
   youtubeVideoId?: string | null;
@@ -48,10 +57,13 @@ interface Props {
 // Sized entirely in em so one component scales from 11px remocon rows to
 // vh-sized TV text via the fontSize prop.
 export default function SourceBadge({
-  typename,
+  typename: rawTypename,
   youtubeVideoId,
   fontSize,
 }: Props) {
+  const typename = rawTypename
+    ? (SOURCE_ALIASES[rawTypename] ?? rawTypename)
+    : undefined;
   const color = typename ? SOURCE_COLORS[typename] : undefined;
   if (!color) return null;
 

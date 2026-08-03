@@ -1,0 +1,95 @@
+// The service reds, same values the queue badges use (common/SourceBadge).
+// Brand colors, so deliberately identical in both themes.
+$joysound-red: #ef4b4b;
+$dam-red: #8e1f2f;
+
+.filters {
+  margin: 8px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+// The dot carries the brand color on the unselected chips, which is what
+// ties a chip to the badge on its rows without painting the whole row of
+// chips red.
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.joysound .dot {
+  background: $joysound-red;
+}
+
+.dam .dot {
+  background: $dam-red;
+}
+
+.count {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.selected {
+  border-color: var(--accent-surface);
+  background: var(--accent-surface);
+  color: var(--on-accent);
+  font-weight: bold;
+
+  .count {
+    color: var(--on-accent);
+  }
+
+  // A white dot on the filled chip: the brand red is unreadable on the
+  // accent fill, and the dot's job at this point is only to keep the chip's
+  // shape from shifting.
+  .dot {
+    background: var(--on-accent);
+  }
+}
+
+.unavailable {
+  opacity: 0.5;
+
+  .dot {
+    background: var(--control-off);
+  }
+}
+
+.notice {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--warning-surface);
+  color: var(--on-warning);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.retry {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--on-warning);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--on-warning);
+  font-size: 13px;
+}

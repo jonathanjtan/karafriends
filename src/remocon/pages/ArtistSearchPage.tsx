@@ -4,12 +4,23 @@ import { useParams } from "react-router";
 import ArtistSearchResults from "../components/ArtistSearchResults";
 import DebouncedInput from "../components/DebouncedInput";
 import SearchFormWrapper from "../components/SearchFormWrapper";
+import { SearchSource } from "../components/SearchSourceFilter";
 
 type ArtistSearchParams = {
   query: string;
 };
 
-const ArtistSearchPage = () => {
+interface Props {
+  // See SongSearchPage — the service-specific routes land here with the
+  // catalog preselected.
+  initialSource?: SearchSource | null;
+  routeBase?: string;
+}
+
+const ArtistSearchPage = ({
+  initialSource = null,
+  routeBase = "/search/artist",
+}: Props) => {
   const params = useParams<ArtistSearchParams>();
   const [query, setQuery] = useState<string | null>(params.query || null);
 
@@ -21,11 +32,11 @@ const ArtistSearchPage = () => {
         placeholder="Start typing..."
         onChange={(e) => {
           setQuery(e.target.value === "" ? null : e.target.value);
-          history.replaceState({}, "", `#/search/artist/${e.target.value}`);
+          history.replaceState({}, "", `#${routeBase}/${e.target.value}`);
         }}
         defaultValue={params.query}
       />
-      <ArtistSearchResults query={query} />
+      <ArtistSearchResults query={query} initialSource={initialSource} />
     </SearchFormWrapper>
   );
 };

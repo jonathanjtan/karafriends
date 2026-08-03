@@ -330,6 +330,25 @@ These stay here — the first two are whole-app contracts, the third spans
   "Check now"). Gate the per-song trigger on a **real** song transition — the
   Player polls `popSong` every ~5s while idle, which will otherwise hammer the
   services.
+- **Merged search** (`searchSongs` / `searchArtists`): one search covers both
+  catalogs. Each leg is the same per-service search as before, run under
+  `Promise.allSettled` so a catalog that 403s lands in `unavailableSources`
+  (an inline notice + a disabled filter chip) instead of failing the query;
+  results are round-robined and then `titleMatchTier`-sorted, so a tier's rows
+  alternate services rather than arriving in two blocks. Node `id` must stay
+  **source-qualified** (`"DAM:1234"`) or Relay's store merges the catalogs'
+  overlapping numeric ids into one record. The per-service fields still exist
+  for anything wanting one catalog.
+- **Search cursors carry a keyword, not just an offset** (base64 JSON; one
+  position per catalog for the merged search). Two reasons, both of which
+  produced a wrong second page before. The catalogs count from different
+  origins — DAM rows from 0, JOYSOUND rows from **1**, whose argument reads
+  like a page number and is not, so treating it as one re-serves page 1
+  shifted by a row. And a romaji query is really searched as a _kana reading_
+  of itself (`searchWithRomajiFallback`, first page only), so resuming the
+  literal keyword re-runs the search that found nothing: a full first page
+  followed by an empty second one. The fallback reports its
+  `effectiveKeyword` and the cursor carries it.
 - **Avatar portraits** (`scripts/getPortraits.mjs`, `main/portraits.ts`,
   `remocon/components/PmdPortraitPicker`): the avatar picker runs off a
   **local mirror** of PMDCollab SpriteCollab (no external requests at
