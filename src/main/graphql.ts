@@ -1474,7 +1474,7 @@ const MAX_PIANO_ROLL_OPACITY = 1.0;
 // Height as a fraction of the player screen; the remocon offers
 // off/small/medium/large presets (0 / 0.2 / 0.3 / 0.4). 0 is a special
 // "hidden" value; any other requested size is clamped into this range.
-const DEFAULT_PIANO_ROLL_SIZE = 0.3;
+const DEFAULT_PIANO_ROLL_SIZE = 0.2;
 const MIN_PIANO_ROLL_SIZE = 0.1;
 const MAX_PIANO_ROLL_SIZE = 0.5;
 
@@ -1485,7 +1485,7 @@ const DEFAULT_HISTORY_RECORDING = !isDev;
 
 // TODO: make this gql context instead of global
 let db: NotARealDb = {
-  bgmTrack: null,
+  bgmTrack: SHUFFLE_VALUE,
   bgmVolume: DEFAULT_BGM_VOLUME,
   breakEndsAt: null,
   breakMessageText: null,
@@ -1496,17 +1496,17 @@ let db: NotARealDb = {
   historyRecordingEnabled: DEFAULT_HISTORY_RECORDING,
   hostname: null,
   idToAdhocLyrics: {},
-  joysoundRomajiWordSegmentation: false,
-  micOutputEnabled: true,
+  joysoundRomajiWordSegmentation: true,
+  micOutputEnabled: false,
   micRmsGateEnabled: false,
   micRmsGateThreshold: DEFAULT_MIC_RMS_GATE_THRESHOLD,
-  experimentalScoringEnabled: false,
-  oledFriendly: false,
+  experimentalScoringEnabled: true,
+  oledFriendly: true,
   pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
   pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
   pitchShiftSemis: 0,
   playbackState: PlaybackState.WAITING,
-  queueIntermissionEnabled: false,
+  queueIntermissionEnabled: true,
   settingsCollapsed: false,
   sidebarCollapsed: false,
   songQueue: [],
@@ -1652,7 +1652,7 @@ function saveDb() {
 
 function loadDb(): NotARealDb {
   const loaded: NotARealDb = {
-    bgmTrack: null,
+    bgmTrack: SHUFFLE_VALUE,
     bgmVolume: DEFAULT_BGM_VOLUME,
     breakEndsAt: null,
     breakMessageText: null,
@@ -1663,17 +1663,17 @@ function loadDb(): NotARealDb {
     historyRecordingEnabled: DEFAULT_HISTORY_RECORDING,
     hostname: null,
     idToAdhocLyrics: {},
-    joysoundRomajiWordSegmentation: false,
-    micOutputEnabled: true,
+    joysoundRomajiWordSegmentation: true,
+    micOutputEnabled: false,
     micRmsGateEnabled: false,
     micRmsGateThreshold: DEFAULT_MIC_RMS_GATE_THRESHOLD,
-    experimentalScoringEnabled: false,
-    oledFriendly: false,
+    experimentalScoringEnabled: true,
+    oledFriendly: true,
     pianoRollOpacity: DEFAULT_PIANO_ROLL_OPACITY,
     pianoRollSize: DEFAULT_PIANO_ROLL_SIZE,
     pitchShiftSemis: 0,
     playbackState: PlaybackState.WAITING,
-    queueIntermissionEnabled: false,
+    queueIntermissionEnabled: true,
     settingsCollapsed: false,
     sidebarCollapsed: false,
     songQueue: [],
