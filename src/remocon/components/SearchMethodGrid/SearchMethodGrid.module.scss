@@ -49,14 +49,24 @@ $banner-width: 30px;
 }
 
 // One service's chart: the thin vertical brand banner, then a full-width TOP
-// 100 button. Shorter than the search tiles above — a chart is one
-// destination, not half a row of them — so it sets its own height rather than
-// borrowing the tiles' golden-ratio square.
+// 100 button. It sets its own height rather than borrowing the tiles'
+// golden-ratio square, which at full width would be half a screen tall — but
+// it can't go too far the other way either. These rows are ~twice the width
+// of a search tile, so at the 72px they started out at they read as squashed
+// slabs next to them (5.4:1 against the tiles' 1.6:1). Still deliberately
+// shorter than a tile: a chart is one destination, not half a row of them.
+$ranking-height: 112px;
+
+// Rotated logo length, inset a little so the wordmark doesn't run edge to
+// edge of the banner. See .serviceBanner img for why this is a width.
+$logo-length: $ranking-height - 16px;
+$dam-logo-ratio: 0.84;
+
 .rankingSection {
   display: grid;
   grid-template-columns: $banner-width 1fr;
   gap: 8px;
-  height: 72px;
+  height: $ranking-height;
 
   a {
     text-decoration: none;
@@ -105,13 +115,14 @@ $banner-width: 30px;
   img {
     display: block;
     // Rotation swaps the axes, so the pre-rotation WIDTH is what has to fit
-    // the banner's height — it can't exceed the chart row (see
-    // .rankingSection) or the logo's ends get clipped off. It used to be
-    // 150px because the banner then spanned two rows of search tiles.
-    width: 64px;
+    // the banner's HEIGHT — it can't exceed the chart row or the logo's ends
+    // get clipped off, which is why it's derived from $ranking-height rather
+    // than set by hand. (It was a flat 150px back when the banner spanned two
+    // rows of search tiles.)
+    width: $logo-length;
     // The flex strip is far narrower than the pre-rotation logo box; don't
     // let it shrink the image before the rotation swaps its axes.
-    min-width: 64px;
+    min-width: $logo-length;
     transform: rotate(-90deg);
   }
 
@@ -122,9 +133,11 @@ $banner-width: 30px;
   &.dam {
     background: $dam-red;
 
+    // The DAM wordmark is shorter than JOYSOUND's, so matching lengths would
+    // set it in noticeably larger type. This keeps the two cap heights even.
     img {
-      width: 54px;
-      min-width: 54px;
+      width: $logo-length * $dam-logo-ratio;
+      min-width: $logo-length * $dam-logo-ratio;
     }
   }
 }
