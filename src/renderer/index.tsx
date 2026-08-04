@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/browser";
 import Kuroshiro from "kuroshiro";
 import KuromojiAnalyzer from "kuroshiro-analyzer-kuromoji";
 
@@ -14,11 +13,6 @@ import QrPanel from "./QrPanel";
 import SettingsPanel from "./SettingsPanel";
 import { panelKind } from "./settingsPanelBus";
 import KarafriendsAudio from "./webAudio";
-
-Sentry.init({
-  dsn: "https://80cbda8ca4af42d9b95c60eb1f00566f@sentry.io/6728669",
-  debug: true,
-});
 
 // This bundle is loaded by three windows: the big screen and the two
 // popped-out panels (settings, join QR). Only the big screen gets an audio

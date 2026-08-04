@@ -13,8 +13,9 @@ const ATTEMPT_TIMEOUT_MS = 10000;
 
 // The initial fetch a hook fires on mount can race the GraphQL server coming
 // up (dev launches the renderer alongside the server) and the very first
-// request after a fresh launch is known to flake (the Sentry
-// require-in-the-middle / Parcel race — see CLAUDE.md). A plain fetchQuery
+// request after a fresh launch has historically flaked (a Parcel lazy-module
+// race, previously aggravated by Sentry's require patching — see CLAUDE.md).
+// A plain fetchQuery
 // with no error handler fails silently and the setting never syncs, so
 // retry with capped backoff until the query succeeds or the hook unmounts.
 export default function fetchQueryWithRetry<TQuery extends OperationType>(

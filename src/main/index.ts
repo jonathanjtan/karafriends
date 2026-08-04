@@ -6,18 +6,19 @@ import { fileURLToPath } from "url";
 import { default as nativeAudioUrl } from "url:../../native/index.node";
 const nativeAudio = require(fileURLToPath(nativeAudioUrl)); // tslint:disable-line:no-var-requires
 
-import * as Sentry from "@sentry/node";
-
-Sentry.init({
-  dsn: "https://80cbda8ca4af42d9b95c60eb1f00566f@sentry.io/6728669",
-  debug: true,
-});
-
-async function handleError(err: unknown) {
+// Crash reporting used to go out to Sentry here, but the DSN was upstream's:
+// every event this fork sent landed in a project nobody here can read, in
+// exchange for `debug: true` console chatter and @sentry/node's
+// require-in-the-middle patching (half of the "first GraphQL request after
+// launch throws" flake). Removed on both dev and prod. If reporting comes
+// back, it needs our own DSN, read from config rather than hardcoded.
+function handleError(err: unknown) {
   console.error("Fatal error:", err);
-  Sentry.captureException(err);
-  await Sentry.close(10 * 1000);
-  process.exit(1);
+  // The old `await Sentry.close(...)` incidentally gave stderr time to drain
+  // before exiting. `console.error` to a pipe — which is what `run-dev` has,
+  // via concurrently — is async, so exiting in the same tick can truncate the
+  // message that is now the only record of a fatal error. Give it a tick.
+  setTimeout(() => process.exit(1), 100);
 }
 
 process.on("uncaughtException", handleError);

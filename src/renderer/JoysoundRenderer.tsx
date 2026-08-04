@@ -1,4 +1,3 @@
-import * as Sentry from "@sentry/browser";
 import M from "materialize-css";
 import React, { useEffect, useRef } from "react";
 import invariant from "ts-invariant";
@@ -1026,7 +1025,7 @@ export default function JoysoundRenderer(props: {
       }
 
       if (joysoundData === null) {
-        Sentry.captureException(parseError);
+        console.error("All parseJoysoundData attempts failed", parseError);
         M.toast({
           html: "<span>⚠️ Lyrics failed to render for this song</span>",
         });

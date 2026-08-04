@@ -295,7 +295,9 @@ Steinberg's ASIO SDK headers for the optional ASIO audio backend.
 - **tunnel.yaml** is a Cloudflare tunnel config; it's a stretch
   capability for exposing your jukebox over the internet, but it isn't
   required and isn't used by the default dev loop.
-- **Sentry** is wired up in both the main process and the two browser
-  bundles for error reporting to a shared upstream Sentry project. If
-  you fork this and don't want errors sent there, remove or replace the
-  `Sentry.init(...)` calls.
+- **Error reporting**: there is none. Upstream wired Sentry into the
+  main process and both browser bundles, but the hardcoded DSN pointed
+  at upstream's own project — this fork was shipping crash reports to
+  someone else's dashboard and reading none of them. It was removed;
+  uncaught errors go to the console. Adding it back means our own DSN,
+  read from `config.yaml` rather than hardcoded.

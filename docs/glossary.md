@@ -167,6 +167,7 @@ The general-purpose audio/video processing tool. Used here for
 transcoding and remuxing downloaded videos.
 
 **Sentry**
-A SaaS error-tracking service. Karafriends wires Sentry into the main
-process and both browser bundles to report uncaught exceptions. The
-DSN is hardcoded; if you fork, replace or remove it.
+A SaaS error-tracking service. Upstream karafriends reported uncaught
+exceptions to it from the main process and both browser bundles; this
+fork removed it, since the hardcoded DSN was upstream's project. See
+`architecture.md`.
