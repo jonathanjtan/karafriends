@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
 import { JoysoundSongPageQuery$data } from "../../pages/__generated__/JoysoundSongPageQuery.graphql";
+import ComfortableHint from "../ComfortableHint";
 import JoysoundQueueButton from "./JoysoundQueueButton";
 import * as styles from "./JoysoundQueueButtons.module.scss";
 
@@ -66,6 +67,27 @@ const JoysoundQueueButtons = ({
           isRomaji={true}
           isDisabled={isDisabled}
           setDisabled={setIsDisabled}
+        />
+
+        {/* Under the normal buttons, which are untouched. A suggestion adds a
+            way to queue; it never replaces or disables the plain one. */}
+        <ComfortableHint
+          source="JOYSOUND"
+          songId={song.id}
+          allowFetch
+          renderShiftAction={(semis) => (
+            <JoysoundQueueButton
+              song={song}
+              youtubeVideoId={validatedYoutubeId}
+              youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
+              userIdentity={userIdentity}
+              isRomaji={false}
+              isDisabled={isDisabled}
+              setDisabled={setIsDisabled}
+              pitchShiftSemis={semis}
+              label={`Queue at ${semis > 0 ? `+${semis}` : semis}`}
+            />
+          )}
         />
       </div>
     );

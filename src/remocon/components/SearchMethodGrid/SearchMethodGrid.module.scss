@@ -18,6 +18,9 @@ $search-method-colors: (
   youtube: #e79ca1,
   niconico: #ababab,
   oricon: #b39ddb,
+  // Indigo, matching the warm-up's SourceBadge -- it isn't a service, and it
+  // must not read as either red brand.
+  tuning: #a79ce7,
   joysound: $ranking-gold,
   dam: $ranking-platinum,
 );
@@ -257,4 +260,18 @@ $label-lightness-dark: 92%;
   font-size: 32px;
   font-weight: bold;
   z-index: 1;
+}
+
+// The warm-up tile. Full width and shorter than a search tile: it is one
+// destination rather than half a row of them, and it is not a search.
+.warmupSection {
+  display: grid;
+  grid-template-columns: 1fr;
+  height: 64px;
+
+  a {
+    text-decoration: none;
+    display: block;
+    height: 100%;
+  }
 }

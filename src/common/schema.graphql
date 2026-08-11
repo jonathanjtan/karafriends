@@ -160,6 +160,36 @@ type Query {
     nickname: String!
     personId: String
   ): Int!
+  # This singer's most recent measured range, or null if they haven't done the
+  # warm-up. Matched on personId when both sides have one, otherwise nickname.
+  vocalRange(nickname: String!, personId: String): VocalRangeRecord
+  # Where a song sits. `allowFetch: false` (the default) answers only from the
+  # local cache and never touches the network -- that is the mode list surfaces
+  # use, where an 8s extraction per row is out of the question. A song detail
+  # page, opening one song the user actually tapped, may pass true.
+  # How a batch of songs sits for one singer, answered **from the local cache
+  # only** -- this is the list-surface counterpart of songVocalRange, and it
+  # never fetches or extracts anything. Songs with no cached range are simply
+  # absent from the result, which callers render as no marker at all.
+  #
+  # One request per page of results rather than one per row: a search page is
+  # ~60 rows, and a marker is not worth 60 round trips.
+  songFits(
+    songs: [SongFitRef!]!
+    nickname: String!
+    personId: String
+  ): [SongFitEntry!]!
+  # Passing nickname/personId also computes `fit` for that singer. The fit is
+  # decided here rather than on the phone because it needs the song's
+  # duration-weighted pitch distribution, which is far more data than the
+  # answer is worth shipping.
+  songVocalRange(
+    source: SongSource!
+    songId: String!
+    allowFetch: Boolean
+    nickname: String
+    personId: String
+  ): SongVocalRangeResult!
   suggestedYoutubeVideos(songId: String!): SuggestedYoutubeVideosResult!
   videoDownloadProgress(
     videoDownloadType: Int!
@@ -189,6 +219,12 @@ type Mutation {
   ): QueueSongResult!
   queueNicoSong(
     input: QueueNicoSongInput
+    tryHeadOfQueue: Boolean!
+  ): QueueSongResult!
+  # Queue the guided warm-up. Generates its own reference melody and silent
+  # video, so unlike every other queue mutation it reaches no service at all.
+  queueTuningTest(
+    input: QueueTuningTestInput
     tryHeadOfQueue: Boolean!
   ): QueueSongResult!
   recheckServiceHealth: ServiceHealth!
@@ -231,6 +267,10 @@ type Mutation {
   # Ignored while history recording is off, so test queueing can't invent a
   # personal best. Returns whether it was stored.
   recordScore(input: ScoreRecordInput!): Boolean!
+  # Persist a measured vocal range. Called by the renderer when the warm-up
+  # ends. Gated on history recording exactly like recordScore, so a range
+  # measured while testing the app doesn't stick to anybody.
+  recordVocalRange(input: VocalRangeInput!): Boolean!
   setHostname(hostname: String!): Boolean!
   setOledFriendly(oledFriendly: Boolean!): Boolean!
   setPianoRollOpacity(opacity: Float!): Boolean!
@@ -574,6 +614,9 @@ input QueueDamSongInput {
   playtime: Int
   streamingUrlIdx: Int!
   userIdentity: UserIdentityInput!
+  # Semitone shift to start this song at, from a key suggestion. Null/absent
+  # means 0 -- the previous behaviour.
+  pitchShiftSemis: Int
 }
 
 input QueueJoysoundSongInput {
@@ -587,6 +630,9 @@ input QueueJoysoundSongInput {
   # Whether to time-align the attached YouTube video with the karaoke track
   # (waveform sync / end-together pad). Null means enabled.
   youtubeVideoSyncEnabled: Boolean
+  # Semitone shift to start this song at, from a key suggestion. Null/absent
+  # means 0 -- the previous behaviour.
+  pitchShiftSemis: Int
 }
 
 input QueueYoutubeSongInput {
@@ -598,6 +644,9 @@ input QueueYoutubeSongInput {
   adhocSongLyrics: String
   captionCode: String
   gainValue: Float!
+  # Semitone shift to start this song at, from a key suggestion. Null/absent
+  # means 0 -- the previous behaviour.
+  pitchShiftSemis: Int
 }
 
 input QueueNicoSongInput {
@@ -606,6 +655,129 @@ input QueueNicoSongInput {
   artistName: String!
   playtime: Int
   userIdentity: UserIdentityInput!
+  # Semitone shift to start this song at, from a key suggestion. Null/absent
+  # means 0 -- the previous behaviour.
+  pitchShiftSemis: Int
+}
+
+input QueueTuningTestInput {
+  userIdentity: UserIdentityInput!
+  # Which voice-height preset to centre the walk on ("lower" / "mixed" /
+  # "higher"). Unknown or absent falls back to "mixed".
+  presetId: String
+  # Overrides, for a re-run after the first attempt ran out of room at one end.
+  # Clamped to what the piano roll can actually display (+/-16 semitones from
+  # the centre); an exercise whose extremes are off-canvas measures nothing
+  # anybody can see.
+  centreMidi: Int
+  floorMidi: Int
+  ceilingMidi: Int
+}
+
+# A singer's measured range. Every field is optional because an exercise nobody
+# sang into produces no reading at all, and reporting that honestly beats
+# reporting a range of zero.
+type VocalRangeRecord {
+  personId: String
+  nickname: String!
+  timestamp: Float!
+  lowMidi: Int
+  highMidi: Int
+  comfortableLowMidi: Int
+  comfortableHighMidi: Int
+  # The singer reached the lowest/highest tone the exercise offered, so the
+  # exercise ran out before their voice did. The card offers a re-run centred
+  # further out rather than presenting this as their limit.
+  hitFloor: Boolean!
+  hitCeiling: Boolean!
+  # Which estimator produced this. A record from an older version is not on the
+  # same scale as a new one; keeping the version lets a caller notice.
+  version: Int!
+}
+
+input VocalRangeInput {
+  personId: String
+  nickname: String!
+  lowMidi: Int
+  highMidi: Int
+  comfortableLowMidi: Int
+  comfortableHighMidi: Int
+  hitFloor: Boolean!
+  hitCeiling: Boolean!
+  version: Int!
+}
+
+# Where a song sits, read off its reference melody.
+#
+# NOTE the absolute numbers are the raw reading and are NOT the octave anybody
+# sings in: measured over 56 song/take pairs, an extracted JOYSOUND guide melody
+# sits an octave above the singer on 33 and two octaves above on 20. Octave
+# normalisation is a property of the singer, so it happens client-side against a
+# measured range (see songOctaveShiftFor in common/vocalRange.ts), not here.
+type SongVocalRange {
+  lowMidi: Int!
+  highMidi: Int!
+  # Duration-weighted 5th/95th percentiles: where the song spends its time, as
+  # opposed to the one grace note at each extreme. Percentiles rather than
+  # min/max because JOYSOUND's guide synth displaces the odd note by an octave.
+  tessituraLowMidi: Int!
+  tessituraHighMidi: Int!
+  noteCount: Int!
+  # Whether this came from DAM's authored blob or our own extraction from
+  # JOYSOUND's guide-melody channel. The authored one is the trustworthy
+  # reading; the extraction is good but is a measurement, not a source.
+  provenance: SongRangeProvenance!
+}
+
+enum SongRangeProvenance {
+  DAM_AUTHORED
+  JOYSOUND_EXTRACTED
+}
+
+# A song's range, or why we don't have one.
+#
+# UNAVAILABLE is a first-class, expected answer, not an error: a JOYSOUND song
+# nobody has played has no extracted melody, and extracting one costs an ogg
+# fetch plus an ffmpeg decode (~8s). That is fine once per song someone opens,
+# and unacceptable per row of a search list, so list surfaces ask for cached
+# ranges only. Callers show nothing at all when this is UNAVAILABLE -- absence
+# of a suggestion is the same as having no opinion, which is the truth.
+type SongVocalRangeResult {
+  range: SongVocalRange
+  availability: SongRangeAvailability!
+  # How this song sits for the singer named in the query, or null when no
+  # singer was named, they have no measured range, or we have no range for the
+  # song. Null means "no opinion" and callers render nothing at all.
+  fit: SongFit
+}
+
+input SongFitRef {
+  source: SongSource!
+  songId: String!
+}
+
+type SongFitEntry {
+  source: SongSource!
+  songId: String!
+  fit: SongFit!
+}
+
+# A positive-only reading. There is deliberately no "too high" / "out of range"
+# state: the app never tells anybody a song is wrong for them.
+type SongFit {
+  # True when the song already sits nicely, in the octave the singer would
+  # naturally take it in. False simply means "no comment".
+  comfortable: Boolean!
+  # A semitone shift that would be easier on the voice, or null -- which is the
+  # common answer. Null when the song already fits, when no shift meaningfully
+  # helps, or when the best shift still wouldn't land well. Never a nag.
+  suggestedShiftSemis: Int
+}
+
+enum SongRangeAvailability {
+  CACHED
+  FETCHED
+  UNAVAILABLE
 }
 
 type SongConnection {
@@ -709,6 +881,12 @@ interface QueueItemInterface {
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
+  # Semitone shift to apply when this item starts playing, so a song queued
+  # from a key suggestion arrives in the key it was queued for. Null (or
+  # absent, on items queued by an older client or restored from an older
+  # queue.json) means 0, which is exactly the previous behaviour: the renderer
+  # used to reset the shift to 0 unconditionally at every pop.
+  pitchShiftSemis: Int
 }
 
 type DamQueueItem implements QueueItemInterface {
@@ -722,6 +900,7 @@ type DamQueueItem implements QueueItemInterface {
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
+  pitchShiftSemis: Int
   streamingUrlIdx: Int!
 }
 
@@ -734,6 +913,7 @@ type JoysoundQueueItem implements QueueItemInterface {
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
+  pitchShiftSemis: Int
   isRomaji: Boolean!
   youtubeVideoId: String
   scoringData: [Int!]
@@ -748,6 +928,7 @@ type YoutubeQueueItem implements QueueItemInterface {
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
+  pitchShiftSemis: Int
   hasAdhocLyrics: Boolean!
   hasCaptions: Boolean!
   gainValue: Float!
@@ -762,6 +943,40 @@ type NicoQueueItem implements QueueItemInterface {
   playtime: Int
   timestamp: String!
   userIdentity: UserIdentity!
+  pitchShiftSemis: Int
+}
+
+# A guided warm-up exercise, queued and played like a song so it needs no
+# special handling anywhere in the queue. Carries its own generated reference
+# melody (sustained tones walking outward from a centre) rather than fetching
+# anything, and plays against a silent generated video that exists only to give
+# the renderer a media clock -- everything downstream of Player keys off
+# <video>.currentTime, and the queue only advances on its media events.
+type TuningQueueItem implements QueueItemInterface {
+  songId: String!
+  name: String!
+  nameYomi: String!
+  artistName: String!
+  artistNameYomi: String!
+  playtime: Int
+  timestamp: String!
+  userIdentity: UserIdentity!
+  pitchShiftSemis: Int
+  # The exercise, in the same binary layout as DAM's scoring reference data, so
+  # the piano roll and the guide-melody synth consume it unchanged.
+  #
+  # Nullable purely to match DamQueueItem/JoysoundQueueItem: Relay rejects a
+  # union whose members give the same field name different nullability, since
+  # every member is selected into one response shape. It is never actually null
+  # here -- the exercise is generated at queue time and cannot fail to exist.
+  scoringData: [Int!]
+  # The parameters it was generated from, so the renderer can rebuild the exact
+  # target list to measure against without re-deriving it from the blob.
+  centreMidi: Int!
+  stepSemis: Int!
+  floorMidi: Int!
+  ceilingMidi: Int!
+  durationSecs: Float!
 }
 
 union QueueItem =
@@ -769,6 +984,7 @@ union QueueItem =
   | JoysoundQueueItem
   | YoutubeQueueItem
   | NicoQueueItem
+  | TuningQueueItem
 
 type QueueSongInfo {
   eta: Int!

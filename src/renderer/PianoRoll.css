@@ -19,3 +19,34 @@
     inset 0px 0px 50px white,
     0px 0px 75px white;
 }
+
+/* Octave rails. Purely informational — the roll's vertical axis is relative to
+   the song's median note, so without these nothing on screen says which octave
+   anything is in. Deliberately faint: this answers "where am I" for anyone who
+   looks, and stays out of the way of everyone who doesn't. */
+.pianoRollRails {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+  transition:
+    box-shadow linear 1.5s,
+    opacity ease-in-out 1s;
+}
+
+.pianoRollRail {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.pianoRollRailLabel {
+  position: absolute;
+  left: 0.4em;
+  top: 0.1em;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.6vh;
+  color: rgba(255, 255, 255, 0.45);
+  text-shadow: 0 0 0.4vh rgba(0, 0, 0, 0.8);
+}

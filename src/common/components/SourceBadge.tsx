@@ -3,11 +3,14 @@ import React from "react";
 // Solid-fill source pills readable on both the white remocon UI and the dark
 // renderer screens. DAM and JOYSOUND are both "red" brands, so they get
 // clearly separated shades: burgundy vs the lighter JOYSOUND-logo red.
+// Indigo for the warm-up: it isn't a service, and it must not read as either
+// red brand. Green is "on the note" everywhere else in this app, so it's out.
 const SOURCE_COLORS: Record<string, string> = {
   DamQueueItem: "#8e1f2f",
   JoysoundQueueItem: "#ef4b4b",
   YoutubeQueueItem: "#ff0000",
   NicoQueueItem: "#5f5e5a",
+  TuningQueueItem: "#6b5bd6",
 };
 
 // Merged search rows are typed by catalog (the SongSource enum) rather than
@@ -73,6 +76,7 @@ export default function SourceBadge({
   if (typename === "DamQueueItem") label = "DAM";
   if (typename === "JoysoundQueueItem") label = "JOYSOUND";
   if (typename === "NicoQueueItem") label = "niconico";
+  if (typename === "TuningQueueItem") label = "WARM-UP";
   if (typename === "YoutubeQueueItem")
     label = (
       <>

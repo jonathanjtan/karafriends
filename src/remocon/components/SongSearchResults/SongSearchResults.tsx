@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { graphql, useLazyLoadQuery, usePaginationFragment } from "react-relay";
 
+import useSongFits from "../../hooks/useSongFits";
 import Button from "../Button";
 import { List } from "../List";
 import { default as Loader, withLoader } from "../Loader";
@@ -89,6 +90,12 @@ const SongSearchResults = ({ query, initialSource = null }: Props) => {
     ? edges.filter(({ node }) => node.source === effectiveSource)
     : edges;
 
+  // One cache-only lookup for the whole page. Rows we know nothing about get no
+  // marker, which is the same thing as having no opinion about them.
+  const fits = useSongFits(
+    shown.map(({ node }) => ({ source: node.source, songId: node.songId })),
+  );
+
   return (
     <>
       <SearchSourceFilter
@@ -113,7 +120,11 @@ const SongSearchResults = ({ query, initialSource = null }: Props) => {
       ) : (
         <List>
           {shown.map(({ node }) => (
-            <SongSearchResultsItem key={node.id} {...node} />
+            <SongSearchResultsItem
+              key={node.id}
+              {...node}
+              comfortable={fits.get(`${node.source}:${node.songId}`) === true}
+            />
           ))}
         </List>
       )}

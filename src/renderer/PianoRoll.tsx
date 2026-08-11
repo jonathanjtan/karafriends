@@ -19,6 +19,7 @@ import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { ScoreAccumulator } from "../common/scoring";
 import { parseScoringData } from "../common/scoringData";
+import { RangeAccumulator } from "../common/vocalRange";
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl";
@@ -449,6 +450,31 @@ function midiNumberToYCoord(midiNumber: number, medianMidiNumber: number) {
   return 0.5 + (midiNumber - medianMidiNumber) / 36;
 }
 
+// Octave rails: which C's are visible, and where.
+//
+// The roll's vertical axis floats -- it is relative to the song's median note,
+// with no clef and no absolute reference -- so without these there is nothing
+// on screen that says which octave anything is in. They are informational only:
+// the sung-pitch trace is still octave-folded onto the guide (that is what
+// keeps it readable), and scoring is still octave-blind on purpose, because
+// singing in your own comfortable octave is normal and must not cost points.
+//
+// PianoRollMidi.vert.glsl maps y through `y * 2 - 1`, so the visible window is
+// exactly y 0..1, which is +/-18 semitones around the median.
+function octaveRails(medianMidiNumber: number) {
+  const rails: { midi: number; topPercent: number }[] = [];
+  const lowest = Math.ceil(medianMidiNumber - 18);
+  const highest = Math.floor(medianMidiNumber + 18);
+  for (let midi = lowest; midi <= highest; midi++) {
+    if (midi % 12 !== 0) continue; // C's only -- one label per octave
+    const y = midiNumberToYCoord(midi, medianMidiNumber);
+    if (y < 0.02 || y > 0.98) continue; // would be clipped at the edge
+    // y is bottom-up in GL, top-down in CSS.
+    rails.push({ midi, topPercent: (1 - y) * 100 });
+  }
+  return rails;
+}
+
 export default function PianoRoll(props: {
   scoringData: readonly number[];
   // Only consumed by the latency-probe capture, to tag each sample so a
@@ -463,6 +489,10 @@ export default function PianoRoll(props: {
   // Null when the experimental flag is off or the song has no usable
   // reference melody.
   scoreAccumulatorRef?: React.MutableRefObject<ScoreAccumulator | null>;
+  // The warm-up's counterpart to scoreAccumulatorRef, owned by Player for the
+  // same reason. Only one of the two is ever non-null: a warm-up measures a
+  // range and is not scored, a song is scored and measures no range.
+  rangeAccumulatorRef?: React.MutableRefObject<RangeAccumulator | null>;
   // Latest RMS per mic, indexed like `mics`, for the settings-panel level
   // meters. This has to be published from here rather than polled separately:
   // getPitch() *pops* the native ring buffer, so a second poller would steal
@@ -503,6 +533,18 @@ export default function PianoRoll(props: {
   const { micRmsGateThreshold } = useMicRmsGateThreshold();
   const micRmsGateThresholdRef = useRef(DEFAULT_MIC_RMS_GATE_THRESHOLD);
   micRmsGateThresholdRef.current = micRmsGateThreshold;
+
+  // The song's median note decides where the floating axis sits, so the rail
+  // labels have to be derived from exactly the value the GL effect uses. Kept
+  // here rather than inside that effect because the overlay is plain DOM and
+  // must not depend on the GL pipeline being rebuilt.
+  const rails = React.useMemo(() => {
+    const { notes } = parseScoringData(props.scoringData);
+    if (notes.length === 0) return [];
+    return octaveRails(
+      median(notes.map((note) => note.midiNumber + props.pitchShiftSemis)),
+    );
+  }, [props.scoringData, props.pitchShiftSemis]);
 
   useEffect(() => {
     const video = props.videoRef.current;
@@ -678,6 +720,17 @@ export default function PianoRoll(props: {
           props.pitchShiftSemis,
           rms,
         );
+        // The warm-up's measurement. Fed from the same accepted samples so the
+        // range is measured on exactly what the roll drew -- but note the
+        // estimator applies its own, unfolded acceptance test against the known
+        // target, which is the whole reason a guided exercise can measure a
+        // range where a song take cannot.
+        props.rangeAccumulatorRef?.current?.addSample(
+          sampleTime,
+          midiNumber,
+          props.pitchShiftSemis,
+          rms,
+        );
       }
     }
 
@@ -765,6 +818,7 @@ export default function PianoRoll(props: {
       // performance that skipped part of the song can't be scored honestly
       // against the whole melody anyway, so start the tally over.
       props.scoreAccumulatorRef?.current?.reset();
+      props.rangeAccumulatorRef?.current?.reset();
     }
 
     props.videoRef.current.addEventListener(
@@ -804,26 +858,53 @@ export default function PianoRoll(props: {
     props.mics,
     props.pitchShiftSemis,
     props.scoreAccumulatorRef,
+    props.rangeAccumulatorRef,
   ]);
 
+  const rollOpacity =
+    !props.visible || !melodyActive
+      ? 0
+      : props.ducked
+        ? pianoRollOpacity * PIANO_ROLL_DUCK_FACTOR
+        : pianoRollOpacity;
+  const rollGeometry = {
+    top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
+    height: `${pianoRollSize * 100}%`,
+  };
+
   return (
-    // Size 0 ("Off") hides the canvas with CSS rather than unmounting it:
-    // the GL pipeline and mic pitch capture live in a one-shot effect that
-    // expects the canvas to exist for the whole song.
-    <canvas
-      className="pianoRollRoll"
-      style={{
-        top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
-        height: `${pianoRollSize * 100}%`,
-        opacity:
-          !props.visible || !melodyActive
-            ? 0
-            : props.ducked
-              ? pianoRollOpacity * PIANO_ROLL_DUCK_FACTOR
-              : pianoRollOpacity,
-        display: pianoRollSize <= 0 ? "none" : undefined,
-      }}
-      ref={canvasRef}
-    ></canvas>
+    <>
+      {/* Size 0 ("Off") hides the canvas with CSS rather than unmounting it:
+          the GL pipeline and mic pitch capture live in a one-shot effect that
+          expects the canvas to exist for the whole song. */}
+      <canvas
+        className="pianoRollRoll"
+        style={{
+          ...rollGeometry,
+          opacity: rollOpacity,
+          display: pianoRollSize <= 0 ? "none" : undefined,
+        }}
+        ref={canvasRef}
+      ></canvas>
+      {/* Which octave you're looking at. Plain DOM over the canvas rather than
+          more GL: it never animates, and keeping it out of the shader pipeline
+          means it cannot affect what the roll draws. */}
+      {pianoRollSize > 0 && rails.length > 0 ? (
+        <div
+          className="pianoRollRails"
+          style={{ ...rollGeometry, opacity: rollOpacity }}
+        >
+          {rails.map(({ midi, topPercent }) => (
+            <div
+              key={midi}
+              className="pianoRollRail"
+              style={{ top: `${topPercent}%` }}
+            >
+              <span className="pianoRollRailLabel">{`C${midi / 12 - 1}`}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </>
   );
 }

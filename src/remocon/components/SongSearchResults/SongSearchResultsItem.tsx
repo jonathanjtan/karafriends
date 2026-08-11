@@ -8,7 +8,12 @@ import * as styles from "./SongSearchResults.module.scss";
 import { SongSearchResults_searchSongs$data } from "./__generated__/SongSearchResults_searchSongs.graphql";
 
 type Props =
-  SongSearchResults_searchSongs$data["searchSongs"]["edges"][0]["node"];
+  SongSearchResults_searchSongs$data["searchSongs"]["edges"][0]["node"] & {
+    // True only when this song would sit nicely for whoever is holding the
+    // phone. There is deliberately no falsy counterpart to render -- false and
+    // "we have no idea" are the same thing here, and both show nothing.
+    comfortable?: boolean;
+  };
 
 // The two catalogs' song pages are separate routes — they queue through
 // different mutations and only JOYSOUND takes a background MV — so a merged
@@ -21,6 +26,7 @@ const SongSearchResultsItem = ({
   nameYomi,
   artistName,
   artistNameYomi,
+  comfortable,
 }: Props) => (
   <Link
     to={source === "JOYSOUND" ? `/joysoundSong/${songId}` : `/song/${songId}`}
@@ -35,6 +41,11 @@ const SongSearchResultsItem = ({
             <WeebText text={artistName} yomi={artistNameYomi} />
           </div>
         </div>
+        {comfortable ? (
+          <span className={styles.comfortable} title="should sit comfortably">
+            ♪
+          </span>
+        ) : null}
         <SourceBadge typename={source} fontSize="11px" />
       </div>
     </ListItem>

@@ -10,3 +10,14 @@
 .text {
   min-width: 0;
 }
+
+/* Marks a song that should sit comfortably for whoever is holding the phone.
+   There is no opposite marker: a row without this is either not a nice fit or
+   simply unknown, and the app has nothing to say about either. */
+.comfortable {
+  flex: none;
+  align-self: center;
+  margin-right: 6px;
+  color: #2e9e5b;
+  font-size: 15px;
+}

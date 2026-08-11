@@ -5,6 +5,7 @@ import {
   SongPageQuery$data,
   VocalType,
 } from "../../pages/__generated__/SongPageQuery.graphql";
+import ComfortableHint from "../ComfortableHint";
 import DamQueueButton from "./DamQueueButton";
 import * as styles from "./DamQueueButtons.module.scss";
 
@@ -25,6 +26,22 @@ const DamQueueButtons = ({ song }: Props) => {
           userIdentity={userIdentity}
         />
       ))}
+      {/* Sits under the normal buttons, which are unchanged. A suggestion adds
+          an extra way to queue; it never replaces or disables the plain one. */}
+      <ComfortableHint
+        source="DAM"
+        songId={song.id}
+        allowFetch
+        renderShiftAction={(semis) => (
+          <DamQueueButton
+            song={song}
+            streamingUrlIndex={0}
+            userIdentity={userIdentity}
+            pitchShiftSemis={semis}
+            label={`Queue at ${semis > 0 ? `+${semis}` : semis}`}
+          />
+        )}
+      />
     </div>
   );
 };

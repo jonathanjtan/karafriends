@@ -157,6 +157,22 @@ old clients).
   the extraction holds one long note — which costs about a point of pitch,
   since `noteCredit`'s sustain rescue wants an unbroken on-pitch run of half
   the note. Scratch tooling for this lived in `.claude/repro/chart-compare/`.
+- **The extracted melody is almost never in the octave the singer sings in.**
+  Measured over the 56 song/take pairs that have both a cached melody and a
+  probe trace (`scripts/measureGuideOctave.mjs` reproduces it): the reference
+  sits **one octave above the singer on 33, two octaves above on 20, and in the
+  same octave on only 3**. Remove whole octaves and the residual median is
+  **0.03 semitones** — the pitch classes are exactly right, only the register is
+  displaced. Two causes stack, and neither is a defect: JOYSOUND's guide synth
+  plays above notation (see the register capping above; `F0_MAX_HZ` is 1500 to
+  reach tones around D6), and people sing in whichever octave suits them.
+  - Consequence for anything comparing this melody to a human: **do not use
+    absolute pitch.** `common/vocalRange.ts` octave-normalises against the
+    singer's own band before asking any question (`songOctaveShiftFor`), and
+    reads tessitura as duration-weighted percentiles rather than min/max, since
+    min/max is exactly the statistic the displaced notes poison.
+  - Scoring is unaffected — it octave-folds every deviation, deliberately, so
+    that singing in your comfortable octave costs nothing.
 - DAM streams are plain stereo (no isolated guide channel), so the guide is
   **synthesized locally** from the scoring reference data with scheduled
   oscillators, tracking the video clock across play/pause/seek.

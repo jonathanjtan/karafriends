@@ -8,6 +8,7 @@ import { commitMutation, fetchQuery, graphql } from "react-relay";
 import YoutubePlayer from "youtube-player";
 import { PlayerPopSongMutation } from "./__generated__/PlayerPopSongMutation.graphql";
 import { PlayerRecordScoreMutation } from "./__generated__/PlayerRecordScoreMutation.graphql";
+import { PlayerRecordVocalRangeMutation } from "./__generated__/PlayerRecordVocalRangeMutation.graphql";
 import { PlayerScoreHistoryQuery } from "./__generated__/PlayerScoreHistoryQuery.graphql";
 import { PlayerSongPlayCountQuery } from "./__generated__/PlayerSongPlayCountQuery.graphql";
 
@@ -25,6 +26,8 @@ import {
   findInstrumentalBreaks,
   parseScoringData,
 } from "../common/scoringData";
+import { buildTuningExercise } from "../common/tuningExercise";
+import { RangeAccumulator } from "../common/vocalRange";
 import AdhocLyrics from "./AdhocLyrics";
 import DamGuideMelodySynth from "./damGuideMelody";
 import JoysoundRenderer from "./JoysoundRenderer";
@@ -32,6 +35,7 @@ import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
 import "./Player.css";
 import QueueIntermission from "./QueueIntermission";
+import RangeCard, { MeasuredRange } from "./RangeCard";
 import ScoreCard, { ScoredPerformance } from "./ScoreCard";
 import KarafriendsAudio from "./webAudio";
 
@@ -84,6 +88,7 @@ const popSongMutation = graphql`
     popSong {
       ... on DamQueueItem {
         __typename
+        pitchShiftSemis
         songId
         streamingUrls {
           url
@@ -101,6 +106,7 @@ const popSongMutation = graphql`
       }
       ... on JoysoundQueueItem {
         __typename
+        pitchShiftSemis
         songId
         timestamp
         name
@@ -116,6 +122,7 @@ const popSongMutation = graphql`
       }
       ... on YoutubeQueueItem {
         __typename
+        pitchShiftSemis
         songId
         timestamp
         hasAdhocLyrics
@@ -125,11 +132,37 @@ const popSongMutation = graphql`
       }
       ... on NicoQueueItem {
         __typename
+        pitchShiftSemis
         songId
         timestamp
         name
       }
+      ... on TuningQueueItem {
+        __typename
+        pitchShiftSemis
+        songId
+        timestamp
+        name
+        artistName
+        scoringData
+        centreMidi
+        stepSemis
+        floorMidi
+        ceilingMidi
+        durationSecs
+        userIdentity {
+          nickname
+          profilePictureUrl
+          personId
+        }
+      }
     }
+  }
+`;
+
+const recordVocalRangeMutation = graphql`
+  mutation PlayerRecordVocalRangeMutation($input: VocalRangeInput!) {
+    recordVocalRange(input: $input)
   }
 `;
 
@@ -232,6 +265,20 @@ function Player(props: {
     useState<ScoredPerformance | null>(null);
   const [scoreCardVisible, setScoreCardVisible] = useState(false);
   const scoreCardTimersRef = useRef<NodeJS.Timeout[]>([]);
+
+  // The warm-up's counterparts. Kept beside the scoring ones rather than folded
+  // into them because the two are mutually exclusive and merging them would
+  // mean a card component that has to ask which kind it is.
+  const rangeAccumulatorRef = useRef<RangeAccumulator | null>(null);
+  const measuredRangeMetaRef = useRef<{
+    nickname: string;
+    profilePictureUrl: string | null;
+    personId: string | null;
+  } | null>(null);
+  const [measuredRange, setMeasuredRange] = useState<MeasuredRange | null>(
+    null,
+  );
+  const [rangeCardVisible, setRangeCardVisible] = useState(false);
 
   // Read through a ref by the once-on-mount "ended" handler. Songs always
   // accumulate (the cost is a map insert per poll), and only the reveal
@@ -378,6 +425,12 @@ function Player(props: {
       scoreAccumulatorRef.current = null;
       scoredSongMetaRef.current = null;
       scoredSongIdentityRef.current = null;
+      // The range card shares the same timer list and the same "a new song must
+      // never come up underneath a lingering card" guarantee.
+      setRangeCardVisible(false);
+      setMeasuredRange(null);
+      rangeAccumulatorRef.current = null;
+      measuredRangeMetaRef.current = null;
     };
 
     // Total mic-to-score latency compensation, read fresh per song. The
@@ -551,6 +604,63 @@ function Player(props: {
       return true;
     };
 
+    // Measure whatever the warm-up collected and put the range card up. Mirrors
+    // revealScoreCard: always consumes the accumulator so a warm-up can't leak
+    // into the next item, and returns whether a card went up so the caller
+    // knows to hold the queue off while it plays.
+    const revealRangeCard = (): boolean => {
+      const accumulator = rangeAccumulatorRef.current;
+      const meta = measuredRangeMetaRef.current;
+      rangeAccumulatorRef.current = null;
+      measuredRangeMetaRef.current = null;
+      if (accumulator === null || meta === null) return false;
+
+      const result = accumulator.finalize();
+      if (result === null) return false;
+
+      // Persisted before the card is drawn, exactly like a score: this is the
+      // durable record the remocon's song suggestions read, and it must not
+      // depend on the card surviving its nine seconds. Main ignores it while
+      // history recording is off, so a warm-up sung to test the app leaves no
+      // range attached to anybody.
+      //
+      // A null range is still recorded: "we measured you and heard nothing" is
+      // a real outcome, and storing it stops the profile page claiming a stale
+      // range from last week is current.
+      commitMutation<PlayerRecordVocalRangeMutation>(environment, {
+        mutation: recordVocalRangeMutation,
+        variables: {
+          input: {
+            personId: meta.personId,
+            nickname: meta.nickname,
+            lowMidi: result.lowMidi,
+            highMidi: result.highMidi,
+            comfortableLowMidi: result.comfortableLowMidi,
+            comfortableHighMidi: result.comfortableHighMidi,
+            hitFloor: result.hitFloor,
+            hitCeiling: result.hitCeiling,
+            version: result.version,
+          },
+        },
+        onError: (err) => console.error("Recording the range failed:", err),
+      });
+
+      scoreCardTimersRef.current.forEach(clearTimeout);
+      scoreCardTimersRef.current = [];
+      setMeasuredRange({
+        result,
+        nickname: meta.nickname,
+        profilePictureUrl: meta.profilePictureUrl,
+      });
+      setRangeCardVisible(true);
+      scoreCardTimersRef.current.push(
+        setTimeout(() => setRangeCardVisible(false), SCORE_CARD_HOLD_MS),
+        setTimeout(() => setMeasuredRange(null), SCORE_CARD_TOTAL_MS),
+      );
+
+      return true;
+    };
+
     const pollQueue = (force: boolean = false) => {
       // No poll is in flight once we're inside one, whether this call came
       // from the timer (whose handle is already spent) or straight from a
@@ -605,7 +715,17 @@ function Player(props: {
             trackRef.current.src = "";
           }
 
-          setPitchShiftSemis(0);
+          // Start each item in the key it was queued for. This used to be an
+          // unconditional reset to 0, which is exactly what a null/absent value
+          // still means -- older clients and everything already in queue.json
+          // behave as they always did.
+          //
+          // The `in` guard is for Relay's "%other" branch, which stands for a
+          // queue item type this build doesn't know about; it carries no fields
+          // at all, and 0 is the right reading for it anyway.
+          setPitchShiftSemis(
+            "pitchShiftSemis" in popSong ? (popSong.pitchShiftSemis ?? 0) : 0,
+          );
 
           if (hls) hls.destroy();
 
@@ -880,6 +1000,60 @@ function Player(props: {
 
               videoRef.current.play();
               break;
+            case "TuningQueueItem":
+              setShouldShowPianoRoll(true);
+              setPianoRollTitleCleared(true);
+              setPianoRollDucked(false);
+              setShouldShowJoysound(false);
+              setShouldShowAdhocLyrics(false);
+              // Never null in practice -- the exercise is generated at queue
+              // time. The field is nullable only to satisfy Relay's union
+              // typing (see the schema comment).
+              setScoringData(popSong.scoringData ?? []);
+              setScoringSongId(popSong.songId);
+
+              // Deliberately NOT armScoring. The exercise carries ~19 notes
+              // and would clear isScoreable's floor of 24 on a longer preset,
+              // which would put a score card on a warm-up and write a bogus
+              // personal best for a song that isn't one.
+              rangeAccumulatorRef.current = new RangeAccumulator(
+                buildTuningExercise({
+                  centreMidi: popSong.centreMidi,
+                  stepSemis: popSong.stepSemis,
+                  floorMidi: popSong.floorMidi,
+                  ceilingMidi: popSong.ceilingMidi,
+                }).targets,
+                micLatencyCompensationMs(),
+              );
+              measuredRangeMetaRef.current = {
+                nickname: popSong.userIdentity.nickname,
+                profilePictureUrl:
+                  popSong.userIdentity.profilePictureUrl ?? null,
+                personId: popSong.userIdentity.personId ?? null,
+              };
+
+              // The exercise's tones. Same synth DAM uses, for the same reason:
+              // there is no recorded guide to play, so one is generated against
+              // the video clock and routed through the guide-melody volume.
+              damGuideSynthRef.current = new DamGuideMelodySynth(
+                props.audio.audioContext,
+                props.audio.guideMelodySynthSink(),
+                videoRef.current,
+                popSong.scoringData ?? [],
+              );
+
+              // Silent black video generated at queue time; it exists only to
+              // give this component a clock and an "ended".
+              videoRef.current.src = `karafriends://tuning-${Math.round(popSong.durationSecs * 10) / 10}.mp4`;
+
+              props.audio.gain(NON_DAM_GAIN);
+
+              navigator.mediaSession.metadata = new MediaMetadata({
+                title: popSong.name,
+              });
+
+              videoRef.current.play();
+              break;
           }
           setPlaybackState("PLAYING");
         },
@@ -943,7 +1117,9 @@ function Player(props: {
       // holdIntermission is the delay mechanism rather than a bare setTimeout
       // because it parks the handle the skip path cancels and the poll
       // watchdog checks — a raw timer would let a skip mid-card double-pop.
-      const scoreCardShown = revealScoreCard();
+      // Only one of the two can be armed, so at most one card goes up; the
+      // queue-hold logic below treats them identically.
+      const scoreCardShown = revealScoreCard() || revealRangeCard();
 
       // With the intermission enabled, cut to the queue screen when a song
       // ends. Songs waiting: hold it for a few seconds, then pop the next
@@ -1151,6 +1327,7 @@ function Player(props: {
           visible={pianoRollTitleCleared}
           ducked={pianoRollDucked}
           scoreAccumulatorRef={scoreAccumulatorRef}
+          rangeAccumulatorRef={rangeAccumulatorRef}
           micLevelsRef={props.micLevelsRef}
         />
       ) : null}
@@ -1167,6 +1344,9 @@ function Player(props: {
       {shouldShowAdhocLyrics ? <AdhocLyrics /> : null}
       {scoredPerformance !== null ? (
         <ScoreCard performance={scoredPerformance} hiding={!scoreCardVisible} />
+      ) : null}
+      {measuredRange !== null ? (
+        <RangeCard performance={measuredRange} hiding={!rangeCardVisible} />
       ) : null}
       {intermissionMounted ? (
         <QueueIntermission

@@ -1,0 +1,24 @@
+/* Both states are quiet on purpose. This is an aside next to the queue button,
+   not a call to action -- the normal queue button stays the loud thing on the
+   page. */
+.comfortable {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: 14px;
+}

@@ -9,6 +9,7 @@ import OriconGridItem from "./OriconGridItem";
 import RankingGridItem from "./RankingGridItem";
 import * as styles from "./SearchMethodGrid.module.scss";
 import SearchMethodGridItem from "./SearchMethodGridItem";
+import TuningGridItem from "./TuningGridItem";
 
 // Title and Artist each search both catalogs at once, so they're one row of
 // two rather than a per-service block — the service a result came from is a
@@ -39,6 +40,11 @@ const SearchMethodGrid = () => (
         <OriconGridItem />
         <SearchMethodGridItem method="youtube" text="YouTube" />
         <SearchMethodGridItem method="niconico" text="Niconico" />
+      </div>
+      {/* Its own row: it is not a way to find a song, and putting it in the
+          media row would have made that row four columns on a phone. */}
+      <div className={styles.warmupSection}>
+        <TuningGridItem />
       </div>
     </div>
   </div>

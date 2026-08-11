@@ -22,6 +22,7 @@ import OriconSongPage from "./pages/OriconSongPage";
 import ProfilePage from "./pages/ProfilePage";
 import SongPage from "./pages/SongPage";
 import SongSearchPage from "./pages/SongSearchPage";
+import TuningPage from "./pages/TuningPage";
 import YouTubePage from "./pages/YouTubePage";
 
 import * as styles from "./App.module.scss";
@@ -126,6 +127,7 @@ const App = () => {
                 <Route path="/join" element={<JoinPage />} />
                 <Route path="/history" element={<HistoryPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/tuning" element={<TuningPage />} />
                 <Route path="/" element={<HomePage />} />
               </Routes>
             </main>

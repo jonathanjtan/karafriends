@@ -2753,3 +2753,85 @@ export function downloadNicoVideo(
     }
   });
 }
+
+// Generates the silent black video the guided warm-up plays against, and
+// resolves once it exists.
+//
+// The warm-up has no track to fetch: its tones are synthesized in the renderer
+// by DamGuideMelodySynth. But everything downstream of Player keys off
+// <video>.currentTime, and the queue only advances on media events (see the
+// queue-advance contract in CLAUDE.md), so the exercise still needs a real
+// media element with a real clock and a real "ended". Hence a generated file
+// rather than a special case threaded through the player.
+//
+// Cached per duration in the temp dir like everything else, and served through
+// the karafriends:// protocol. Encoding 60s of static black at 10fps takes well
+// under a second, and the same exercise length reuses the file thereafter.
+export function ensureTuningVideo(durationSecs: number): Promise<string> {
+  // Whole tenths, so two exercises of near-identical length share a file rather
+  // than each encoding their own.
+  const rounded = Math.round(durationSecs * 10) / 10;
+  const filename = `tuning-${rounded}.mp4`;
+  const outputPath = `${TEMP_FOLDER}/${filename}`;
+
+  if (fs.existsSync(outputPath)) {
+    return Promise.resolve(filename);
+  }
+
+  const logFilename = `${TEMP_FOLDER}/tuning-${rounded}.log`;
+  // Written to a temp name and renamed on success, so a killed encode can't
+  // leave a truncated file that every later run treats as a cache hit.
+  //
+  // The .mp4 stays on the end: ffmpeg picks its muxer from the output
+  // extension, and a name ending .mp4.tmp gets "Unable to find a suitable
+  // output format".
+  const tempPath = `${TEMP_FOLDER}/tuning-${rounded}.partial.mp4`;
+
+  return new Promise((resolve, reject) => {
+    makeJoysoundFFmpegCall(
+      `tuning-${rounded}`,
+      [
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        `color=c=black:s=640x360:r=10:d=${rounded}`,
+        // A real (silent) audio track, not none: an audio-less element makes
+        // the renderer's Web Audio graph a special case for no benefit, and the
+        // gain/pitch-shift chain expects a source.
+        "-f",
+        "lavfi",
+        "-i",
+        "anullsrc=r=48000:cl=stereo",
+        "-t",
+        `${rounded}`,
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-preset",
+        "ultrafast",
+        "-c:a",
+        "aac",
+        "-shortest",
+        tempPath,
+      ],
+      logFilename,
+      null,
+      (code, signal) => {
+        if (code === 0 && fs.existsSync(tempPath)) {
+          fs.renameSync(tempPath, outputPath);
+          resolve(filename);
+          return;
+        }
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        reject(
+          new Error(
+            `ffmpeg failed generating the warm-up video: code=${code}, signal=${signal}, log=${logFilename}`,
+          ),
+        );
+      },
+      null,
+    );
+  });
+}

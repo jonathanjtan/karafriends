@@ -50,10 +50,23 @@ interface Props {
   song: SongPageQuery$data["songById"];
   streamingUrlIndex: number;
   userIdentity: DamQueueButtonMutation$variables["input"]["userIdentity"];
+  // Queue this song transposed, from a key suggestion. Absent means the normal
+  // button: 0, exactly as before.
+  pitchShiftSemis?: number;
+  // Overrides the label for the transposed variant, which sits beside the
+  // normal button rather than replacing it.
+  label?: string;
 }
 
-const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
-  const defaultText = getDefaultText(song.vocalTypes[streamingUrlIndex]);
+const DamQueueButton = ({
+  song,
+  streamingUrlIndex,
+  userIdentity,
+  pitchShiftSemis,
+  label,
+}: Props) => {
+  const defaultText =
+    label ?? getDefaultText(song.vocalTypes[streamingUrlIndex]);
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<DamQueueButtonMutation>(damQueueButtonMutation);
   const { showToast } = useToast();
@@ -78,6 +91,7 @@ const DamQueueButton = ({ song, streamingUrlIndex, userIdentity }: Props) => {
           playtime: song.playtime,
           streamingUrlIdx: streamingUrlIndex,
           userIdentity,
+          pitchShiftSemis,
         },
         tryHeadOfQueue: e.shiftKey,
       },

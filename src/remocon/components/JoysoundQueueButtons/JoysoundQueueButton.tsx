@@ -59,6 +59,10 @@ interface Props {
   isRomaji: boolean;
   isDisabled: boolean;
   setDisabled: (isDisabled: boolean) => void;
+  // Queue this song transposed, from a key suggestion. Absent means 0, exactly
+  // as before.
+  pitchShiftSemis?: number;
+  label?: string;
 }
 
 const JoysoundQueueButton = ({
@@ -69,8 +73,10 @@ const JoysoundQueueButton = ({
   isRomaji,
   isDisabled,
   setDisabled,
+  pitchShiftSemis,
+  label,
 }: Props) => {
-  const defaultText = `Queue ${isRomaji ? "Romaji" : "Furigana"}`;
+  const defaultText = label ?? `Queue ${isRomaji ? "Romaji" : "Furigana"}`;
 
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<JoysoundQueueButtonMutation>(
@@ -161,6 +167,7 @@ const JoysoundQueueButton = ({
           isRomaji,
           youtubeVideoId,
           youtubeVideoSyncEnabled,
+          pitchShiftSemis,
         },
         tryHeadOfQueue: e.shiftKey,
       },

@@ -4,6 +4,7 @@ import { graphql, useMutation } from "react-relay";
 import { cyrb53 } from "../../common/hash";
 import Button from "../components/Button";
 import PmdPortraitPicker from "../components/PmdPortraitPicker";
+import VocalRangeCard from "../components/VocalRangeCard";
 import useUserIdentity, {
   setNickname,
   setProfilePictureFrame,
@@ -91,6 +92,9 @@ const ProfilePage = () => {
         )}
         <span>{identity.nickname}</span>
       </div>
+
+      <h3>Your range</h3>
+      <VocalRangeCard />
 
       <h3>Nickname</h3>
       <form

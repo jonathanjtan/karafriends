@@ -1,0 +1,212 @@
+/* Sibling of ScoreCard.css, same 10-foot-UI rules: everything in vh so it
+   scales with whatever projector the room has rather than with a pixel guess.
+
+   Visually calmer than the score card on purpose. This is a measurement, not a
+   result -- there is nothing to celebrate or regret, so no band colour, no
+   gold, no big number. */
+.rangeCard {
+  position: absolute;
+  inset: 0;
+  /* Same stacking as the score card: above the queue intermission (10) and the
+     history-off badge (30), since it occupies the whole screen too. */
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2vh;
+  padding: 5vh 8vh;
+  background: linear-gradient(160deg, #0d0d1c 0%, #191933 60%, #0d0d1c 100%);
+  color: white;
+  /* Keep durations in sync with SCORE_CARD_FADE_MS in Player.tsx -- the range
+     card is revealed through the same timers. */
+  animation: rangeCardFadeIn 1400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rangeCardHiding {
+  animation: rangeCardFadeOut 1400ms cubic-bezier(0.7, 0, 0.84, 0) both;
+}
+
+@keyframes rangeCardFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rangeCardFadeOut {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
+.rangeCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 2vh;
+}
+
+.rangeCardPortrait {
+  width: 8vh;
+  height: 8vh;
+  image-rendering: pixelated;
+}
+
+.rangeCardTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 1.5vh;
+  font-size: 3vh;
+}
+
+.rangeCardNickname {
+  padding: 0.2em 0.5em;
+  border-radius: 0.3em;
+  font-weight: 700;
+}
+
+.rangeCardTitleTail {
+  color: rgba(185, 214, 255, 0.75);
+}
+
+.rangeCardHeadline {
+  display: flex;
+  align-items: baseline;
+  gap: 2vh;
+}
+
+.rangeCardNote {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11vh;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.rangeCardDash {
+  font-size: 7vh;
+  color: rgba(185, 214, 255, 0.6);
+}
+
+.rangeCardSpan {
+  margin-left: 1vh;
+  font-size: 2.6vh;
+  color: rgba(185, 214, 255, 0.8);
+}
+
+.rangeCardComfort {
+  font-size: 3vh;
+  color: rgba(220, 235, 255, 0.9);
+}
+
+.rangeCardComfort b {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  color: #5dff9b;
+}
+
+/* The ladder: one rung per exercise tone, positioned by pitch. Spans the whole
+   exercise rather than only what was sung, so the notes nobody reached still
+   occupy space and "this is where it got hard" stays visible. */
+.rangeCardLadder {
+  position: relative;
+  height: 9vh;
+  margin-top: 2vh;
+  border-bottom: 0.2vh solid rgba(127, 168, 217, 0.25);
+}
+
+.rangeCardRung {
+  position: absolute;
+  bottom: 2.5vh;
+  width: 1.2vh;
+  height: 5vh;
+  margin-left: -0.6vh;
+  border-radius: 0.6vh;
+}
+
+/* Green is "on the note" everywhere else in this app, so it means that here
+   too. Reached-but-not-solid is the same amber the note ribbon uses for
+   "close". Untried is the ribbon's ghost blue -- absence, not failure, which is
+   why it is never red. */
+.rangeCardRungSolid {
+  background: #5dff9b;
+}
+
+.rangeCardRungReached {
+  background: #ffd34d;
+  height: 3.6vh;
+}
+
+.rangeCardRungUntried {
+  background: rgba(127, 168, 217, 0.22);
+  height: 2vh;
+}
+
+.rangeCardLadderAxis {
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 1.8vh;
+  color: rgba(123, 129, 163, 0.9);
+}
+
+.rangeCardLegend {
+  display: flex;
+  gap: 3vh;
+  font-size: 1.9vh;
+  color: rgba(185, 214, 255, 0.7);
+}
+
+.rangeCardLegend i {
+  display: inline-block;
+  width: 1.4vh;
+  height: 1.4vh;
+  margin-right: 0.7vh;
+  border-radius: 0.3vh;
+  vertical-align: middle;
+}
+
+.rangeCardSwatchSolid {
+  background: #5dff9b;
+}
+
+.rangeCardSwatchReached {
+  background: #ffd34d;
+}
+
+.rangeCardSwatchUntried {
+  background: rgba(127, 168, 217, 0.22);
+}
+
+.rangeCardMore {
+  font-size: 2.2vh;
+  color: rgba(185, 214, 255, 0.85);
+}
+
+.rangeCardEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: 2vh;
+  align-items: center;
+  text-align: center;
+}
+
+.rangeCardEmptyTitle {
+  font-size: 5vh;
+  font-weight: 700;
+}
+
+.rangeCardEmptySub {
+  max-width: 60vw;
+  font-size: 2.4vh;
+  color: rgba(185, 214, 255, 0.8);
+}

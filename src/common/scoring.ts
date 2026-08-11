@@ -52,7 +52,11 @@ const ON_PITCH_TOLERANCE_SEMIS = (SOFT_FULL_SEMIS + SOFT_ZERO_SEMIS) / 2;
 // defines a "frame slot": at most one sample per note per slot counts. With
 // several mics open, the same instant otherwise contributes several samples
 // and inflates coverage.
-const SAMPLE_SLOT_MS = 25;
+//
+// Exported so vocalRange.ts measures sustain on the same grid rather than
+// picking its own -- two definitions of "how long did they hold it" that could
+// drift apart is worse than one shared constant.
+export const SAMPLE_SLOT_MS = 25;
 
 // A song needs this much reference material for a score to mean anything.
 const MIN_SCOREABLE_NOTES = 24;
@@ -677,10 +681,22 @@ export interface ScoreResult {
 
 // Octave-agnostic distance from a sung pitch to a reference pitch, in
 // semitones, keeping the direction: negative means the singer was under the
-// note, positive over it. Deliberately stateless: PianoRoll's
-// PitchDetectionBuffer keeps a *running* octave offset tuned to stop a drawn
-// trace jumping mid-phrase, which carries state across notes and can drift
-// after a bad frame. Scoring wants each frame judged on its own.
+// note, positive over it.
+//
+// **The folding is a product decision, not a shortcut.** Singing a line in your
+// own comfortable octave is normal and correct -- a lower voice taking a high
+// vocal part down an octave is a legitimate performance, not an error -- so it
+// must not cost points. Don't "fix" this into absolute-pitch comparison.
+//
+// (Measuring a vocal *range* is the one place this is wrong, because an octave
+// error and a deliberate octave choice fold together identically. That is
+// exactly why the range test is a guided exercise with known targets, and why
+// vocalRange.ts does its own unfolded comparison instead of reusing this.)
+//
+// Deliberately stateless: PianoRoll's PitchDetectionBuffer keeps a *running*
+// octave offset tuned to stop a drawn trace jumping mid-phrase, which carries
+// state across notes and can drift after a bad frame. Scoring wants each frame
+// judged on its own.
 export function signedOctaveFoldedDeviation(
   sungMidi: number,
   referenceMidi: number,

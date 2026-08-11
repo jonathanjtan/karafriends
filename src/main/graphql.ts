@@ -40,6 +40,7 @@ import {
   MAX_MIC_RMS_GATE_THRESHOLD,
   MIN_MIC_RMS_GATE_THRESHOLD,
 } from "../common/constants";
+import { buildScoringData } from "../common/guideMelody";
 import ipAddresses from "../common/ipAddresses";
 import {
   decodeJoysoundBase64Field,
@@ -48,10 +49,22 @@ import {
 import { SCORING_FORMULA_VERSION } from "../common/scoring";
 import { parseScoringData } from "../common/scoringData";
 import {
+  buildTuningExercise,
+  DEFAULT_PRESET_ID,
+  presetById,
+} from "../common/tuningExercise";
+import {
+  sitsComfortably,
+  SongRange,
+  suggestKeyShift,
+  VOCAL_RANGE_VERSION,
+} from "../common/vocalRange";
+import {
   downloadDamVideo,
   downloadJoysoundData,
   downloadNicoVideo,
   downloadYoutubeVideo,
+  ensureTuningVideo,
   getVideoDownloadProgress,
   TEMP_FOLDER,
 } from "./../common/videoDownloader";
@@ -96,6 +109,17 @@ import {
   recordScore as persistScore,
   scoreHistoryFor,
 } from "./scores";
+import {
+  cachedSongRange,
+  loadSongRanges,
+  rememberSongRange,
+  SongRangeProvenance,
+} from "./songRanges";
+import {
+  latestVocalRangeFor,
+  loadVocalRanges,
+  recordVocalRange as persistVocalRange,
+} from "./vocalRanges";
 
 import "regenerator-runtime/runtime"; // tslint:disable-line:no-submodule-imports
 import { isRomaji, toHiragana, toKana, toKatakana } from "wanakana";
@@ -1516,6 +1540,10 @@ interface QueueItemInterface {
   // nameYomiResolvers.
   readonly nameYomi?: string | null;
   readonly artistNameYomi?: string | null;
+  // Semitone shift to start this item at, from a key suggestion. Absent on
+  // older clients and on everything already in queue.json, which the renderer
+  // reads as 0 -- exactly what it used to do unconditionally.
+  readonly pitchShiftSemis?: number | null;
 }
 
 export interface JoysoundQueueItem extends QueueItemInterface {
@@ -1542,11 +1570,26 @@ interface NicoQueueItem extends QueueItemInterface {
   readonly __typename: "NicoQueueItem";
 }
 
+// The guided warm-up. Unlike every other queue item this one is generated
+// rather than fetched: the exercise blob is built at queue time and rides along
+// in queue.json like any other field, so a warm-up survives a restart and needs
+// no service to be reachable.
+export interface TuningQueueItem extends QueueItemInterface {
+  readonly __typename: "TuningQueueItem";
+  readonly scoringData: readonly number[];
+  readonly centreMidi: number;
+  readonly stepSemis: number;
+  readonly floorMidi: number;
+  readonly ceilingMidi: number;
+  readonly durationSecs: number;
+}
+
 type QueueItem =
   | DamQueueItem
   | JoysoundQueueItem
   | YoutubeQueueItem
-  | NicoQueueItem;
+  | NicoQueueItem
+  | TuningQueueItem;
 
 type QueueSongInfo = {
   readonly __typename: "QueueSongInfo";
@@ -1602,6 +1645,14 @@ type QueueNicoSongInput = {
   readonly artistName: string;
   readonly playtime?: number | null;
   readonly userIdentity: UserIdentity;
+};
+
+type QueueTuningTestInput = {
+  readonly userIdentity: UserIdentity;
+  readonly presetId?: string | null;
+  readonly centreMidi?: number | null;
+  readonly floorMidi?: number | null;
+  readonly ceilingMidi?: number | null;
 };
 
 interface SongHistoryItem {
@@ -2335,7 +2386,17 @@ const resolvers = {
     scoringData(parent: DamQueueItem, _: any, { dataSources }: IDataSources) {
       return dataSources.minsei
         .getScoringData(parent.songId, POP_RETRY_OPTIONS)
-        .then((data) => Array.from(new Uint8Array(data)))
+        .then((data) => {
+          const scoringData = Array.from(new Uint8Array(data));
+          // Teach the song-range cache on the way past. This resolver runs on
+          // every DAM pop and has already paid for the fetch, so the range
+          // costs one parse of a blob in hand -- which is what makes the
+          // comfortable-song hints work on list surfaces without any of them
+          // ever touching the network. DAM's blob is authored, so this is the
+          // trustworthy provenance of the two.
+          rememberSongRange("DAM", parent.songId, "DAM_AUTHORED", scoringData);
+          return scoringData;
+        })
         .catch((e) => {
           console.error(
             `Failed fetching DAM scoring data for ${parent.songId}, skipping`,
@@ -2347,8 +2408,20 @@ const resolvers = {
     ...nameYomiResolvers,
   },
   JoysoundQueueItem: {
-    scoringData(parent: JoysoundQueueItem) {
-      return getJoysoundScoringData(parent.songId);
+    async scoringData(parent: JoysoundQueueItem) {
+      const scoringData = await getJoysoundScoringData(parent.songId);
+      // Same idea as the DAM path above, and free here too: the melody is
+      // already extracted and cached on disk by the time a song pops. Null is
+      // routine -- a song whose guide-melody channel yielded nothing.
+      if (scoringData !== null) {
+        rememberSongRange(
+          "JOYSOUND",
+          parent.songId,
+          "JOYSOUND_EXTRACTED",
+          scoringData,
+        );
+      }
+      return scoringData;
     },
     ...nameYomiResolvers,
   },
@@ -2356,6 +2429,12 @@ const resolvers = {
     ...nameYomiResolvers,
   },
   NicoQueueItem: {
+    ...nameYomiResolvers,
+  },
+  TuningQueueItem: {
+    // Everything is stored on the item at queue time -- the exercise generates
+    // rather than fetches -- so this needs no resolvers of its own beyond the
+    // yomi fallback, which the queue-time snapshot satisfies anyway.
     ...nameYomiResolvers,
   },
   Query: {
@@ -3081,6 +3160,166 @@ const resolvers = {
         args.personId,
         SCORING_FORMULA_VERSION,
       ),
+    vocalRange: (_: any, args: { nickname: string; personId: string | null }) =>
+      latestVocalRangeFor(args.nickname, args.personId, VOCAL_RANGE_VERSION),
+    songFits: (
+      _: any,
+      args: {
+        songs: ReadonlyArray<{ source: string; songId: string }>;
+        nickname: string;
+        personId: string | null;
+      },
+    ) => {
+      const measured = latestVocalRangeFor(
+        args.nickname,
+        args.personId,
+        VOCAL_RANGE_VERSION,
+      );
+      if (
+        measured === null ||
+        measured.comfortableLowMidi === null ||
+        measured.comfortableHighMidi === null
+      ) {
+        return [];
+      }
+      const band = {
+        comfortableLowMidi: measured.comfortableLowMidi,
+        comfortableHighMidi: measured.comfortableHighMidi,
+      };
+
+      // Cache only, never a fetch: this is called with a whole page of search
+      // results, and a DAM round trip (or worse, a JOYSOUND extraction) per row
+      // is exactly what the cache exists to avoid. A song we know nothing about
+      // is simply omitted, and the caller shows nothing -- which is the honest
+      // reading anyway.
+      const entries = [];
+      for (const song of args.songs) {
+        const range = cachedSongRange(song.source, song.songId);
+        if (range === null) continue;
+        const suggestion = suggestKeyShift(range.histogram, band);
+        entries.push({
+          source: song.source,
+          songId: song.songId,
+          fit: {
+            comfortable: sitsComfortably(range.histogram, band),
+            suggestedShiftSemis: suggestion === null ? null : suggestion.semis,
+          },
+        });
+      }
+      return entries;
+    },
+    songVocalRange: async (
+      _: any,
+      args: {
+        source: string;
+        songId: string;
+        allowFetch: boolean | null;
+        nickname: string | null;
+        personId: string | null;
+      },
+      { dataSources }: IDataSources,
+    ) => {
+      // How this song sits for the singer who asked, if they asked as anybody
+      // and have a measured range. Everything here is positive-only: `fit` is
+      // null whenever we have nothing useful to say, and null renders as
+      // nothing at all.
+      const fitFor = (range: SongRange | null) => {
+        if (range === null || args.nickname === null) return null;
+        const measured = latestVocalRangeFor(
+          args.nickname,
+          args.personId,
+          VOCAL_RANGE_VERSION,
+        );
+        if (
+          measured === null ||
+          measured.comfortableLowMidi === null ||
+          measured.comfortableHighMidi === null
+        ) {
+          return null;
+        }
+        const band = {
+          comfortableLowMidi: measured.comfortableLowMidi,
+          comfortableHighMidi: measured.comfortableHighMidi,
+        };
+        const suggestion = suggestKeyShift(range.histogram, band);
+        return {
+          comfortable: sitsComfortably(range.histogram, band),
+          suggestedShiftSemis: suggestion === null ? null : suggestion.semis,
+        };
+      };
+
+      const cached = cachedSongRange(args.source, args.songId);
+      if (cached !== null) {
+        return {
+          range: cached,
+          availability: "CACHED",
+          fit: fitFor(cached),
+        };
+      }
+
+      // Default false, and list surfaces leave it that way: a JOYSOUND cache
+      // miss costs an ogg fetch plus an ffmpeg decode plus a pitch-track pass,
+      // which is ~8s. Per row of a search list that is out of the question, and
+      // UNAVAILABLE is a perfectly good answer -- the caller shows nothing,
+      // which is the same as having no opinion.
+      if (args.allowFetch !== true) {
+        return { range: null, availability: "UNAVAILABLE", fit: null };
+      }
+
+      try {
+        if (args.source === "DAM") {
+          // DAM's blob is authored rather than extracted, and one call. This is
+          // the trustworthy reading of the two.
+          const data = await dataSources.minsei.getScoringData(args.songId);
+          const damRange = rememberSongRange(
+            args.source,
+            args.songId,
+            "DAM_AUTHORED",
+            Array.from(new Uint8Array(data)),
+          );
+          return damRange === null
+            ? { range: null, availability: "UNAVAILABLE", fit: null }
+            : {
+                range: damRange,
+                availability: "FETCHED",
+                fit: fitFor(damRange),
+              };
+        }
+
+        // JOYSOUND: only answer from an already-extracted melody. Kicking off an
+        // extraction here would block the request for ~8s and hammer the service
+        // if somebody scrolled a list with fetching on; backfillGuideMelody is
+        // the deliberate way to populate these.
+        if (!hasCachedGuideMelody(args.songId)) {
+          return { range: null, availability: "UNAVAILABLE", fit: null };
+        }
+        const scoringData = await getJoysoundScoringData(args.songId);
+        if (scoringData === null) {
+          return { range: null, availability: "UNAVAILABLE", fit: null };
+        }
+        const joysoundRange = rememberSongRange(
+          args.source,
+          args.songId,
+          "JOYSOUND_EXTRACTED",
+          scoringData,
+        );
+        return joysoundRange === null
+          ? { range: null, availability: "UNAVAILABLE", fit: null }
+          : {
+              range: joysoundRange,
+              availability: "FETCHED",
+              fit: fitFor(joysoundRange),
+            };
+      } catch (e) {
+        // A range is a nicety. Never fail the request over one -- the caller
+        // renders nothing and the page it sits on still works.
+        console.error(
+          `Failed reading the vocal range for ${args.source}:${args.songId}`,
+          e,
+        );
+        return { range: null, availability: "UNAVAILABLE", fit: null };
+      }
+    },
     songPlayCount: (
       _: any,
       args: {
@@ -3519,6 +3758,75 @@ const resolvers = {
           (args.input.playtime || 0),
       };
     },
+    queueTuningTest: (
+      _: any,
+      args: { input: QueueTuningTestInput; tryHeadOfQueue: boolean },
+    ): QueueSongResult => {
+      const preset = presetById(args.input.presetId ?? DEFAULT_PRESET_ID);
+      const exercise = buildTuningExercise({
+        centreMidi: args.input.centreMidi ?? preset.centreMidi,
+        floorMidi: args.input.floorMidi ?? undefined,
+        ceilingMidi: args.input.ceilingMidi ?? undefined,
+      });
+
+      const queueItem: TuningQueueItem = {
+        __typename: "TuningQueueItem",
+        timestamp: Date.now().toString(),
+        // Keyed by the parameters, so the renderer's karafriends:// URL is
+        // derivable from the item and two identical warm-ups share a video.
+        songId: `tuning-${exercise.centreMidi}-${exercise.floorMidi}-${exercise.ceilingMidi}`,
+        name: "Vocal Warm-Up",
+        // Explicit rather than left to nameYomiResolvers: these are fixed
+        // strings, and running kuromoji over them every render is pointless.
+        nameYomi: "ボーカルウォームアップ",
+        artistName: "karafriends",
+        artistNameYomi: "karafriends",
+        userIdentity: args.input.userIdentity,
+        playtime: Math.round(exercise.durationSecs),
+        scoringData: Array.from(buildScoringData(exercise.notes)),
+        centreMidi: exercise.centreMidi,
+        stepSemis: exercise.stepSemis,
+        floorMidi: exercise.floorMidi,
+        ceilingMidi: exercise.ceilingMidi,
+        durationSecs: exercise.durationSecs,
+      };
+
+      if (hasMaxSongsInQueue(queueItem.userIdentity)) {
+        return {
+          __typename: "QueueSongError",
+          reason: `${queueItem.userIdentity.nickname} already has ${karafriendsConfig.paxSongQueueLimit} song(s) in the queue or downloading`,
+        };
+      }
+
+      const pushToHead =
+        args.tryHeadOfQueue && canPushToHeadOfQueue(queueItem.userIdentity);
+      console.log(`queueTuningTest: pushToHead=${pushToHead}`);
+
+      // Generate the silent video before queueing, so the item never reaches
+      // the player without the file it will try to play -- a src that 404s
+      // fires "error", which skips the song, and the singer would just see the
+      // warm-up vanish.
+      //
+      // The .catch() is not optional: main installs an unhandledRejection
+      // handler that calls process.exit(1), so a fire-and-forget chain that
+      // rejects takes down the GraphQL server, the queue and the renderer. See
+      // CLAUDE.md.
+      ensureTuningVideo(exercise.durationSecs)
+        .then(() => {
+          pushSongToQueue(queueItem, pushToHead);
+        })
+        .catch((e) => {
+          console.error(
+            "Failed generating the warm-up video, not queueing it",
+            e,
+          );
+        });
+
+      return {
+        __typename: "QueueSongInfo",
+        eta: db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0),
+      };
+    },
     pushAdhocLyrics: (
       _: any,
       args: { input: PushAdhocLyricsInput },
@@ -3565,7 +3873,17 @@ const resolvers = {
       // The one place a song enters the history, so the one place the
       // recording gate has to sit — play counts and anything else keyed off
       // songHistory inherit it for free.
-      if (db.currentSong && db.historyRecordingEnabled) {
+      //
+      // The warm-up is excluded on top of that gate: it is queued and played
+      // like a song for the renderer's benefit, but nobody sang it, and letting
+      // it in would put an exercise in the room's history and count it toward
+      // "3rd time you've sung this". SongHistory's query enumerates the real
+      // song types, so it would also render as a blank row.
+      if (
+        db.currentSong &&
+        db.historyRecordingEnabled &&
+        db.currentSong.__typename !== "TuningQueueItem"
+      ) {
         const prevSong: QueueItem | null = db.songHistory[0]?.song || null;
 
         if (
@@ -3832,6 +4150,29 @@ const resolvers = {
         // produced the number is a property of this build, not of the caller.
         formulaVersion: SCORING_FORMULA_VERSION,
       });
+      return true;
+    },
+    recordVocalRange: (
+      _: any,
+      args: {
+        input: {
+          personId: string | null;
+          nickname: string;
+          lowMidi: number | null;
+          highMidi: number | null;
+          comfortableLowMidi: number | null;
+          comfortableHighMidi: number | null;
+          hitFloor: boolean;
+          hitCeiling: boolean;
+          version: number;
+        };
+      },
+    ): boolean => {
+      // Same gate as the score and the history: a warm-up sung while testing
+      // the app must not attach a range to anybody, because every song
+      // suggestion downstream would then be aimed at a measurement nobody made.
+      if (!db.historyRecordingEnabled) return false;
+      persistVocalRange({ ...args.input, timestamp: Date.now() });
       return true;
     },
     backfillGuideMelody: async (
@@ -4433,6 +4774,8 @@ export function applyGraphQLMiddleware(app: Application) {
     })),
   );
   loadScores();
+  loadVocalRanges();
+  loadSongRanges();
   loadReadingCache();
   loadDamPrimeMarkers();
   loadJoysoundArtistSongCountCache();

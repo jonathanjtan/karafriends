@@ -1,0 +1,42 @@
+.card {
+  margin: 8px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.headline {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.note {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 30px;
+  font-weight: bold;
+}
+
+.dash {
+  color: var(--text-faint);
+  font-size: 22px;
+}
+
+.comfort {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+.meta {
+  margin-top: 6px;
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
