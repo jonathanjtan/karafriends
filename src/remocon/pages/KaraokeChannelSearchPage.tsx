@@ -19,7 +19,7 @@ function KaraokeChannelSearchPage() {
 
   return (
     <SearchFormWrapper>
-      <h2>Search karaoke channels</h2>
+      <h2>Search curated YouTube karaoke channels</h2>
       <DebouncedInput
         period={500}
         placeholder="Start typing..."

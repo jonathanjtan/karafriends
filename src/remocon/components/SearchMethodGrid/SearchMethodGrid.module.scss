@@ -7,10 +7,17 @@
 $joysound-red: #d70e18;
 $dam-red: #b80009;
 
-// Ranking-tile colors: gold/platinum reads as "award" rather than doubling
-// up on the brand-red banner right next to it.
+// Ranking-tile colors: gold/platinum/bronze reads as "award" rather than
+// doubling up on the brand-red banner right next to it. Oricon takes the
+// bronze — same family as the two in-house charts it sits below, third place
+// among them because it's the one you can't queue directly from.
 $ranking-gold: #d4af37;
 $ranking-platinum: #a8aab4;
+// Lighter than a literal bronze (#cd7f32): light mode keeps each tile's own
+// lightness and paints the label at L=26%, so the metal has to stay light
+// enough to read against it — the gold above it is L=52%, and this sits just
+// above that. Hue is what separates it from the gold, not depth.
+$ranking-bronze: #d99f61;
 
 $search-method-colors: (
   song: #a5b6ef,
@@ -20,7 +27,7 @@ $search-method-colors: (
   karaoke: #e7c49c,
   youtube: #e79ca1,
   niconico: #ababab,
-  oricon: #b39ddb,
+  oricon: $ranking-bronze,
   // Indigo, matching the warm-up's SourceBadge -- it isn't a service, and it
   // must not read as either red brand.
   tuning: #a79ce7,
@@ -29,6 +36,12 @@ $search-method-colors: (
 );
 
 $banner-width: 30px;
+$tile-gap: 8px;
+
+// Golden ratio width:height for the Title/Artist tiles and the third-width
+// bottom row. The chart rows opt out (their section sets a height) — a
+// full-width button at this ratio would be half the screen tall.
+$golden-ratio: 1.618;
 
 .grid {
   // Keeps the squares phone-button-sized and centered instead of ballooning
@@ -37,20 +50,62 @@ $banner-width: 30px;
   margin: 4px auto 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: $tile-gap;
+  // So a row can size itself off the grid's own width (see .youtubeSection).
+  // A percentage height would resolve against the grid's HEIGHT, which is
+  // whatever its rows add up to — circular, and it just collapses.
+  container-type: inline-size;
 }
 
 // Title and Artist: one row of two, no brand banner, because one search now
-// covers both catalogs.
+// covers both catalogs. Height comes from .gridItem's golden ratio.
 .searchSection {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  gap: $tile-gap;
 
   a {
     text-decoration: none;
     display: block;
     height: 100%;
+  }
+}
+
+// The two YouTube ways in. Half-width like the searches above them, but only
+// as TALL as a tile in the three-across bottom row — they're a second-choice
+// way to find a song, not a peer of Title/Artist, and at the golden ratio the
+// pair of them ate a third of the screen. Hence an explicit height rather than
+// .gridItem's ratio: one third of the grid's width, minus the two gaps that
+// row spends, over the same ratio, which is exactly the bottom row's tile
+// height at every width.
+.youtubeSection {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: $tile-gap;
+  height: calc((100cqw - #{$tile-gap * 2}) / 3 / #{$golden-ratio});
+
+  a {
+    text-decoration: none;
+    display: block;
+    height: 100%;
+  }
+
+  // min-width: grid items default to min-width:auto, so the labels below would
+  // hold the columns open past half the row. aspect-ratio: a grid item with
+  // one does NOT stretch to its track — the ratio sets its height and the tile
+  // spills out the bottom of this shorter row, over the chart beneath it — so
+  // the row's height only takes effect once .gridItem's ratio is switched off.
+  > div {
+    min-width: 0;
+    aspect-ratio: auto;
+    height: 100%;
+  }
+
+  // Same size as the bottom row's labels, which keeps "YouTube Search" on one
+  // line inside the shorter button.
+  .text {
+    font-size: 22px;
+    line-height: 1.05;
   }
 }
 
@@ -78,35 +133,6 @@ $dam-logo-ratio: 0.84;
     text-decoration: none;
     display: block;
     height: 100%;
-  }
-}
-
-// Oricon/YouTube/Niconico aren't searchable catalogs, so they get no brand
-// banner — the row spans the full width as three equal columns instead of the
-// services' banner + two.
-.mediaSection {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-
-  a {
-    text-decoration: none;
-    display: block;
-    height: 100%;
-  }
-
-  // Grid items default to min-width:auto, so the widest label ("Niconico")
-  // would hold the third column open past the viewport and scroll the page
-  // sideways.
-  > div {
-    min-width: 0;
-  }
-
-  // "Oricon Top 10" wraps to two lines in a third-width tile; the tightened
-  // leading keeps both inside the button on narrow (320px) phones.
-  .text {
-    font-size: 22px;
-    line-height: 1.05;
   }
 }
 
@@ -147,11 +173,6 @@ $dam-logo-ratio: 0.84;
     }
   }
 }
-
-// Golden ratio width:height for the Title/Artist/media tiles. The chart rows
-// opt out (their section sets a height) — a full-width button at this ratio
-// would be half the screen tall.
-$golden-ratio: 1.618;
 
 .gridItem {
   aspect-ratio: $golden-ratio;
@@ -265,15 +286,12 @@ $label-lightness-dark: 92%;
   z-index: 1;
 }
 
-// Oricon and the warm-up. Same three-column track as the media row above,
-// with two tiles in it, so they come out exactly the size of the YouTube/
-// Niconico tiles rather than half-width slabs. Neither is a catalog search:
-// one is a third-party chart, the other isn't a way to find a song at all,
-// and they share a row because that is the leftover row.
+// The leftover row: Oricon, the warm-up, Niconico. Three equal columns, no
+// brand banner — a third-party chart, a thing that isn't a song search at all,
+// and the video service nobody opens first.
 //
-// No height of its own — .gridItem's golden-ratio aspect-ratio sets it, which
-// is what keeps these identical to the media tiles. Setting a height here
-// instead fights that ratio and stretches the tiles across the row.
+// No height of its own — .gridItem's golden-ratio aspect-ratio sets it. Setting
+// a height here instead fights that ratio and stretches the tiles.
 .extrasSection {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -285,9 +303,16 @@ $label-lightness-dark: 92%;
     height: 100%;
   }
 
-  // Grid items default to min-width:auto, so a long label would hold the
-  // column open past its third. Same guard the media row needs.
+  // Grid items default to min-width:auto, so the longest label would hold its
+  // column open past a third of the row and scroll the page sideways.
   > div {
     min-width: 0;
+  }
+
+  // "Oricon Top N" wraps to two lines in a third-width tile; the tightened
+  // leading keeps both inside the button on narrow (320px) phones.
+  .text {
+    font-size: 22px;
+    line-height: 1.05;
   }
 }

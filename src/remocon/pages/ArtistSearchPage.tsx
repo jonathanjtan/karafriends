@@ -26,7 +26,8 @@ const ArtistSearchPage = ({
 
   return (
     <SearchFormWrapper>
-      <h2>Search by artist name</h2>
+      {/* Names both catalogs — see SongSearchPage. */}
+      <h2>Search JOYSOUND/DAM by artist name</h2>
       <DebouncedInput
         period={500}
         placeholder="Start typing..."

@@ -24,6 +24,14 @@ const SearchMethodGrid = () => (
         <SearchMethodGridItem method="song" text="Title" />
         <SearchMethodGridItem method="artist" text="Artist" />
       </div>
+      {/* The two YouTube ways in sit directly under the catalog searches:
+          searching the karaoke channels is the same "type a song name" move as
+          Title/Artist, and pasting a URL is its neighbour. Shorter than them,
+          though — see .youtubeSection. */}
+      <div className={styles.youtubeSection}>
+        <SearchMethodGridItem method="karaoke" text="YouTube Search" />
+        <SearchMethodGridItem method="youtube" text="YouTube URL" />
+      </div>
       <div className={styles.rankingSection}>
         <div className={classnames(styles.serviceBanner, styles.joysound)}>
           <img src={joysoundLogo} alt="JOYSOUND" />
@@ -36,19 +44,12 @@ const SearchMethodGrid = () => (
         </div>
         <RankingGridItem service="dam" />
       </div>
-      {/* The three YouTube-ish ways in, together: search the karaoke channels
-          we can read, paste any video's URL, or Niconico. */}
-      <div className={styles.mediaSection}>
-        <SearchMethodGridItem method="karaoke" text="YouTube Search" />
-        <SearchMethodGridItem method="youtube" text="YouTube URL" />
-        <SearchMethodGridItem method="niconico" text="Niconico" />
-      </div>
-      {/* The two that aren't catalog searches. Three columns with two tiles
-          in it, so they stay the size of the media tiles above rather than
-          stretching to half the row each. */}
+      {/* The leftovers, one row of three: a third-party chart, the warm-up,
+          and the one video service nobody reaches for first. */}
       <div className={styles.extrasSection}>
         <OriconGridItem />
         <TuningGridItem />
+        <SearchMethodGridItem method="niconico" text="Niconico" />
       </div>
     </div>
   </div>
