@@ -15,6 +15,9 @@ $ranking-platinum: #a8aab4;
 $search-method-colors: (
   song: #a5b6ef,
   artist: #9ce7bb,
+  // Amber: it sits next to the YouTube tile and must not read as a second
+  // YouTube, nor borrow either service's brand red.
+  karaoke: #e7c49c,
   youtube: #e79ca1,
   niconico: #ababab,
   oricon: #b39ddb,
@@ -262,16 +265,29 @@ $label-lightness-dark: 92%;
   z-index: 1;
 }
 
-// The warm-up tile. Full width and shorter than a search tile: it is one
-// destination rather than half a row of them, and it is not a search.
-.warmupSection {
+// Oricon and the warm-up. Same three-column track as the media row above,
+// with two tiles in it, so they come out exactly the size of the YouTube/
+// Niconico tiles rather than half-width slabs. Neither is a catalog search:
+// one is a third-party chart, the other isn't a way to find a song at all,
+// and they share a row because that is the leftover row.
+//
+// No height of its own — .gridItem's golden-ratio aspect-ratio sets it, which
+// is what keeps these identical to the media tiles. Setting a height here
+// instead fights that ratio and stretches the tiles across the row.
+.extrasSection {
   display: grid;
-  grid-template-columns: 1fr;
-  height: 64px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
 
   a {
     text-decoration: none;
     display: block;
     height: 100%;
+  }
+
+  // Grid items default to min-width:auto, so a long label would hold the
+  // column open past its third. Same guard the media row needs.
+  > div {
+    min-width: 0;
   }
 }

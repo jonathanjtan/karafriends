@@ -36,14 +36,18 @@ const SearchMethodGrid = () => (
         </div>
         <RankingGridItem service="dam" />
       </div>
+      {/* The three YouTube-ish ways in, together: search the karaoke channels
+          we can read, paste any video's URL, or Niconico. */}
       <div className={styles.mediaSection}>
-        <OriconGridItem />
-        <SearchMethodGridItem method="youtube" text="YouTube" />
+        <SearchMethodGridItem method="karaoke" text="YouTube Search" />
+        <SearchMethodGridItem method="youtube" text="YouTube URL" />
         <SearchMethodGridItem method="niconico" text="Niconico" />
       </div>
-      {/* Its own row: it is not a way to find a song, and putting it in the
-          media row would have made that row four columns on a phone. */}
-      <div className={styles.warmupSection}>
+      {/* The two that aren't catalog searches. Three columns with two tiles
+          in it, so they stay the size of the media tiles above rather than
+          stretching to half the row each. */}
+      <div className={styles.extrasSection}>
+        <OriconGridItem />
         <TuningGridItem />
       </div>
     </div>

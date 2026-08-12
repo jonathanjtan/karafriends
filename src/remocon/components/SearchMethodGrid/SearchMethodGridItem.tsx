@@ -5,7 +5,7 @@ import { BsPersonSquare } from "react-icons/bs";
 // tslint:disable-next-line:no-submodule-imports
 import { FaYoutube } from "react-icons/fa";
 // tslint:disable-next-line:no-submodule-imports
-import { MdMusicVideo } from "react-icons/md";
+import { MdMusicVideo, MdSearch } from "react-icons/md";
 // tslint:disable-next-line:no-submodule-imports
 import { SiNiconico } from "react-icons/si";
 import { Link } from "react-router";
@@ -15,12 +15,13 @@ import * as styles from "./SearchMethodGrid.module.scss";
 const backgroundIcons = {
   song: <MdMusicVideo />,
   artist: <BsPersonSquare />,
+  karaoke: <MdSearch />,
   youtube: <FaYoutube />,
   niconico: <SiNiconico />,
 };
 
 interface Props {
-  method: "song" | "artist" | "youtube" | "niconico";
+  method: "song" | "artist" | "karaoke" | "youtube" | "niconico";
   text: string;
 }
 

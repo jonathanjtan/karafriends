@@ -6,8 +6,9 @@ import { Link } from "react-router";
 
 import * as styles from "./SearchMethodGrid.module.scss";
 
-// Sits with YouTube/Niconico rather than under a service banner: Oricon is a
-// third-party chart, not a catalog you can search.
+// Gets no brand banner: Oricon is a third-party chart, not a catalog you can
+// search. It shares the bottom row with the warm-up for the same reason —
+// neither is a way to search for a song.
 const OriconGridItem = () => (
   <div className={styles.gridItem}>
     <Link to="/ranking/oricon">
