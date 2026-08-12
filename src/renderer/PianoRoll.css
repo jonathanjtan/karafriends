@@ -3,11 +3,16 @@
   position: absolute;
   left: 0;
   width: 100%;
+  /* One stripe per whole tone. The divisor is the roll's vertical window in
+     semitones, set inline as --piano-roll-span so the stripes stay aligned with
+     the notes when the window widens (the guided range exercise spans the whole
+     vocal range, well past the historical 36). Falls back to 36, which is the
+     value every real song uses. */
   background: repeating-linear-gradient(
     rgba(50%, 75%, 100%, 0.7),
     rgba(50%, 75%, 100%, 0.7) 2px,
     rgba(0%, 0%, 10%, 0.2) 2px,
-    rgba(0%, 0%, 10%, 0.2) calc(200% / 36)
+    rgba(0%, 0%, 10%, 0.2) calc(200% / var(--piano-roll-span, 36))
   );
   transition:
     box-shadow linear 1.5s,

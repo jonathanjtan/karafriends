@@ -16,6 +16,7 @@ import environment from "../common/graphqlEnvironment";
 import useBreakEndsAt from "../common/hooks/useBreakEndsAt";
 import useBreakMessage from "../common/hooks/useBreakMessage";
 import useExperimentalScoringEnabled from "../common/hooks/useExperimentalScoringEnabled";
+import useGuideMelodyVolume from "../common/hooks/useGuideMelodyVolume";
 import usePitchShiftSemis from "../common/hooks/usePitchShiftSemis";
 import usePlaybackState from "../common/hooks/usePlaybackState";
 import useQueue from "../common/hooks/useQueue";
@@ -146,7 +147,6 @@ const popSongMutation = graphql`
         artistName
         scoringData
         centreMidi
-        stepSemis
         floorMidi
         ceilingMidi
         durationSecs
@@ -288,6 +288,16 @@ function Player(props: {
   const { experimentalScoringEnabled } = useExperimentalScoringEnabled();
   const experimentalScoringEnabledRef = useRef(false);
   experimentalScoringEnabledRef.current = experimentalScoringEnabled;
+  // The warm-up is nothing but the guide tone, so it forces the guide melody to
+  // full for its duration and puts the room's setting back afterwards. Read
+  // through refs because the pop handler is wired up once on mount.
+  const { guideMelodyVolume, setGuideMelodyVolume } = useGuideMelodyVolume();
+  const guideMelodyVolumeRef = useRef(guideMelodyVolume);
+  guideMelodyVolumeRef.current = guideMelodyVolume;
+  // The room's own value, stashed while a warm-up overrides it. Null when
+  // nothing is overridden, which is what makes restoring idempotent.
+  const guideVolumeBeforeWarmupRef = useRef<number | null>(null);
+
   const { playbackState, setPlaybackState } = usePlaybackState();
   const { pitchShiftSemis, setPitchShiftSemis } = usePitchShiftSemis();
   const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -661,6 +671,16 @@ function Player(props: {
       return true;
     };
 
+    // Put the room's guide-melody volume back after a warm-up. Safe to call
+    // whenever: it no-ops unless a warm-up actually overrode it, so every path
+    // out of an item can call it without tracking which kind was playing.
+    const restoreGuideMelodyVolume = () => {
+      const previous = guideVolumeBeforeWarmupRef.current;
+      if (previous === null) return;
+      guideVolumeBeforeWarmupRef.current = null;
+      setGuideMelodyVolume(previous);
+    };
+
     const pollQueue = (force: boolean = false) => {
       // No poll is in flight once we're inside one, whether this call came
       // from the timer (whose handle is already spent) or straight from a
@@ -698,6 +718,10 @@ function Player(props: {
         variables: {},
         onCompleted: ({ popSong }) => {
           setPopPending(false);
+          // Before the null check: an empty queue ends the warm-up just as much
+          // as the next song starting does, and the room should get its guide
+          // volume back either way.
+          restoreGuideMelodyVolume();
           if (!videoRef.current) return;
 
           if (!popSong) {
@@ -1001,6 +1025,13 @@ function Player(props: {
               videoRef.current.play();
               break;
             case "TuningQueueItem":
+              // The exercise *is* the guide tone -- there is no track behind it
+              // -- so a room that had the guide turned down would hear nothing
+              // to sing against. Stash the room's value and go to full; every
+              // path out of here restores it (see restoreGuideMelodyVolume).
+              guideVolumeBeforeWarmupRef.current = guideMelodyVolumeRef.current;
+              setGuideMelodyVolume(1);
+
               setShouldShowPianoRoll(true);
               setPianoRollTitleCleared(true);
               setPianoRollDucked(false);
@@ -1019,7 +1050,6 @@ function Player(props: {
               rangeAccumulatorRef.current = new RangeAccumulator(
                 buildTuningExercise({
                   centreMidi: popSong.centreMidi,
-                  stepSemis: popSong.stepSemis,
                   floorMidi: popSong.floorMidi,
                   ceilingMidi: popSong.ceilingMidi,
                 }).targets,
@@ -1059,6 +1089,7 @@ function Player(props: {
         },
         onError: (error) => {
           setPopPending(false);
+          restoreGuideMelodyVolume();
           // Without this, any unexpected popSong failure (GraphQL error,
           // dropped connection, etc.) would kill the poll loop for good —
           // nothing else re-schedules it.
@@ -1120,6 +1151,13 @@ function Player(props: {
       // Only one of the two can be armed, so at most one card goes up; the
       // queue-hold logic below treats them identically.
       const scoreCardShown = revealScoreCard() || revealRangeCard();
+
+      // Hand the guide volume back the moment the exercise ends, rather than
+      // waiting for the next pop -- the card and intermission hold for ~10s
+      // after this, and leaving every remocon's slider pinned at 100% through
+      // that reads as the app having taken the setting over. The pop path still
+      // calls this as a backstop; it no-ops once this has run.
+      restoreGuideMelodyVolume();
 
       // With the intermission enabled, cut to the queue screen when a song
       // ends. Songs waiting: hold it for a few seconds, then pop the next

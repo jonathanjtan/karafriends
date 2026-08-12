@@ -16,7 +16,7 @@ const TuningGridItem = () => (
         <span className={styles.icon}>
           <MdGraphicEq />
         </span>
-        <span className={styles.text}>Warm-up</span>
+        <span className={styles.text}>Calibrate</span>
       </div>
     </Link>
   </div>

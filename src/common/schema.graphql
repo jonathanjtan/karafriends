@@ -973,7 +973,6 @@ type TuningQueueItem implements QueueItemInterface {
   # The parameters it was generated from, so the renderer can rebuild the exact
   # target list to measure against without re-deriving it from the blob.
   centreMidi: Int!
-  stepSemis: Int!
   floorMidi: Int!
   ceilingMidi: Int!
   durationSecs: Float!

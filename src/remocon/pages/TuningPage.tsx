@@ -75,16 +75,15 @@ const TuningPage = () => {
 
   return (
     <div className={styles.page}>
-      <h2>Vocal warm-up</h2>
+      <h2>Calibrate</h2>
       <p className={styles.blurb}>
-        A minute of held notes that walks down and then up from a comfortable
-        middle. Sing along with each tone for as long as it lasts, and just skip
-        any that don't feel good — the ones you skip are information too.
+        A minute of held notes that walks down and then up from the middle. Sing
+        along with each tone for as long as you can, and skip any that don't
+        feel good.
       </p>
       <p className={styles.blurb}>
-        At the end the TV shows the range it heard. It's only ever used to point
-        out songs that might sit nicely for you, or to suggest a key that's
-        easier on your voice.
+        If mics are configured, your range will be inferred from the notes and
+        used for songs/key change recommendations!
       </p>
 
       <h3 className={styles.sectionTitle}>Where should it start?</h3>
@@ -107,8 +106,8 @@ const TuningPage = () => {
         ))}
       </div>
       <p className={styles.hint}>
-        Pick whichever is closest — it only decides where the walk begins, and
-        the TV will say if you run past either end.
+        Pick whichever is closest to start: the note range will expand as
+        needed.
       </p>
 
       <Button

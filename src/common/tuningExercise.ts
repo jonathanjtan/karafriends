@@ -36,23 +36,46 @@ const REST_BETWEEN_LEGS_SECS = 3;
 // beat before the card.
 const PIANO_ROLL_TAIL_SECS = 3;
 
-// Whole tones. A semitone walk doubles the length to buy resolution the
-// "comfortable range" reading doesn't use -- the edge of a range is not a
-// sharp boundary in the first place.
-export const DEFAULT_STEP_SEMIS = 2;
+// The walk moves by scale degree, not by a fixed number of semitones.
+//
+// It used to step a constant 2 semitones, which is a **whole-tone scale** --
+// C D E F# G# A#, no perfect fifth and no leading tone. That is the Debussy
+// dream-sequence sound, and it reads as eerie and unresolved to anybody asked
+// to sing it. A major scale is what a vocal warm-up actually uses, it is
+// singable without a reference chord, and its average step (~1.7 semitones) is
+// slightly finer than whole tones, so the range reading gets marginally better
+// resolution rather than worse.
+//
+// Semitone offsets of the major scale from its tonic.
+const MAJOR_SCALE_SEMIS = [0, 2, 4, 5, 7, 9, 11];
 
-// The piano roll's vertical window is exactly +/-18 semitones around the song's
-// median note (midiNumberToYCoord divides by 36, and PianoRollMidi.vert.glsl
-// clips outside 0..1), and notes are drawn one semitone thick either side. So
-// an exercise wider than +/-17 around its centre would have its extremes -- the
-// most interesting part -- silently clipped off the top and bottom of the
-// canvas. Every preset below stays inside +/-16.
-export const MAX_SPAN_FROM_CENTRE_SEMIS = 16;
+// The note `degree` scale steps from `tonic` (negative walks down). Octaves are
+// handled by flooring, so degree -1 from C4 is B3 rather than anything clever.
+function scaleNote(tonic: number, degree: number): number {
+  const octave = Math.floor(degree / MAJOR_SCALE_SEMIS.length);
+  const step =
+    ((degree % MAJOR_SCALE_SEMIS.length) + MAJOR_SCALE_SEMIS.length) %
+    MAJOR_SCALE_SEMIS.length;
+  return tonic + 12 * octave + MAJOR_SCALE_SEMIS[step];
+}
 
-// One preset per rough voice height rather than a single compromise default:
-// the centre is what decides whether the walk spends its notes anywhere useful,
-// and no one centre suits a bass and a soprano. The remocon offers all three;
-// "mixed" is the default.
+// The walk covers the whole plausible singing range regardless of where it
+// starts, so nobody's measurement is cut short by a preset they picked before
+// they had any information. E2 is below most bass ranges and C6 above most
+// sopranos; anyone who reaches either end genuinely has more range than this
+// test measures, and the card says so rather than pretending it is a limit.
+//
+// This used to be a +/-16 window around the centre, because the piano roll's
+// vertical axis was fixed at +/-18 semitones and a wider exercise had its
+// extremes -- the interesting part -- silently clipped off the canvas. The roll
+// now scales to whatever it is given (see midiNumberToYCoord's spanSemis), so
+// the exercise is bounded by human voices instead of by the display.
+export const VOCAL_FLOOR_MIDI = 40; // E2
+export const VOCAL_CEILING_MIDI = 84; // C6
+
+// One preset per rough voice height. It picks only where the walk *starts*, so
+// nobody is cold-started at an extreme; the range covered is the same either
+// way. The remocon offers all three; "mixed" is the default.
 export interface TuningPreset {
   id: "lower" | "mixed" | "higher";
   label: string;
@@ -87,26 +110,21 @@ export interface TuningExercise {
   notes: GuideMelodyNote[];
   durationSecs: number;
   centreMidi: number;
-  stepSemis: number;
   floorMidi: number;
   ceilingMidi: number;
 }
 
 export interface TuningExerciseOptions {
   centreMidi?: number;
-  stepSemis?: number;
-  // Defaults derive from the centre and MAX_SPAN_FROM_CENTRE_SEMIS. Passing
-  // these explicitly is allowed but they are clamped to the roll's window --
-  // an exercise whose extremes are invisible measures nothing anybody can see.
+  // Default to the full plausible vocal range. Overrides are clamped to it --
+  // there is no musical reason to ask anybody for a note below E2 or above C6,
+  // and an unbounded exercise would just be long.
   floorMidi?: number;
   ceilingMidi?: number;
 }
 
-function clampToWindow(value: number, centreMidi: number): number {
-  return Math.max(
-    centreMidi - MAX_SPAN_FROM_CENTRE_SEMIS,
-    Math.min(centreMidi + MAX_SPAN_FROM_CENTRE_SEMIS, value),
-  );
+function clampToVocalRange(value: number): number {
+  return Math.max(VOCAL_FLOOR_MIDI, Math.min(VOCAL_CEILING_MIDI, value));
 }
 
 export function presetById(id: string): TuningPreset {
@@ -124,17 +142,9 @@ export function buildTuningExercise(
   const centreMidi = Math.round(
     options.centreMidi ?? presetById(DEFAULT_PRESET_ID).centreMidi,
   );
-  const stepSemis = Math.max(
-    1,
-    Math.round(options.stepSemis ?? DEFAULT_STEP_SEMIS),
-  );
-  const floorMidi = clampToWindow(
-    options.floorMidi ?? centreMidi - MAX_SPAN_FROM_CENTRE_SEMIS,
-    centreMidi,
-  );
-  const ceilingMidi = clampToWindow(
-    options.ceilingMidi ?? centreMidi + MAX_SPAN_FROM_CENTRE_SEMIS,
-    centreMidi,
+  const floorMidi = clampToVocalRange(options.floorMidi ?? VOCAL_FLOOR_MIDI);
+  const ceilingMidi = clampToVocalRange(
+    options.ceilingMidi ?? VOCAL_CEILING_MIDI,
   );
 
   const targets: TuningTarget[] = [];
@@ -155,21 +165,18 @@ export function buildTuningExercise(
 
   // Down first: voices settle downward more easily than they leap upward, and
   // a singer who has already found the centre arrives at the bottom warmer.
-  for (
-    let midi = centreMidi - stepSemis;
-    midi >= floorMidi;
-    midi -= stepSemis
-  ) {
+  // The centre is the tonic, so each preset walks its own key (F, C, G major).
+  for (let degree = -1; ; degree--) {
+    const midi = scaleNote(centreMidi, degree);
+    if (midi < floorMidi) break;
     push(midi, "descend");
   }
 
   cursorSecs += REST_BETWEEN_LEGS_SECS;
 
-  for (
-    let midi = centreMidi + stepSemis;
-    midi <= ceilingMidi;
-    midi += stepSemis
-  ) {
+  for (let degree = 1; ; degree++) {
+    const midi = scaleNote(centreMidi, degree);
+    if (midi > ceilingMidi) break;
     push(midi, "ascend");
   }
 
@@ -187,7 +194,6 @@ export function buildTuningExercise(
     // edge, and "ended" firing on top of the last note is an abrupt finish.
     durationSecs: cursorSecs - GAP_SECS + PIANO_ROLL_TAIL_SECS,
     centreMidi,
-    stepSemis,
     floorMidi,
     ceilingMidi,
   };

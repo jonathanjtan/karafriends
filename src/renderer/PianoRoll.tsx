@@ -317,6 +317,14 @@ class PitchDetectionBuffer {
   buffer: { time: number; value: number }[] = [];
   positions: number[] = [];
   pitchOffset: number = 0;
+  // The roll's vertical window for this song, in semitones. Constant for the
+  // buffer's life (it is rebuilt per song), so it is held here rather than
+  // threaded through every push.
+  readonly spanSemis: number;
+
+  constructor(spanSemis: number) {
+    this.spanSemis = spanSemis;
+  }
 
   push(
     pitchMidiNumber: number,
@@ -396,7 +404,7 @@ class PitchDetectionBuffer {
       const spline = new Spline(
         bufferSlice.map((obj) => obj.time),
         bufferSlice.map((obj) =>
-          midiNumberToYCoord(obj.value, medianMidiNumber),
+          midiNumberToYCoord(obj.value, medianMidiNumber, this.spanSemis),
         ),
       );
 
@@ -442,12 +450,41 @@ class PitchDetectionBuffer {
   }
 }
 
-function midiNumberToYCoord(midiNumber: number, medianMidiNumber: number) {
-  // We draw 18 rows behind the canvas, and we also want to be able to align
-  // notes in-between rows, so we have 36 positions. We want to return
-  // positions that correspond to the center of a bar or in-between two bars.
-  // If we're at the median MIDI number, we should be dead-center.
-  return 0.5 + (midiNumber - medianMidiNumber) / 36;
+// The roll's default vertical window: 18 rows behind the canvas, and notes can
+// align in-between rows, so 36 positions -- +/-18 semitones around the median.
+// Every real song fits inside this, and it stays the exact historical geometry.
+const DEFAULT_SPAN_SEMIS = 36;
+
+// How tall a window this note set needs, in semitones. Never narrower than the
+// default, so songs are laid out exactly as they always were; wider only when
+// something genuinely does not fit.
+//
+// The guided range exercise is what needs this: it walks the whole plausible
+// vocal range (E2..C6, 44 semitones) so that nobody's measurement is cut short
+// by a preset they chose before knowing their range. At a fixed 36 its extremes
+// -- the entire point of the test -- were clipped off the top and bottom of the
+// canvas by PianoRollMidi.vert.glsl, which discards anything outside y 0..1.
+function spanSemisFor(midiNumbers: number[], medianMidiNumber: number) {
+  if (midiNumbers.length === 0) return DEFAULT_SPAN_SEMIS;
+  const furthest = Math.max(
+    ...midiNumbers.map((midi) => Math.abs(midi - medianMidiNumber)),
+  );
+  // +1 for the semitone of note thickness either side, +1 of breathing room.
+  return Math.max(DEFAULT_SPAN_SEMIS, Math.ceil(2 * (furthest + 2)));
+}
+
+function midiNumberToYCoord(
+  midiNumber: number,
+  medianMidiNumber: number,
+  spanSemis: number = DEFAULT_SPAN_SEMIS,
+) {
+  // Positions correspond to the center of a bar or in-between two bars. If
+  // we're at the median MIDI number, we should be dead-center.
+  return 0.5 + (midiNumber - medianMidiNumber) / spanSemis;
+}
+
+interface RollStyleVars extends React.CSSProperties {
+  "--piano-roll-span": number;
 }
 
 // Octave rails: which C's are visible, and where.
@@ -460,14 +497,14 @@ function midiNumberToYCoord(midiNumber: number, medianMidiNumber: number) {
 // singing in your own comfortable octave is normal and must not cost points.
 //
 // PianoRollMidi.vert.glsl maps y through `y * 2 - 1`, so the visible window is
-// exactly y 0..1, which is +/-18 semitones around the median.
-function octaveRails(medianMidiNumber: number) {
+// exactly y 0..1, which is +/-spanSemis/2 around the median.
+function octaveRails(medianMidiNumber: number, spanSemis: number) {
   const rails: { midi: number; topPercent: number }[] = [];
-  const lowest = Math.ceil(medianMidiNumber - 18);
-  const highest = Math.floor(medianMidiNumber + 18);
+  const lowest = Math.ceil(medianMidiNumber - spanSemis / 2);
+  const highest = Math.floor(medianMidiNumber + spanSemis / 2);
   for (let midi = lowest; midi <= highest; midi++) {
     if (midi % 12 !== 0) continue; // C's only -- one label per octave
-    const y = midiNumberToYCoord(midi, medianMidiNumber);
+    const y = midiNumberToYCoord(midi, medianMidiNumber, spanSemis);
     if (y < 0.02 || y > 0.98) continue; // would be clipped at the edge
     // y is bottom-up in GL, top-down in CSS.
     rails.push({ midi, topPercent: (1 - y) * 100 });
@@ -538,12 +575,15 @@ export default function PianoRoll(props: {
   // labels have to be derived from exactly the value the GL effect uses. Kept
   // here rather than inside that effect because the overlay is plain DOM and
   // must not depend on the GL pipeline being rebuilt.
-  const rails = React.useMemo(() => {
+  const { rails, spanSemis } = React.useMemo(() => {
     const { notes } = parseScoringData(props.scoringData);
-    if (notes.length === 0) return [];
-    return octaveRails(
-      median(notes.map((note) => note.midiNumber + props.pitchShiftSemis)),
-    );
+    if (notes.length === 0) {
+      return { rails: [], spanSemis: DEFAULT_SPAN_SEMIS };
+    }
+    const midis = notes.map((note) => note.midiNumber + props.pitchShiftSemis);
+    const medianMidi = median(midis);
+    const span = spanSemisFor(midis, medianMidi);
+    return { rails: octaveRails(medianMidi, span), spanSemis: span };
   }, [props.scoringData, props.pitchShiftSemis]);
 
   useEffect(() => {
@@ -622,14 +662,28 @@ export default function PianoRoll(props: {
     }));
 
     const medianMidiNumber = median(notes.map((note) => note.midiNumber));
+    // Widens only when the note set genuinely doesn't fit the historical
+    // +/-18 window -- in practice, only the guided range exercise.
+    const effectSpanSemis = spanSemisFor(
+      notes.map((note) => note.midiNumber),
+      medianMidiNumber,
+    );
 
     const positions = notes
       .map((note) =>
         quadToTriangles(
           note.startTime,
-          midiNumberToYCoord(note.midiNumber + 1, medianMidiNumber),
+          midiNumberToYCoord(
+            note.midiNumber + 1,
+            medianMidiNumber,
+            effectSpanSemis,
+          ),
           note.endTime,
-          midiNumberToYCoord(note.midiNumber - 1, medianMidiNumber),
+          midiNumberToYCoord(
+            note.midiNumber - 1,
+            medianMidiNumber,
+            effectSpanSemis,
+          ),
         ),
       )
       .flat();
@@ -741,7 +795,7 @@ export default function PianoRoll(props: {
 
     const pitchPollers: [PitchDetectionBuffer, PitchProgram, NodeJS.Timeout][] =
       props.mics.map((mic, i) => {
-        const buffer = new PitchDetectionBuffer();
+        const buffer = new PitchDetectionBuffer(effectSpanSemis);
         return [
           buffer,
           new PitchProgram(
@@ -871,6 +925,13 @@ export default function PianoRoll(props: {
     top: `${PIANO_ROLL_TOP_FRACTION * 100}%`,
     height: `${pianoRollSize * 100}%`,
   };
+  // Drives the background stripe period so the stripes track the same vertical
+  // window the notes are drawn in. Declared through an interface rather than
+  // asserted: a custom property isn't in React's CSSProperties, and tslint
+  // (no-object-literal-type-assertion) wants the annotation, not a cast.
+  const rollStyleVars: RollStyleVars = {
+    "--piano-roll-span": spanSemis,
+  };
 
   return (
     <>
@@ -881,6 +942,7 @@ export default function PianoRoll(props: {
         className="pianoRollRoll"
         style={{
           ...rollGeometry,
+          ...rollStyleVars,
           opacity: rollOpacity,
           display: pianoRollSize <= 0 ? "none" : undefined,
         }}
