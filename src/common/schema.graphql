@@ -99,6 +99,17 @@ type Query {
     first: Int
     after: String
   ): SearchedArtistConnection!
+  # The karaoke YouTube channels karafriends knows how to read, for the filter
+  # chips. Static data -- it describes what `karaokeChannelSongs` will search.
+  karaokeChannels: [KaraokeChannel!]!
+  # One search across those channels. Deliberately not a connection: YouTube's
+  # channel search answers with a single padded page and gives no offset to
+  # resume from, so there is no second page to hand out -- see
+  # KaraokeChannelSongs.
+  karaokeChannelSongs(
+    keyword: String
+    channels: [String!]
+  ): KaraokeChannelSongs!
   # JOYSOUND's public Top 100 karaoke charts (joysound.com), with ids mapped
   # back to the catalog so entries open like search results. `month` (YYYYMM)
   # selects a past monthly archive; null uses the current chart.
@@ -783,6 +794,48 @@ enum SongRangeAvailability {
 type SongConnection {
   edges: [SongEdge!]!
   pageInfo: SongPageInfo!
+}
+
+# A karaoke channel on YouTube whose uploads all follow one title grammar, so
+# their titles parse back into song/artist pairs. See main/karaokeChannels.ts
+# for the registry and the per-channel parsers.
+type KaraokeChannel {
+  key: String!
+  label: String!
+  language: String!
+}
+
+# One playable karaoke render found on such a channel. Queued through the
+# ordinary YouTube path -- these are YouTube videos, just ones we can read --
+# so there is no KaraokeQueueItem; the parsed name/artist ride along to the
+# queue so the history doesn't fill up with raw video titles.
+type KaraokeChannelSong {
+  # Channel-qualified, because Relay normalizes its store by type+id and the
+  # same song found on two channels must stay two rows. Same reasoning as
+  # SearchedSong's source-qualified id.
+  id: ID!
+  videoId: String!
+  channelKey: String!
+  channelLabel: String!
+  name: String!
+  artistName: String!
+  # Which render this is when a channel publishes more than one of a song
+  # ("no guide", "melody removed", "female key"). Null for a channel's plain
+  # unmarked render.
+  variant: String
+  # The channel's own catalog number where the title carries one (KY.NNNNN).
+  # Display only.
+  catalogId: String
+  playtime: Int
+}
+
+# Not a connection (no cursors): one page is all YouTube's channel search
+# gives. `unavailableChannels` carries the labels of channels that didn't
+# answer, so one rate-limited channel shows a notice instead of failing the
+# whole search -- the same bargain the merged DAM/JOYSOUND search makes.
+type KaraokeChannelSongs {
+  songs: [KaraokeChannelSong!]!
+  unavailableChannels: [String!]!
 }
 
 type JoysoundSongConnection {

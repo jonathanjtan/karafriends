@@ -16,6 +16,7 @@ import JoinPage from "./pages/JoinPage";
 import JoysoundArtistPage from "./pages/JoysoundArtistPage";
 import JoysoundRankingPage from "./pages/JoysoundRankingPage";
 import JoysoundSongPage from "./pages/JoysoundSongPage";
+import KaraokeChannelSearchPage from "./pages/KaraokeChannelSearchPage";
 import NiconicoPage from "./pages/NiconicoPage";
 import OriconRankingPage from "./pages/OriconRankingPage";
 import OriconSongPage from "./pages/OriconSongPage";
@@ -77,6 +78,10 @@ const App = () => {
                 <Route
                   path="/search/artist/:query?"
                   element={<ArtistSearchPage />}
+                />
+                <Route
+                  path="/search/karaoke/:query?"
+                  element={<KaraokeChannelSearchPage />}
                 />
                 <Route
                   path="/search/youtube/:videoId?"

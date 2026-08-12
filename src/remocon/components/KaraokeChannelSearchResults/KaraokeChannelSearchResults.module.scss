@@ -1,0 +1,51 @@
+// Song/artist take the slack; the channel label and variant tag keep their
+// intrinsic width at the right edge so they read as a column down the list,
+// the same shape as the merged catalog search's source badges.
+.link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.text {
+  min-width: 0;
+}
+
+.name {
+  font-weight: bold;
+}
+
+.artist {
+  opacity: 0.8;
+}
+
+.tags {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.channel {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+// Says which render this is when a channel publishes more than one of a song.
+// Deliberately louder than the channel label: "no guide" changes what you
+// hear, the channel name doesn't.
+.variant {
+  font-size: 11px;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--tag-background, rgba(127, 127, 127, 0.18));
+}

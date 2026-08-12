@@ -75,6 +75,11 @@ import {
   getJoysoundScoringData,
   hasCachedGuideMelody,
 } from "./joysoundMelody";
+import {
+  KaraokeChannelSong,
+  KARAOKE_CHANNELS,
+  searchKaraokeChannels,
+} from "./karaokeChannels";
 import memoizeWithFailureEviction from "./memoizeWithFailureEviction";
 import {
   claimPerson,
@@ -1578,7 +1583,6 @@ export interface TuningQueueItem extends QueueItemInterface {
   readonly __typename: "TuningQueueItem";
   readonly scoringData: readonly number[];
   readonly centreMidi: number;
-  readonly stepSemis: number;
   readonly floorMidi: number;
   readonly ceilingMidi: number;
   readonly durationSecs: number;
@@ -2877,6 +2881,52 @@ const resolvers = {
         };
       });
     },
+    karaokeChannels: () =>
+      KARAOKE_CHANNELS.map(({ key, label, language }) => ({
+        key,
+        label,
+        language,
+      })),
+    karaokeChannelSongs: async (
+      _: any,
+      args: { keyword: string | null; channels: string[] | null },
+      { dataSources }: IDataSources,
+    ): Promise<{
+      songs: KaraokeChannelSong[];
+      unavailableChannels: string[];
+    }> => {
+      const keyword = args.keyword || "";
+      if (!keyword) return { songs: [], unavailableChannels: [] };
+
+      // Innertube.create() is the one thing here that can take the whole
+      // search down (it reaches out to youtube.com). Report it the same way a
+      // single dead channel is reported rather than erroring the query: the
+      // notice already exists, and an error boundary would replace the list.
+      let youtube;
+      try {
+        youtube = await dataSources.youtube();
+      } catch (error) {
+        console.error("[karaokeChannels] YouTube unavailable", error);
+        return {
+          songs: [],
+          unavailableChannels: KARAOKE_CHANNELS.map((c) => c.label),
+        };
+      }
+
+      const { songs, unavailableChannels } = await searchKaraokeChannels(
+        youtube,
+        keyword,
+        args.channels,
+      );
+
+      // Same tiering as the merged catalog search: an exact or prefix title
+      // match floats up, and the round-robin across channels survives inside
+      // each tier because the sort is stable.
+      return {
+        songs: sortByTitleMatchTier(songs, keyword, (song) => song.name),
+        unavailableChannels,
+      };
+    },
     searchArtists: (
       _: any,
       args: {
@@ -3785,7 +3835,6 @@ const resolvers = {
         playtime: Math.round(exercise.durationSecs),
         scoringData: Array.from(buildScoringData(exercise.notes)),
         centreMidi: exercise.centreMidi,
-        stepSemis: exercise.stepSemis,
         floorMidi: exercise.floorMidi,
         ceilingMidi: exercise.ceilingMidi,
         durationSecs: exercise.durationSecs,
