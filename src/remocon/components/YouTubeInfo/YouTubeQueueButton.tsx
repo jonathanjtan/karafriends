@@ -56,6 +56,7 @@ interface Props {
   adhocSongLyrics: string | null;
   selectedCaption: string | null;
   userIdentity: YouTubeQueueButtonMutation$variables["input"]["userIdentity"];
+  songOverride?: { name: string; artistName: string } | null;
 }
 
 const YouTubeQueueButton = ({
@@ -64,6 +65,7 @@ const YouTubeQueueButton = ({
   adhocSongLyrics,
   selectedCaption,
   userIdentity,
+  songOverride = null,
 }: Props) => {
   if (videoInfo.__typename !== "YoutubeVideoInfo") return null;
 
@@ -144,8 +146,11 @@ const YouTubeQueueButton = ({
       variables: {
         input: {
           songId: videoId,
-          name: videoInfo.title,
-          artistName: videoInfo.author,
+          // The karaoke channels' video titles are the song plus a pile of
+          // channel boilerplate; when the search already split them, queue
+          // the split version so the queue and history read like songs.
+          name: songOverride?.name ?? videoInfo.title,
+          artistName: songOverride?.artistName ?? videoInfo.author,
           playtime: videoInfo.lengthSeconds,
           userIdentity,
           adhocSongLyrics,

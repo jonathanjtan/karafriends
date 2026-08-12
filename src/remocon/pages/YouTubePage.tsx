@@ -1,7 +1,7 @@
 import { invariant } from "ts-invariant";
 
 import React, { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useLocation, useNavigate, useParams } from "react-router";
 
 import useNowPlaying from "../hooks/useNowPlaying";
 import useUserIdentity from "../hooks/useUserIdentity";
@@ -55,9 +55,28 @@ const YouTubePage = () => {
   const currentSong = useNowPlaying();
 
   const params = useParams<YouTubeParams>();
+  const location = useLocation();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [videoId, setVideoId] = useState<string>(params.videoId || "");
+
+  // A row from the karaoke-channel search arrives with the song and artist
+  // already parsed out of the video title, and those are what should land in
+  // the queue -- "Mr. Brightside" by "The Killers", not "The Killers - Mr.
+  // Brightside (Karaoke Version)". Pasting a different URL into the form
+  // below drops them: they described the video we navigated in with.
+  const routedSong = location.state as {
+    name?: string;
+    artistName?: string;
+  } | null;
+  const [songOverride, setSongOverride] = useState<{
+    name: string;
+    artistName: string;
+  } | null>(
+    routedSong?.name && routedSong?.artistName
+      ? { name: routedSong.name, artistName: routedSong.artistName }
+      : null,
+  );
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,6 +84,7 @@ const YouTubePage = () => {
     const newVideoId = getVideoId(inputRef.current.value);
     if (newVideoId !== null) {
       setVideoId(newVideoId);
+      setSongOverride(null);
       history.replaceState({}, "", `#/search/youtube/${newVideoId}`);
     }
   };
@@ -90,7 +110,9 @@ const YouTubePage = () => {
         />
         <Button type="submit">Get Video Info</Button>
       </form>
-      {videoId !== "" && <YouTubeInfo videoId={videoId} />}
+      {videoId !== "" && (
+        <YouTubeInfo videoId={videoId} songOverride={songOverride} />
+      )}
     </SearchFormWrapper>
   );
 };

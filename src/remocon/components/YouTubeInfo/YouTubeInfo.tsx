@@ -41,9 +41,14 @@ const youTubeInfoVideoInfoQuery = graphql`
 
 interface Props {
   videoId: string;
+  // Song and artist parsed from the video title by the karaoke-channel
+  // search, when that's where this page was opened from. Null when a URL was
+  // pasted in by hand -- then the video's own title and uploader are all
+  // there is to go on.
+  songOverride?: { name: string; artistName: string } | null;
 }
 
-const YouTubeInfo = ({ videoId }: Props) => {
+const YouTubeInfo = ({ videoId, songOverride = null }: Props) => {
   const userIdentity = useUserIdentity();
 
   const [adhocSongLyrics, setAdhocSongLyrics] = useState<string | null>(null);
@@ -139,6 +144,7 @@ const YouTubeInfo = ({ videoId }: Props) => {
             adhocSongLyrics={adhocSongLyrics}
             selectedCaption={selectedCaption || null}
             userIdentity={userIdentity}
+            songOverride={songOverride}
           />
         </>
       )}
