@@ -6,6 +6,8 @@ import {
   SettingDef,
   SettingsActions,
 } from "../../../common/settings";
+import Slider from "../Slider";
+
 import * as styles from "./RoomSettings.module.scss";
 
 // The phone's presenter for one manifest entry. Stacked full-width rows with
@@ -59,9 +61,8 @@ export default function SettingRow(props: {
             <span>{def.label}</span>
             <span className={styles.value}>{def.format(display)}</span>
           </div>
-          <input
+          <Slider
             className={styles.slider}
-            type="range"
             min={def.min}
             max={def.max}
             value={display}

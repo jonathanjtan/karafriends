@@ -9,6 +9,7 @@ import useConfig from "../../hooks/useConfig";
 import useNowPlaying from "../../hooks/useNowPlaying";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import PitchControls from "../PitchControls/PitchControls";
+import Slider from "../Slider";
 import * as styles from "./PlaybackControls.module.scss";
 
 const PlaybackControls = () => {
@@ -47,11 +48,10 @@ const PlaybackControls = () => {
         })}
       >
         <span>Guide Melody</span>
-        <input
+        <Slider
           className={styles.guideMelodySlider}
-          type="range"
-          min="0"
-          max="150"
+          min={0}
+          max={150}
           value={Math.round(guideMelodyVolume * 100)}
           onChange={(e) => setGuideMelodyVolume(Number(e.target.value) / 100)}
         />

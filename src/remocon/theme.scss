@@ -59,6 +59,17 @@
   /* Unfilled switch tracks and disabled button fills. */
   --control-off: #ccc;
 
+  /* The groove of a range slider — its unfilled half. Chrome paints that half
+     itself and, once `accent-color` is set, uses a fixed near-black for it
+     regardless of `color-scheme`; on a dark surface that's ~1.5:1 and the
+     right-hand half of the slider vanishes. So the sliders draw their own
+     groove (see components/Slider) and take its color from here. This value
+     is the one Chrome was using, so light mode is unchanged.
+     `--track-on-chrome` is the same groove on the nav/control bar, which is a
+     different surface in each theme. */
+  --track: #3b3b3b;
+  --track-on-chrome: #3b3b3b;
+
   /* The nav bar / control bar and everything living on them. */
   --chrome: #1cb3ff;
   --on-chrome: #fff;
@@ -101,6 +112,11 @@ html.dark {
   --on-accent: #f2fbff;
 
   --control-off: #3a434f;
+
+  /* ~3:1 against the surface each sits on: present as a groove without
+     competing with the accent-colored half beside it. */
+  --track: #5b6673;
+  --track-on-chrome: #63798c;
 
   /* The whole point of the exercise: under the old invert this stayed
      #1cb3ff, so the two biggest elements on screen were still the brightest

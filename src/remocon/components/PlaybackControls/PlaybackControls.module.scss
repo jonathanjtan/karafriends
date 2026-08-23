@@ -18,10 +18,14 @@
   line-height: 20px;
 }
 
+// This one lives on the control bar rather than the page, so both halves come
+// from the chrome palette.
 .guideMelodySlider {
   flex: 1;
   margin: 0;
-  accent-color: var(--on-chrome);
+
+  --slider-fill: var(--on-chrome);
+  --slider-track: var(--track-on-chrome);
 }
 
 .guideMelodyValue {

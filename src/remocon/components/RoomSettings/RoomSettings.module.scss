@@ -129,11 +129,10 @@ $rule: var(--accent-soft);
   transform: translateX(18px);
 }
 
+// Geometry and both halves come from components/Slider; only the accent is
+// worth restating here, and it already matches the shared default.
 .slider {
-  display: block;
-  width: 100%;
-  margin: 4px 0 0;
-  accent-color: $accent;
+  --slider-fill: #{$accent};
 }
 
 .select {

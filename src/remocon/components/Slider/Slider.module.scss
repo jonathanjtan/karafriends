@@ -1,0 +1,74 @@
+// A range input that draws its own groove.
+//
+// Chrome paints the unfilled half of a native range itself, and once
+// `accent-color` is set it uses a fixed near-black for it — ignoring both
+// `color-scheme` and the theme. On the white page that's an 11.6:1 bar; on
+// `--surface-raised` it's 1.5:1 and on the control bar's `--chrome` it's
+// 1.3:1, i.e. the right-hand half of every slider effectively disappeared in
+// dark mode. Styling `::-webkit-slider-runnable-track` fixes the groove but
+// throws away the accent fill with it, so the fill is painted here too, from
+// a `--pct` the component sets.
+//
+// Colors come from two custom properties so a slider on a chrome surface can
+// swap both halves without redeclaring the geometry:
+//   --slider-fill  the filled (left) half and the thumb
+//   --slider-track the groove (right half)
+.slider {
+  appearance: none;
+  -webkit-appearance: none;
+  display: block;
+  width: 100%;
+  height: 16px;
+  margin: 4px 0 0;
+  background: transparent;
+  cursor: pointer;
+
+  --slider-fill: var(--accent);
+  --slider-track: var(--track);
+}
+
+// The two engines want the same paint on differently-named pseudos, and
+// neither tolerates the other in a shared selector list — a single unknown
+// pseudo-element drops the whole rule — so they're written out twice.
+@mixin track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--slider-fill) 0 var(--pct, 0%),
+    var(--slider-track) var(--pct, 0%) 100%
+  );
+}
+
+@mixin thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 50%;
+  background: var(--slider-fill);
+}
+
+.slider::-webkit-slider-runnable-track {
+  @include track;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  @include thumb;
+  // Centers the thumb on the 4px groove: half the overshoot, negated.
+  margin-top: -5px;
+}
+
+.slider::-moz-range-track {
+  @include track;
+}
+
+.slider::-moz-range-thumb {
+  @include thumb;
+}
+
+// Firefox paints its own fill over ::-moz-range-track; the gradient already
+// handles it, so switch that off rather than have two fills disagree.
+.slider::-moz-range-progress {
+  background: transparent;
+}
