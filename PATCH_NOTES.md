@@ -2,7 +2,7 @@
 
 Everything that's changed since we forked karafriends from the original project.
 
-## New Features
+## New features
 
 **Background music**
 
@@ -33,7 +33,7 @@ Everything that's changed since we forked karafriends from the original project.
 
 - Added the ability to reorder songs in the queue (move them up or down) from your phone.
 - Added a "Clear Queue" button to empty the whole queue and skip the current song.
-- Added a "Break" feature — pause the show with a countdown and an optional custom message (e.g. a water break reminder) shown on the big screen.
+- Added a "Break" feature that pauses the show with a countdown and an optional custom message (e.g. a water break reminder) shown on the big screen.
 - Added a between-songs "Up Next" screen showing what's coming up, who queued it, and a QR code so people can join in.
 
 **Look and feel**
@@ -48,25 +48,25 @@ Everything that's changed since we forked karafriends from the original project.
 - (Windows Only) Added a factory reset tool that wipes local data (queue, downloaded songs, etc.) without touching config.yaml.
 - The app now announces instrumental breaks partway through JOYSOUND songs and dims the piano roll.
 
-## Bug Fixes
+## Bug fixes
 
-- Fixed the queue getting permanently stuck after certain playback errors — the app now skips ahead automatically instead of freezing.
+- Fixed the queue getting permanently stuck after certain playback errors. The app now skips ahead automatically instead of freezing.
 - Fixed songs occasionally vanishing from the queue silently if the streaming service had a hiccup; the app now skips forward and shows a message instead.
 - Fixed the app sometimes crashing entirely while downloading a song's video.
 - Fixed a crash on startup on Windows.
 - Fixed the phone remote occasionally showing a blank white screen instead of loading properly.
 - Fixed the queue and playback state sometimes getting corrupted after closing and reopening the app.
-- Fixed login problems with the DAM service after switching networks or VPNs — the app now shows a clearer error and retries automatically.
+- Fixed login problems with the DAM service after switching networks or VPNs. The app now shows a clearer error and retries automatically.
 
-## Improvements & Polish
+## Improvements and polish
 
 - Sped up loading JOYSOUND songs you've already viewed or queued before.
 - Reworked the settings panels on both the phone and big screen to be more compact and organized.
 - Added a live status indicator showing whether DAM/JOYSOUND are currently reachable, with a manual "Check now" button.
-- Various visual polish: smoother transitions, better spacing, clearer labels.
+- Smoother transitions, better spacing, and clearer labels.
 
-## Platform Support
+## Platform support
 
 - Added support for running the app natively on Apple Silicon Macs (M-series chips).
 - Various fixes to make development and building work consistently across macOS, Windows, and Linux.
-- Fixed the bundled YouTube-downloading tool going stale and causing music video downloads to silently fail — it's now kept up to date automatically with every build.
+- Fixed the bundled YouTube-downloading tool going stale and causing music video downloads to silently fail. It's now kept up to date automatically with every build.
