@@ -8,7 +8,7 @@ Electron applications have a **main process** (full Node.js with file system,
 network, and OS access) plus one or more **renderer processes** (sandboxed
 browser windows that show UI). They communicate over a structured message
 channel called IPC. Karafriends extends that model by adding two more
-browser-style UIs that run _outside_ Electron — on guests' phones — and by
+browser-style UIs that run _outside_ Electron, on guests' phones, and by
 calling into a Rust library for low-level audio.
 
 This page describes each of those pieces and how they talk to each other.
@@ -33,7 +33,7 @@ This page describes each of those pieces and how they talk to each other.
                             ▼                       ▼
         ┌───────────────────────────────┐  ┌───────────────────────────────┐
         │  Renderer (Electron window)   │  │  Remocon (mobile browsers)    │
-        │  — runs on the TV computer    │  │  — runs on each guest's phone │
+        │  - runs on the TV computer    │  │  - runs on each guest's phone │
         │                               │  │                               │
         │  • Plays video / lyrics       │  │  • Search songs               │
         │  • Shows queue, QR code       │  │  • Queue / pause / skip       │
@@ -49,7 +49,7 @@ This page describes each of those pieces and how they talk to each other.
                   └──────────────────────┘
 ```
 
-### 1. The main process — [src/main/](../src/main/)
+### 1. The main process: [src/main/](../src/main/)
 
 Entry: [src/main/index.ts](../src/main/index.ts).
 
@@ -75,17 +75,17 @@ The main process is the brain. When the app starts it:
 The main process also owns the **GraphQL resolvers** for everything backed
 by external services: querying DAM/JOYSOUND, fetching YouTube/Niconico
 metadata, kicking off video downloads with `yt-dlp` and `ffmpeg`. Each
-external API has its own client class — [damApi.ts](../src/main/damApi.ts)
-and [joysoundApi.ts](../src/main/joysoundApi.ts) — written as Apollo REST
+external API has its own client class, [damApi.ts](../src/main/damApi.ts)
+and [joysoundApi.ts](../src/main/joysoundApi.ts), written as Apollo REST
 data sources with retry and caching wrappers.
 
-### 2. The renderer — [src/renderer/](../src/renderer/)
+### 2. The renderer: [src/renderer/](../src/renderer/)
 
 Entry: [src/renderer/index.tsx](../src/renderer/index.tsx).
 
 This is the UI shown on the TV. It's a React app. Specifically:
 
-- `Player.tsx` plays the current song — HLS video for DAM, downloaded
+- `Player.tsx` plays the current song: HLS video for DAM, downloaded
   files for JOYSOUND/YouTube/Niconico, with a `<video>` element doing
   the work. Lyrics overlay on top.
 - `JoysoundRenderer.tsx` parses JOYSOUND's binary lyric format and draws
@@ -107,9 +107,9 @@ This is the UI shown on the TV. It's a React app. Specifically:
 The renderer talks to the main process two ways: through the **preload**
 bridge for native audio access, and through GraphQL over HTTP/WebSocket
 to localhost (yes, the renderer talks to the same GraphQL endpoint that
-the phones do — there's nothing special about being in the same process).
+the phones do; there's nothing special about being in the same process).
 
-### 3. The remocon — [src/remocon/](../src/remocon/)
+### 3. The remocon: [src/remocon/](../src/remocon/)
 
 Entry: [src/remocon/index.tsx](../src/remocon/index.tsx).
 
@@ -117,14 +117,14 @@ This is the UI the _guests_ use, loaded in their phone browsers. Same
 codebase, different bundle target. It's also a React app, organized into
 pages routed by `react-router`:
 
-- `HomePage.tsx` — the search-method tile grid (DAM title / DAM artist /
+- `HomePage.tsx`: the search-method tile grid (DAM title / DAM artist /
   JOYSOUND title / JOYSOUND artist / YouTube / Niconico).
 - `SongSearchPage.tsx`, `ArtistSearchPage.tsx`, equivalents for JOYSOUND,
-  `YouTubePage.tsx`, `NiconicoPage.tsx` — the actual search forms.
-- `SongPage.tsx`, `JoysoundSongPage.tsx` — song detail with a "queue"
+  `YouTubePage.tsx`, `NiconicoPage.tsx`: the actual search forms.
+- `SongPage.tsx`, `JoysoundSongPage.tsx`: song detail with a "queue"
   button.
-- `HistoryPage.tsx` — past songs.
-- `AdhocLyricsPage.tsx` — the lyrics-entry form for YouTube/Niconico
+- `HistoryPage.tsx`: past songs.
+- `AdhocLyricsPage.tsx`: the lyrics-entry form for YouTube/Niconico
   songs.
 
 A footer `ControlBar` is always visible with pause/skip/pitch controls,
@@ -140,29 +140,29 @@ The remocon also installs a **service worker**
 so it can show a desktop/mobile notification when your queued song is
 about to start.
 
-### 4. The preload script — [src/preload/index.ts](../src/preload/index.ts)
+### 4. The preload script: [src/preload/index.ts](../src/preload/index.ts)
 
-Electron renderer windows are sandboxed for security — they can't `require`
+Electron renderer windows are sandboxed for security, so they can't `require`
 Node modules directly. A **preload** script runs in the renderer process
 before the page loads, with privileged access, and it can selectively
 expose APIs to the page via `contextBridge`.
 
 Karafriends' preload exposes two things to `window.karafriends`:
 
-- `karafriendsConfig()` — reads the config from the main process over IPC.
-- `nativeAudio.*` — wraps the Rust native module so the renderer can list
+- `karafriendsConfig()` reads the config from the main process over IPC.
+- `nativeAudio.*` wraps the Rust native module so the renderer can list
   input devices, start a pitch-detecting stream on one, read the latest
   detected pitch, and stop it.
 
 Everything else the renderer needs (song queue, GraphQL) it gets over
 HTTP/WebSocket, which doesn't need preload privileges.
 
-### 5. The native Rust audio module — [native/](../native/)
+### 5. The native Rust audio module: [native/](../native/)
 
 A Rust crate compiled to a Node-native module (`.node` file) via the
 [Neon](https://neon-bindings.com/) framework. Two sub-crates:
 
-- `karafriends-lib` — the pure library:
+- `karafriends-lib`, the pure library:
   - `lib.rs` opens audio input/output devices through **cpal** (a
     cross-platform audio I/O library) and pipes mic samples through a
     ring buffer to the pitch detector. It also drives audio output, so
@@ -171,9 +171,9 @@ A Rust crate compiled to a Node-native module (`.node` file) via the
   - `pitch_detector.rs` runs an FFT-based pitch detection on incoming
     mic samples and reports the singer's note as a MIDI number plus a
     confidence value.
-  - `reverb_module.rs` adds reverb to the mic signal — the kind of
+  - `reverb_module.rs` adds reverb to the mic signal, the kind of
     cheap echo effect that makes everyone sound better in karaoke.
-- `karafriends` — the Neon-binding shim that re-exports
+- `karafriends`, the Neon-binding shim that re-exports
   `karafriends-lib` functions as JS-callable functions
   (`inputDevices`, `inputDevice_new`, `inputDevice_getPitch`, etc.).
 
@@ -201,12 +201,12 @@ Subscriptions ride a WebSocket; the rest is plain HTTP. Both endpoints
 are served by the same Express app in the main process on the remocon
 port.
 
-On the client side, both UIs use **Relay** — Facebook's GraphQL client.
+On the client side, both UIs use **Relay**, Facebook's GraphQL client.
 Relay does compile-time code generation: a tool called `relay-compiler`
 reads the `graphql\`...\``template literals in`.tsx`files, validates
 them against the schema, and produces TypeScript types and runtime
 artifacts in`**generated**/` folders next to each component. You'll see
-these generated files referenced as imports — they're real code, just
+these generated files referenced as imports. They're real code, just
 re-derived from the schema and the queries every build.
 
 ### Electron IPC
@@ -216,7 +216,7 @@ Used only between the main process and the renderer window:
 - Reading the config (`ipcMain.on("config", ...)`).
 - The renderer reloading itself via global Ctrl+R / F5 shortcuts.
 
-This is _not_ used for queue operations — those go through GraphQL even
+This is _not_ used for queue operations. Those go through GraphQL even
 when the caller is the same machine, because the same code paths work
 from the phones.
 
@@ -228,7 +228,7 @@ Used only between the renderer page and its preload script. Exposes:
   detection).
 - A synchronous IPC read of the config.
 
-The remocon has no preload script and no access to any of this — it's
+The remocon has no preload script and no access to any of this. It's
 just a regular website.
 
 ## What happens when a song is queued
@@ -247,8 +247,8 @@ A concrete walk-through:
    lyrics file. Both stream into the temp folder.
 4. The resolver appends the song to the in-memory queue and emits a
    `queueChanged` PubSub event.
-5. Every subscriber to `queueChanged` — both phones and the TV
-   renderer — receives the update over their WebSocket. Phones update
+5. Every subscriber to `queueChanged`, both phones and the TV
+   renderer, receives the update over their WebSocket. Phones update
    their queue UI; the TV updates its sidebar.
 6. When the previous song ends, the renderer calls the `popSong`
    mutation, which returns the next queue item. The renderer downloads
@@ -275,8 +275,8 @@ A concrete walk-through:
 - **electron-packager** + **7zip** produce the final distributable
   bundle ([packager.js](../packager.js)) for end users.
 
-External binaries used at runtime — `ffmpeg` (transcoding) and `yt-dlp`
-(YouTube downloads) — aren't built; they're fetched as releases by
+External binaries used at runtime, `ffmpeg` (transcoding) and `yt-dlp`
+(YouTube downloads), aren't built; they're fetched as releases by
 [scripts/getExternalResources.mjs](../scripts/getExternalResources.mjs)
 during the `build-native-*` step and packaged into the app's
 `extraResources/` folder. On Windows the same script downloads
@@ -297,7 +297,7 @@ Steinberg's ASIO SDK headers for the optional ASIO audio backend.
   required and isn't used by the default dev loop.
 - **Error reporting**: there is none. Upstream wired Sentry into the
   main process and both browser bundles, but the hardcoded DSN pointed
-  at upstream's own project — this fork was shipping crash reports to
+  at upstream's own project. This fork was shipping crash reports to
   someone else's dashboard and reading none of them. It was removed;
   uncaught errors go to the console. Adding it back means our own DSN,
   read from `config.yaml` rather than hardcoded.

@@ -39,8 +39,8 @@ explicitly.
 manager, not the rustc compiler`. The husky pre-commit hook fails with
 `unexpected argument '--manifest-path' found`.
 
-**Why:** rustup installs proxy binaries — `cargo.exe`, `rustc.exe`,
-`rustfmt.exe`, etc. — that are actually symlinks to `rustup.exe`. The
+**Why:** rustup installs proxy binaries, `cargo.exe`, `rustc.exe`,
+`rustfmt.exe` and so on, that are actually symlinks to `rustup.exe`. The
 proxy inspects `argv[0]` to figure out which tool to run. On native
 Windows that works fine; in Git Bash (MSYS2), the shell resolves
 symlinks before exec, so `argv[0]` becomes `rustup.exe` instead of
@@ -78,7 +78,7 @@ Or you've been running `corepack yarn ...` everywhere and forgot you
 can't just say `yarn`.
 
 **Why:** Yarn 4 is invoked via Node's corepack shim. On Windows there's
-no plain `yarn` binary in `Program Files\nodejs\` by default — only
+no plain `yarn` binary in `Program Files\nodejs\` by default, only
 `corepack.cmd`. The hook script calls `yarn` directly.
 
 **Fix:** two options.
@@ -157,7 +157,7 @@ match.
 
 The fingerprint you'll see for the new (valid) RSA key is
 `SHA256:uNiVztksCsDhcc0u9e8BujQXVUpKZIDTMczCvj3tD2s`. If that matches
-what SSH is showing you, it's not a MITM — just the rotation.
+what SSH is showing you, it's not a MITM, just the rotation.
 
 **Fix:**
 
@@ -195,7 +195,7 @@ pointing into
 
 **Why:** youtubei.js v16 detects ESM vs CJS via `import.meta.url`, then
 uses `fileURLToPath` on it. Parcel inlines `import.meta.url` for the
-main bundle as `"file:///.yarn/cache/..."` — a relative file URL.
+main bundle as `"file:///.yarn/cache/..."`, a relative file URL.
 Linux/macOS accepts that as absolute (the leading slash is the root);
 Windows requires a drive letter, so `fileURLToPath` throws.
 
@@ -216,7 +216,7 @@ Steinberg's ASIO SDK from `steinberg.net/asiosdk`.
 `getExternalResources` script doesn't handle, especially behind a
 corporate proxy or VPN.
 
-**Fix (if you hit it):** the ASIO SDK is **optional** — it's only used
+**Fix (if you hit it):** the ASIO SDK is **optional**. It's only used
 if you opt in by building the native crate with `--features asio`,
 which the default scripts don't. Workaround: create a stub
 `buildResources/asio/asiosdk/common/asio.h` (empty file is fine) so
@@ -238,5 +238,5 @@ If you're setting up from scratch:
 - [ ] Create `~/bin/yarn` shim _or_ run `corepack enable`
 - [ ] Restart your terminal so PATH changes take effect
 - [ ] `corepack yarn install && corepack yarn run-dev`
-- [ ] If Electron crashes on startup with the youtubei.js error, you're missing the patch — see section 9
+- [ ] If Electron crashes on startup with the youtubei.js error, you're missing the patch; see section 9
 - [ ] To push your own work: fork on GitHub, add as `fork` remote, use SSH

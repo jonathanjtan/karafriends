@@ -84,7 +84,7 @@ is a privileged shim that runs before the page loads and selectively
 exposes Node APIs to it. See [Architecture](architecture.md).
 
 **IPC**
-"Inter-process communication" — Electron's named-channel message bus
+"Inter-process communication", Electron's named-channel message bus
 between main and renderer processes. Karafriends uses it for one thing:
 the renderer asking the main process for the config.
 

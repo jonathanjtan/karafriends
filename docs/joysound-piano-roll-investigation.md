@@ -19,14 +19,14 @@ way DAM does?
 /cwa/win/minsei/scoring/GetScoringReferenceData.api` on `win10.clubdam.com`,
 returning a binary blob. `PianoRoll.tsx` consumes this via a `scoringData:
 readonly number[]` format with DAM-specific field names
-(`damTimeWindowIntervalCount`, `pogIntervalCount` — "Perfect On Guide" is DAM
+(`damTimeWindowIntervalCount`, `pogIntervalCount`; "Perfect On Guide" is DAM
 scoring terminology). This is the only piano-roll renderer in the app; there
 is no Joysound-specific equivalent.
 
 ## What was checked on the Joysound side
 
 - **`src/main/joysoundApi.ts`** (current integration, talks to
-  `sound-cafe.jp`): full read of every endpoint —
+  `sound-cafe.jp`): full read of every endpoint, namely
   `getArtistListByKeyword`, `getMovieUrls`, `getSongDetail` (HTML-scraped),
   `getSongListByArtist`, `getSongListByKeyword`, `getSongRawData` (returns
   `{ slc, telop, ogg, streaming_wifi_url }`), `login`. **No pitch/scoring
@@ -35,15 +35,15 @@ is no Joysound-specific equivalent.
   binary/JOY02 format returned by `getSongRawData`): the parsed
   `JoysoundTelopData` interface has `metadata`, `lyrics:
 JoysoundLyricsBlock[]` (chars, furigana, romaji, scroll/fade timing), and
-  `timeline` — lyrics-only, zero pitch/note fields anywhere in the format.
+  `timeline`. Lyrics only, zero pitch/note fields anywhere in the format.
 - **`src/renderer/JoysoundRenderer.tsx`**: only renders lyrics text/timing;
   no pitch-line drawing logic exists for Joysound songs.
-- **`docs/architecture.md`**: already documents this — piano-roll target
+- **`docs/architecture.md`**: already documents this. The piano-roll target
   line only draws "if the song has DAM scoring data."
 
 **Conclusion: `sound-cafe.jp`, our current Joysound data source, has no
 pitch/melody data in any endpoint we've found, and never will via this
-endpoint set** — it's a different, more limited product than what actually
+endpoint set**. It's a different, more limited product than what actually
 carries piano-roll scoring.
 
 ## Official developer path: JOYSOUND Smartphone Library (JSL)
@@ -58,14 +58,14 @@ pre-rendered scoring results.
 
 ## The actual carrier of this feature
 
-Xing's own consumer apps — **"カラオケJOYSOUND"**
-(`jp.co.xing.karaokejoysound`) and **"カラオケJOYSOUND＋" / "JOYSOUND+"** —
+Xing's own consumer apps, **"カラオケJOYSOUND"**
+(`jp.co.xing.karaokejoysound`) and **"カラオケJOYSOUND＋" / "JOYSOUND+"**,
 are a separate product from `sound-cafe.jp`, and explicitly advertise
 real-time pitch-graph/piano-roll scoring ("リアルタイムで採点でき、歌った
 音程がピアノロールでわかります"). Freemium model: ~170,000 songs, 3
 free songs/day with ads, ¥250/month for the unlimited pass. No prior
 reverse-engineering work or API write-ups for this app were found in search
-— unlike DAM, where enough prior art existed to build `damApi.ts`'s scoring
+unlike DAM, where enough prior art existed to build `damApi.ts`'s scoring
 endpoint from scratch. This would be new territory.
 
 ## What it would actually take to find this API
@@ -86,7 +86,7 @@ Open unknowns that make this a real gamble, not just busywork:
 
 - **Certificate pinning**: modern Android doesn't trust user-installed CAs
   by default unless the app opts in via network security config. If this
-  app pins its cert, capture needs root/Magisk or a rooted emulator —
+  app pins its cert, capture needs root/Magisk or a rooted emulator,
   meaningfully more setup than a stock MITM proxy.
 - Unknown whether the song-ID space/session model would even be compatible
   with grafting onto the existing `sound-cafe.jp`-based Joysound
@@ -97,4 +97,4 @@ Open unknowns that make this a real gamble, not just busywork:
 This is a from-scratch, hands-on reverse-engineering effort requiring a
 physical Android device and active investigation time, not something
 inferable from documentation or existing code. **Decision: not worth the
-hassle right now** — parked here in case it's revisited later.
+hassle right now**, parked here in case it's revisited later.

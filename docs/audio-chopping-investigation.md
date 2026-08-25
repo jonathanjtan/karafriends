@@ -32,14 +32,14 @@ phase-vocoder AudioWorkletNode -> destination` (`src/renderer/webAudio.ts`).
 
 ## Accelerated repro attempts (dev machine, 2026-07-04)
 
-Method: drive the packaged app headlessly via GraphQL on the remocon port —
-queue songs, let each play ~15 s, then `setPlaybackState(SKIPPING)` — while a
-sampler logs per-process working set / handles every 10 s.
+Method: drive the packaged app headlessly via GraphQL on the remocon port,
+queueing songs, letting each play ~15 s, then `setPlaybackState(SKIPPING)`,
+while a sampler logs per-process working set / handles every 10 s.
 
 Useful commands (GraphQL at `http://localhost:8080/graphql`):
 
 ```sh
-# search (NOTE: small `first` values crash the resolver — see open bugs)
+# search (NOTE: small `first` values crash the resolver; see open bugs)
 curl -s http://localhost:8080/graphql -H "Content-Type: application/json" \
   -d '{"query":"{ joysoundSongsByKeyword(keyword: \"love\", first: 60) { edges { node { id name artistName } } } }"}'
 
@@ -51,12 +51,12 @@ curl -s http://localhost:8080/graphql -H "Content-Type: application/json" \
 
 Results:
 
-| Test                                                           | Outcome                                                         |
-| -------------------------------------------------------------- | --------------------------------------------------------------- |
-| 18 replays of one cached Joysound song, incl. 10 instant skips | Renderer/GPU CPU and memory flat; ended below baseline          |
-| 10 distinct Joysound songs, 15 s each                          | Renderer +281 MB (292→573 MB) — cold media-cache fill           |
-| 6 more distinct songs (5 JS + 1 YT), 15 s each                 | Renderer **flat ~550 MB** — cache plateaued and evicts properly |
-| Fast-skip race for orphaned lyric render loops                 | No idle CPU growth afterwards                                   |
+| Test                                                           | Outcome                                                        |
+| -------------------------------------------------------------- | -------------------------------------------------------------- |
+| 18 replays of one cached Joysound song, incl. 10 instant skips | Renderer/GPU CPU and memory flat; ended below baseline         |
+| 10 distinct Joysound songs, 15 s each                          | Renderer +281 MB (292→573 MB), cold media-cache fill           |
+| 6 more distinct songs (5 JS + 1 YT), 15 s each                 | Renderer **flat ~550 MB**, cache plateaued and evicts properly |
+| Fast-skip race for orphaned lyric render loops                 | No idle CPU growth afterwards                                  |
 
 Conclusion so far: **no unbounded per-song growth reproduces at process level
 with short plays on the dev machine.** Renderer memory plateaus at the
@@ -72,10 +72,10 @@ HDMI/TV audio).
 - Phase-vocoder worklet allocations (all preallocated; `timeCursor` growth is
   harmless at pitchFactor 1.0).
 - Emote/toast DOM accumulation (removed on timeout; subscriptions disposed).
-- Native mic loopback path — **not exercised at all when mics go through an
+- Native mic loopback path, **not exercised at all when mics go through an
   external mixer**, as they did during the observed failure. (Its issues are
   real for in-app mic users though; see open bugs.)
-- Orphaned JoysoundRenderer animation loops via the async-parse race — could
+- Orphaned JoysoundRenderer animation loops via the async-parse race. Could
   not trigger it even with instant skips; each new song's cleanup catches a
   lone orphan because the loop keeps rewriting the shared RAF ref.
 
@@ -87,7 +87,7 @@ HDMI/TV audio).
    ~30-60 min idle. Afterwards every Joysound search/download fails
    (`e.map is not a function` from the search resolver). A party hides this
    (constant use keeps the session warm); a dinner break surfaces it. Same
-   restart-fixes-it signature as the chopping — easy to conflate. Fix: detect
+   restart-fixes-it signature as the chopping, so it is easy to conflate. Fix: detect
    auth failure and re-login (drop the memoized entry), or refresh on a timer.
 2. **`joysoundSongsByKeyword` crashes on some requests** with
    `e.map is not a function` instead of returning a clean error (masked the
@@ -109,7 +109,7 @@ HDMI/TV audio).
 ## Agreed next steps (the plan when picking this up)
 
 1. **Add an audio watchdog to `src/renderer/webAudio.ts`** (~20 lines):
-   every 30 s, log `AudioRenderCapacity` stats (underrun events — Chromium's
+   every 30 s, log `AudioRenderCapacity` stats (underrun events, Chromium's
    direct "renderer missed audio deadlines" signal; fall back to
    `audioContext.currentTime` vs wall-clock slip if the API is unavailable in
    this Electron), plus JS heap size and uptime. Log via `console` so it lands
@@ -119,7 +119,7 @@ HDMI/TV audio).
    chopping starts, the log pinpoints the minute, whether underruns are
    renderer-side, and what heap/load looked like.
 3. Optionally, run a **muted full-length soak on that machine** (not the dev
-   machine — a clean result there proves nothing) by keeping the queue topped
+   machine, since a clean result there proves nothing) by keeping the queue topped
    up via the GraphQL commands above for 3+ hours.
 4. Launch-with-logging recipe (Windows):
    `cmd /c ""C:\path\to\karafriends.exe" --enable-logging > %TEMP%\kf.log 2>&1"`
@@ -129,6 +129,6 @@ HDMI/TV audio).
 - Queueing a song triggers its download; the queue entry appears only after
   the download finishes.
 - `playbackState` mutations: `SKIPPING` seeks to the end and lets `onended`
-  pop the next song — closest scriptable analog to the remocon skip button.
+  pop the next song, the closest scriptable analog to the remocon skip button.
 - The player polls the queue every 5 s when WAITING, so playback starts within
   ~5 s of the first successful download.

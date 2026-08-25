@@ -1,7 +1,7 @@
 # Configuration
 
 Karafriends reads a single YAML file, `config.yaml`, the first time it
-starts. If the file doesn't exist, it's created with safe defaults — but
+starts. If the file doesn't exist, it's created with safe defaults, but
 several fields contain placeholders like `YOUR_USERNAME_HERE` that you
 must fill in before features depending on them work.
 
@@ -21,7 +21,7 @@ If you delete the file, the next run will recreate it from defaults.
 Note that in **development** (`yarn run-dev`), Electron's userData folder
 is the generic `Electron` directory instead (e.g.
 `~/Library/Application Support/Electron/` on macOS), so the dev app reads
-its `config.yaml` — and companion files like `youtube-cookies.txt` — from
+its `config.yaml`, and companion files like `youtube-cookies.txt`, from
 there, not from the `karafriends` folder.
 
 On every startup, karafriends re-reads the file and then _writes it back_
@@ -45,7 +45,7 @@ All fields are defined in [src/common/config.ts](../src/common/config.ts).
 You need a real account with each service. YouTube and Niconico work
 without any credentials.
 
-If you only have one set of credentials, that's fine — searches against
+If you only have one set of credentials, that's fine; searches against
 the other service just won't return results.
 
 ### Playback behaviour
@@ -68,8 +68,8 @@ automatically.
 
 ### Outbound HTTP proxy
 
-These let karafriends route its outgoing HTTP traffic — DAM, JOYSOUND,
-YouTube, Niconico — through a corporate proxy. Most users leave
+These let karafriends route its outgoing HTTP traffic for DAM, JOYSOUND,
+YouTube and Niconico through a corporate proxy. Most users leave
 `proxyEnable` false.
 
 | Field         | Default           | Meaning              |
@@ -91,14 +91,14 @@ proxy automatically, so the remocon traffic over your LAN is unaffected.
 | `youtubeCookiesPath` | `""`    | Path to a Netscape-format `cookies.txt` with youtube.com cookies, passed to yt-dlp (`--cookies`). |
 
 Some YouTube videos are age-restricted (the official 夜に駆ける MV, for
-example) and yt-dlp can't download them anonymously — the download fails
+example) and yt-dlp can't download them anonymously. The download fails
 with "Sign in to confirm your age" and, for JOYSOUND songs, the app falls
 back to the default karaoke video. Providing logged-in YouTube cookies
 fixes this, and also helps with YouTube's "confirm you're not a bot"
 walls.
 
 When the field is empty (the default), karafriends still looks for a file
-named `youtube-cookies.txt` sitting next to `config.yaml` — dropping the
+named `youtube-cookies.txt` sitting next to `config.yaml`, so dropping the
 file there is all you need to do. The file is re-checked on every
 download, so no restart is needed after adding or refreshing it.
 
@@ -109,7 +109,7 @@ download, so no restart is needed after adding or refreshing it.
 2. Open a **private/incognito window**, log into youtube.com with that
    account, and confirm your age once if prompted.
 3. Export the cookies for youtube.com in Netscape format using a browser
-   extension — "Get cookies.txt LOCALLY" (Chrome) or "cookies.txt"
+   extension, either "Get cookies.txt LOCALLY" (Chrome) or "cookies.txt"
    (Firefox). Alternatively, with the browser still open, run
    `yt-dlp --cookies-from-browser chrome --cookies youtube-cookies.txt --skip-download <any video URL>`
    to dump them from the browser profile.
@@ -136,7 +136,7 @@ again months later, re-export the file the same way.
 The remocon assigns each phone a random "deviceId" on first visit and
 stores it in localStorage so it stays stable. The user types a nickname
 themselves. Either can identify an admin, depending on how strict you
-want to be — nicknames are easy to spoof, deviceIds aren't.
+want to be. Nicknames are easy to spoof, deviceIds aren't.
 
 Setting at least one admin is highly recommended; otherwise mischievous
 guests can skip each other's songs at will (well, unless you turn on

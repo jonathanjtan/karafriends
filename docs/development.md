@@ -50,35 +50,35 @@ yarn run-dev
 ```
 
 `yarn install` does two things: installs Node packages using Yarn's
-"Plug'n'Play" mode (no `node_modules` folder — Yarn keeps everything
+"Plug'n'Play" mode (no `node_modules` folder, since Yarn keeps everything
 zipped under `.yarn/cache/`), and registers Husky's Git hooks for
 linting on commit.
 
 `yarn run-dev` does a lot more:
 
-1. **`get-external-resources`** — downloads `yt-dlp`, `ffmpeg`, and on
+1. **`get-external-resources`** downloads `yt-dlp`, `ffmpeg`, and on
    Windows the ASIO SDK, into `extraResources/` and `buildResources/`.
    This is skipped on subsequent runs once the files exist.
-2. **`build-native-dev`** — compiles the Rust audio module via Cargo
+2. **`build-native-dev`** compiles the Rust audio module via Cargo
    and copies the resulting `.node` file to `native/index.node`.
-3. **`build-relay-dev`** — runs the Relay compiler. It scans the
+3. **`build-relay-dev`** runs the Relay compiler. It scans the
    TypeScript sources for `graphql\`...\``template literals,
 type-checks each against
 [src/common/schema.graphql](../src/common/schema.graphql), and
 generates the`**generated**/\*.ts` files Relay needs at runtime.
-4. **`build-parcel-dev`** — bundles the four targets (main, preload,
+4. **`build-parcel-dev`** bundles the four targets (main, preload,
    renderer, remocon) into `build/dev/`.
-5. **`parcel serve --target remocon --target renderer`** — starts a
+5. **`parcel serve --target remocon --target renderer`** starts a
    Parcel dev server on port 3000 that serves the renderer and remocon
    bundles with live reload. The main Express server in step 6 reverse
    proxies non-GraphQL requests to this dev server in development.
-6. **`electron .`** — launches Electron, which runs the built main
+6. **`electron .`** launches Electron, which runs the built main
    bundle, opens the renderer window, and starts the Express server on
    port 8080.
 
 After that, edit a `.tsx` or `.css` file and the renderer/remocon
 should hot-reload. The Rust module and the main process don't
-hot-reload — you'll need to kill the dev server and re-run.
+hot-reload, so you'll need to kill the dev server and re-run.
 
 ## What if it doesn't build?
 
@@ -103,7 +103,7 @@ All defined in [package.json](../package.json) under `scripts`.
 | Command                       | What it does                                                           |
 | ----------------------------- | ---------------------------------------------------------------------- |
 | `yarn run-dev`                | Full dev pipeline + Electron, described above.                         |
-| `yarn build-dev`              | Just the dev bundles — no Electron.                                    |
+| `yarn build-dev`              | Just the dev bundles, no Electron.                                     |
 | `yarn build-prod`             | Production bundles (optimized, no source maps).                        |
 | `yarn build-native-dev`       | Just the Rust module, debug.                                           |
 | `yarn build-native-prod`      | Just the Rust module, release.                                         |
@@ -150,7 +150,7 @@ There are two layers of tests:
   exercise the renderer and remocon through Chromium automation.
   Run with `yarn test:wdio`.
 
-There is no TypeScript unit test layer — front-end logic is exercised
+There is no TypeScript unit test layer; front-end logic is exercised
 through the e2e tests.
 
 ## Code style
@@ -170,8 +170,8 @@ ESLint.
 
 `yarn package-prod` produces a platform-native bundle (`.app` on macOS,
 a directory tree on Windows, AppImage-style on Linux) and zips it into
-`dist/`. macOS additionally code-signs and notarizes the bundle —
-that requires Apple Developer credentials, set via the
+`dist/`. macOS additionally code-signs and notarizes the bundle, which
+requires Apple Developer credentials, set via the
 `NOTARIZATION_KEY_PATH` environment variable and identity strings
 hardcoded into `packager.js`. If you're building for yourself, you'll
 want to edit or comment out the signing block.

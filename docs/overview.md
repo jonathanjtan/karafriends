@@ -3,7 +3,7 @@
 Karafriends is a karaoke jukebox you run yourself.
 
 If a term feels unfamiliar, check the
-[Glossary](glossary.md) — it covers both the karaoke domain (DAM, JOYSOUND,
+[Glossary](glossary.md). It covers both the karaoke domain (DAM, JOYSOUND,
 romaji, furigana) and the stack (Electron, GraphQL, Relay, Rust/Neon,
 Parcel, mDNS).
 
@@ -16,7 +16,7 @@ that can plug into it, some microphones, and everyone's phones (likely on the sa
    TV showing a big QR code, a (currently empty) queue, and a placeholder for
    the song video.
 2. Participants point their phone cameras at the QR code, tap the link, and
-   their phone's browser opens the **remocon** ("remote control") — a touch
+   their phone's browser opens the **remocon** ("remote control"), a touch
    UI for finding and queuing songs.
 3. Participants search for songs by title or artist, or paste a YouTube link, and
    tap "queue". The TV's queue updates instantly. Their nickname appears next
@@ -33,7 +33,7 @@ goes out of its way to recreate:
 
 - **Real lyrics rendered in real time.** YouTube videos don't always have
   proper karaoke-style lyrics. Songs queued from **DAM** or **JOYSOUND** (the
-  two big Japanese karaoke services) include synchronized lyric data —
+  two big Japanese karaoke services) include synchronized lyric data, and
   karafriends parses that data and draws the lyrics itself, with the right
   highlight timing as each syllable plays.
 - **Furigana and romaji.** Japanese lyrics often contain kanji that not
@@ -49,7 +49,7 @@ goes out of its way to recreate:
   the scoring target.
 - **A real queue.** Multiple people can queue songs concurrently from
   different phones. Nicknames stick to queued items so the TV shows
-  "Next: _X_ — queued by Alice".
+  "Next: _X_, queued by Alice".
 - **Reactions.** While someone sings, anyone holding the remocon can fire
   off emote characters that briefly fly across the TV.
 
@@ -58,16 +58,16 @@ goes out of its way to recreate:
 Karafriends supports four places a song can come from. They fall into two
 groups:
 
-- **Real karaoke sources** — **DAM** and **JOYSOUND**. These provide proper
+- **Real karaoke sources**, **DAM** and **JOYSOUND**. These provide proper
   karaoke renditions (instrumental tracks, sometimes a guide vocal), exact
   timed lyrics, and scoring data. Karafriends talks to the same back-end
   APIs that DAM/JOYSOUND's own apps use, so you need a user account with
   each service to use them. See [Configuration](configuration.md) for where
   to put credentials.
-- **General video sources** — **YouTube** and **Niconico** (a Japanese
+- **General video sources**, **YouTube** and **Niconico** (a Japanese
   video site). These are a fallback when a song isn't on DAM/JOYSOUND or
   you just want to sing along to a music video. There are no real lyrics
-  data — singers either rely on lyrics burned into the video, on YouTube
+  data, so singers either rely on lyrics burned into the video, on YouTube
   captions (if the uploader added them), or on **adhoc lyrics**: a feature
   where the queue-er types lyrics into the remocon and they appear on the
   TV during playback. Pitch scoring is not available for video-source
@@ -92,7 +92,7 @@ it up) typically:
 Hostname resolution uses **mDNS**, so when phones on the same Wi-Fi look up
 `karafriends.local`, the renderer machine answers. This is why the QR code
 contains a link like `http://karafriends.local:8080/` rather than a raw IP
-address — guests don't have to know your network details.
+address, so guests don't have to know your network details.
 
 ## Where to go next
 

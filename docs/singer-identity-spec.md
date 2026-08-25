@@ -1,4 +1,4 @@
-# Singer identity — spec
+# Singer identity: spec
 
 Design for replacing the current device-scoped identity with a durable
 **person registry**, so a singer is the same singer across devices, browser
@@ -9,7 +9,7 @@ cache clears, and nights. Phase 1 is implemented; phases 2 and 3 are not.
 Identity today is a `uuidv4` in `localStorage` plus a `window.prompt()`
 nickname ([useUserIdentity.ts](../src/remocon/hooks/useUserIdentity.ts)). Every
 mutation carries a `UserIdentityInput` and the server records whatever the
-client sends — there is no server-side notion of a person at all.
+client sends. There is no server-side notion of a person at all.
 `latestIdentityByDevice` ([graphql.ts:1599](../src/main/graphql.ts:1599)) is the
 closest thing, and it's an in-memory `Map` that dies with the process.
 
@@ -67,7 +67,7 @@ every existing entry and every phone running a cached bundle.
 **`<userData>/people.json`**, _not_ `queue.json`.
 
 `queue.json` lives in `karafriends_tmp/` under the OS temp dir, which gets
-swept — fine for a queue, fatal for the registry, whose entire value is
+swept, which is fine for a queue and fatal for the registry, whose entire value is
 durability. This follows the precedent already set for score cards and probe
 logs (commit `4ff2992f`), which moved to `userData` for the same reason.
 
@@ -132,7 +132,7 @@ registry instead of adding a second endpoint the client would never call.
 updates the person the device is attached to, so an old client renaming itself
 still lands in the registry.
 
-The subscription is what keeps the "who's singing?" grid live — someone joining
+The subscription is what keeps the "who's singing?" grid live. Someone joining
 on another phone appears in your picker without a reload, same pattern as every
 other synced setting.
 
@@ -151,13 +151,13 @@ other synced setting.
 
 **Be honest about the limit**: `deviceId` also lives in `localStorage`, so
 clearing storage loses the device key too. `personByDevice` cannot heal that
-case — the claim screen is what heals it, by letting the new deviceId attach to
+case. The claim screen is what heals it, by letting the new deviceId attach to
 the existing person in one tap. This is the mechanism, not a workaround.
 
 ### The identity gate
 
 A full-screen picker shown when a device is unclaimed. **An unclaimed device
-cannot queue** — the gate is a hard block, not a nudge, and nothing else in the
+cannot queue.** The gate is a hard block, not a nudge, and nothing else in the
 app mounts behind it.
 
 > **New phone, who this?**
@@ -175,7 +175,7 @@ app mounts behind it.
 
 The block needs no server-side enforcement to hold. A registry-aware client
 can't reach a queue button before the gate resolves, and a legacy client
-sending no `personId` self-claims through the auto-create path below — so
+sending no `personId` self-claims through the auto-create path below, so
 "unclaimed device queues a song" is not a reachable state either way.
 
 This **replaces the `window.prompt()`** in `useUserIdentity`, which is a bonus:
@@ -183,7 +183,7 @@ that prompt is the documented cause of the blank-page-in-headless-browser
 gotcha in CLAUDE.md, and it goes away entirely.
 
 The existing first-time-device redirect to `#/profile`
-([App.tsx:41](../src/remocon/App.tsx:41)) is superseded — the gate handles new
+([App.tsx:41](../src/remocon/App.tsx:41)) is superseded. The gate handles new
 devices, and `createPerson` already collects name and avatar.
 
 ### Switch account
@@ -193,7 +193,7 @@ the direct answer to the handed-around phone: tap your face, queue your song,
 hand it back. Also the escape hatch when someone claims the wrong person, and
 where "Edit profile" now lives.
 
-There is no "unclaim this device" action. A phone is always somebody — the way
+There is no "unclaim this device" action. A phone is always somebody. The way
 to stop being you is to become someone else, and an admin deleting an account
 covers the rest.
 
@@ -205,7 +205,7 @@ switch you mid-cleanup), and removing asks for confirmation by name. This is
 the cleanup path for duplicates and one-time guests.
 
 Admin is the same client-side check the queue already uses in
-[SongQueueItem](../src/remocon/components/SongQueue/SongQueueItem.tsx) —
+[SongQueueItem](../src/remocon/components/SongQueue/SongQueueItem.tsx), namely
 `adminNicks` / `adminDeviceIds` from `config`. It hides the controls rather
 than enforcing anything: the whole GraphQL API is unauthenticated on the LAN,
 so a server-side check on a client-asserted identity would be decoration. The
@@ -223,7 +223,7 @@ gate can never see it.
   Both are wrong in the same way and both fix here.
 - **Admin gating** resolves through the person: admin if any linked deviceId is
   in `adminDeviceIds`, or the display name is in `adminNicks`. No config change
-  and no migration — the existing lists keep working.
+  and no migration; the existing lists keep working.
 - **`mergePeople`** rewrites `personId` and the identity snapshot on matching
   entries in `db.songQueue`, `db.currentSong`, and `db.songHistory`, then moves
   the deviceIds over. This is the cleanup tool for the dupes that will happen
@@ -237,7 +237,7 @@ gate can never see it.
 - `personId` is nullable on `UserIdentity` and in every input, so existing
   `queue.json` and `songHistory` entries load without migration.
 - The renderer reads identity from the queue item's embedded snapshot, as it
-  does now — no renderer change is required for phase 1.
+  does now, so no renderer change is required for phase 1.
 
 ## What this unlocks
 
@@ -245,13 +245,13 @@ gate can never see it.
 exists, `reportSongScore(personId, songId, score, band)` writing a
 `db.scores` keyed by person gives leaderboard, personal bests, per-singer
 stats, and the recap card off one foundation. Nothing in this spec should make
-`personId` optional in _history_ — only on the wire for old clients.
+`personId` optional in _history_, only on the wire for old clients.
 
 ### Local-only, deliberately
 
 No accounts, no external identity provider, no network dependency. The registry
 is a JSON file on the machine running the app, and every flow below works with
-the WAN unplugged — which matters, because the room's phones already depend on
+the WAN unplugged, which matters, because the room's phones already depend on
 nothing but the LAN to reach :8080.
 
 The thing an account system would buy is impersonation resistance and identity
@@ -261,23 +261,23 @@ guest and the queue button.
 
 ## Phasing
 
-**Phase 1 — built.** Registry + `people.json` + bootstrap migration, `people` /
+**Phase 1, built.** Registry + `people.json` + bootstrap migration, `people` /
 `personByDevice`, `createPerson` / `claimPerson` / `deletePerson`,
 `peopleChanged`, the identity gate, switch account, admin account editing,
 per-person queue limit.
 
-**Phase 2 — cleanup and visibility.** `mergePeople`, a tonight's-singers roster
+**Phase 2, cleanup and visibility.** `mergePeople`, a tonight's-singers roster
 on the renderer, per-person filter on
 [HistoryPage](../src/remocon/pages/HistoryPage.tsx).
 
-**Phase 3 — scores keyed by person.** Out of scope here; this is what phase 1
+**Phase 3, scores keyed by person.** Out of scope here; this is what phase 1
 exists to enable.
 
 ## Verification plan
 
 - curl the new query/mutations against :8080 (POST-only, `--data-binary @file`
   for UTF-8 names).
-- Inspect `<userData>/people.json` across an app restart — the registry must
+- Inspect `<userData>/people.json` across an app restart. The registry must
   survive, unlike `latestIdentityByDevice` today.
 - Drive the real remocon through the TCP-proxy preview entry
   (`karafriends-remocon-via-app`): claim as a new person, clear
@@ -295,7 +295,7 @@ exists to enable.
 
 Settled:
 
-- **Gate strictness** — an unclaimed device is blocked from queuing outright,
+- **Gate strictness.** An unclaimed device is blocked from queuing outright,
   no anonymous-with-a-nudge path.
-- **Guests** — no ephemeral guest account. Admin "Edit accounts" cleanup
+- **Guests.** No ephemeral guest account. Admin "Edit accounts" cleanup
   covers the one-time visitor after the fact.
