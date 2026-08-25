@@ -48,8 +48,8 @@ fn input_device__new(
 }
 
 // Every reading since the last call, oldest first. A batch rather than one
-// value because the analysis hop is finer than the caller's poll interval --
-// see karafriends_lib::pitch_framer.
+// value because the analysis hop is finer than the caller's poll interval.
+// See karafriends_lib::pitch_framer.
 fn input_device__get_pitches(mut cx: FunctionContext) -> JsResult<JsArray> {
     let device = cx.argument::<JsBox<RefCell<karafriends_lib::InputDevice>>>(0)?;
     let mut device = device.borrow_mut();

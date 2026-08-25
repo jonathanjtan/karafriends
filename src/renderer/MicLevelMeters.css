@@ -25,7 +25,7 @@
   height: 8px;
   border-radius: 4px;
   background-color: rgba(255, 255, 255, 0.15);
-  /* Deliberately not overflow:hidden — the bar rounds its own ends, and
+  /* Deliberately not overflow:hidden. The bar rounds its own ends, and
      clipping here would swallow the threshold marker's overhang, making the
      marker read as part of the bar rather than as a reference line. */
 }
@@ -34,7 +34,7 @@
   height: 100%;
   width: 0;
   border-radius: 4px;
-  /* Width is driven per-frame from a rAF loop, so no transition here — one
+  /* Width is driven per-frame from a rAF loop, so no transition here. One
      would fight the animation and lag the meter behind the actual level. */
 }
 

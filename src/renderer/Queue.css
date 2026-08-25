@@ -15,7 +15,7 @@
   animation: queueMarquee 10s linear infinite;
 }
 
-/* PMD portraits are 40x40 pixel art — keep them crisp when scaled, framed
+/* PMD portraits are 40x40 pixel art, so keep them crisp when scaled, framed
    like the games' dialogue portraits (see pmd-frame.png). */
 .queueNicknameAvatar {
   height: 1.5em;

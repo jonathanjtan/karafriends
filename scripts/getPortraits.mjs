@@ -1,9 +1,9 @@
 // Builds the local avatar-portrait dataset from PMDCollab's SpriteCollab
 // (https://sprites.pmdcollab.org): a sparse clone of just portrait/ +
 // tracker.json (~80MB instead of the 1.8GB full repo), packed into
-//   extraResources/portraits/portraits.pack — every portrait PNG concatenated
+//   extraResources/portraits/portraits.pack, every portrait PNG concatenated
 //     (deduped by content hash), and
-//   extraResources/portraits/portraits.json — monster/form/emotion names with
+//   extraResources/portraits/portraits.json, monster/form/emotion names with
 //     [offset, length] into the pack.
 // One 78MB file + one manifest instead of ~50k tiny files keeps packaging and
 // git operations fast; the main process serves slices of the pack over HTTP
@@ -18,7 +18,7 @@ const extraResourcesDir = `${process.cwd()}/extraResources`;
 const portraitsDir = `${extraResourcesDir}/portraits`;
 const SPRITECOLLAB_REPO = "https://github.com/PMDCollab/SpriteCollab.git";
 // Sanity floor: the dataset had ~47k portraits / ~77MB in 2026-07. A build
-// that comes in way under this scraped a broken checkout — fail loudly
+// that comes in way under this scraped a broken checkout, so fail loudly
 // instead of shipping an empty picker.
 const MIN_PORTRAITS = 40000;
 const MIN_PACK_BYTES = 50 * 1024 * 1024;
@@ -152,7 +152,7 @@ export async function ensurePortraits() {
 
     if (portraitCount < MIN_PORTRAITS || packLength < MIN_PACK_BYTES) {
       throw new Error(
-        `Portrait dataset implausibly small (${portraitCount} portraits, ${packLength} bytes) — aborting`,
+        `Portrait dataset implausibly small (${portraitCount} portraits, ${packLength} bytes), aborting`,
       );
     }
 

@@ -5,7 +5,7 @@
 // recently completed annual chart for free (10 entries, one page); every
 // past year redirects to the paid "you大樹" service, and the site is
 // Shift_JIS and rate-limits aggressively. Since a closed year's chart never
-// changes, a constant is strictly better than a scraper here — it costs no
+// changes, a constant is strictly better than a scraper here. It costs no
 // requests, works offline, and can't rot.
 //
 // Provenance: each year was taken from a Wayback snapshot of
@@ -211,7 +211,7 @@ const ORICON_KARAOKE_CHART: {
   ],
 };
 
-// Newest first — the year picker defaults to the most recent chart.
+// Newest first, so the year picker defaults to the most recent chart.
 export const ORICON_CHART_YEARS: ReadonlyArray<number> = Object.keys(
   ORICON_KARAOKE_CHART,
 )
@@ -233,7 +233,7 @@ export function isOriconChartYear(year: number): boolean {
 // What to actually search the catalogs for, given a charted title.
 //
 // Oricon annotates some entries the way its own chart reads rather than the
-// way the karaoke catalogs spell them — 2017's "前前前世(movie ver.)" is
+// way the karaoke catalogs spell them. 2017's "前前前世(movie ver.)" is
 // JOYSOUND's "前前前世" and DAM's "前前前世 (movie ver.)" (note the space).
 // Searching the annotated string verbatim finds nothing on JOYSOUND, so the
 // trailing annotation is dropped: a broader result set is fine here because

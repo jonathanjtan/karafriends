@@ -3,7 +3,7 @@ import fs from "fs";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
 
-// A singer. This — not deviceId — is what songs, and eventually scores, are
+// A singer. This, not deviceId, is what songs, and eventually scores, are
 // attributed to. Devices attach to a person (a phone handed around during a
 // party belongs to whoever last claimed it), so a cleared localStorage or a
 // second device is one tap away from being the same singer again.
@@ -51,7 +51,7 @@ function writePeopleToDisk(): void {
 
 // lastSeenAt bumps happen on every queue; coalesce those rather than writing
 // the whole registry per song. Structural changes (create/claim/release) save
-// synchronously instead — losing one of those loses an identity.
+// synchronously instead, since losing one of those loses an identity.
 function scheduleTouchSave(): void {
   if (touchSaveTimer) return;
   touchSaveTimer = setTimeout(() => {

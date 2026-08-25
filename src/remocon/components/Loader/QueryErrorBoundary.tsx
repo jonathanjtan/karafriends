@@ -23,8 +23,8 @@ function resetKeysChanged(
 
 // Catches errors thrown while rendering lazy-loaded Relay queries (a rejected
 // `useLazyLoadQuery` re-throws after Suspense resolves) and renders an inline
-// message instead of letting the throw unmount all of `<App>` — which used to
-// whitescreen the whole remocon on any failed search / unreachable service.
+// message instead of letting the throw unmount all of `<App>`, which used to
+// whitescreen the whole remocon on any failed search or unreachable service.
 class QueryErrorBoundary extends React.Component<Props, State> {
   state: State = { error: null };
 
@@ -48,7 +48,7 @@ class QueryErrorBoundary extends React.Component<Props, State> {
       return (
         <div className={styles.queryError}>
           <p>
-            Couldn&apos;t load that — the karaoke service may be unreachable.
+            Couldn&apos;t load that. The karaoke service may be unreachable.
           </p>
           <button className={styles.retryButton} onClick={this.reset}>
             Try again

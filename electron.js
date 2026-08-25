@@ -11,7 +11,7 @@ const { status } = spawnSync(
     env: {
       ...process.env,
       // Surface renderer console output (Player/BGM watchdog rescues, media
-      // errors) in the dev terminal — this launcher is only used for dev
+      // errors) in the dev terminal. This launcher is only used for dev
       // runs, and intermittent playback bugs are undiagnosable without it.
       ELECTRON_ENABLE_LOGGING: "1",
       NODE_OPTIONS: `--enable-source-maps '--require=${resolve(__dirname, ".pnp.cjs")}' '--experimental-loader=${resolve(__dirname, ".pnp.loader.mjs")}'`,

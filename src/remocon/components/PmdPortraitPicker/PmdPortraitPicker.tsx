@@ -3,19 +3,19 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import * as styles from "./PmdPortraitPicker.module.scss";
 
 // Portrait picker backed by a local mirror of the PMDCollab SpriteCollab
-// project (https://sprites.pmdcollab.org) — community-made Pokémon Mystery
-// Dungeon portraits, one 40x40 image per pokemon/form/emotion. The dataset is
-// bundled at build time (scripts/getPortraits.mjs) and served by the app
-// under /portraits/; the manifest is fetched once and searched entirely
+// project (https://sprites.pmdcollab.org). They are community-made Pokémon
+// Mystery Dungeon portraits, one 40x40 image per pokemon/form/emotion. The
+// dataset is bundled at build time (scripts/getPortraits.mjs) and served by
+// the app under /portraits/; the manifest is fetched once and searched entirely
 // client-side, so typing and browsing never leave the LAN. Selected portrait
-// URLs are stored host-relative ("/portraits/...") — the renderer resolves
+// URLs are stored host-relative ("/portraits/..."), and the renderer resolves
 // them via resolveProfilePictureUrl.
 
 interface PortraitForm {
   path: string;
   name: string;
   // emotion name → [offset, length] in the server-side pack; only the keys
-  // (and their order — "Normal" first) matter to the client.
+  // (and their order, with "Normal" first) matter to the client.
   emotions: Record<string, [number, number]>;
 }
 
@@ -26,7 +26,7 @@ interface PortraitMonster {
 }
 
 // The manifest is ~1.4MB raw (a few hundred KB gzipped) and immutable within
-// an app run — fetch it once per page load and share across picker mounts.
+// an app run, so fetch it once per page load and share it across mounts.
 let indexPromise: Promise<PortraitMonster[]> | null = null;
 function fetchPortraitIndex(): Promise<PortraitMonster[]> {
   if (indexPromise === null) {
@@ -92,7 +92,7 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
   const emotionsRef = useRef<HTMLDivElement | null>(null);
 
   // Tapping a pokemon far down the dex grid renders the version/emotion
-  // panel above the grid, off-screen — bring it into view. Instant, not
+  // panel above the grid, off-screen, so bring it into view. Instant, not
   // smooth: a smooth scroll spanning the whole dex gets canceled mid-flight
   // by the lazy-image loads it triggers (and would take seconds anyway).
   useEffect(() => {
@@ -177,7 +177,7 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
         <div className={styles.emotions} ref={emotionsRef}>
           {selectedMonster.forms.length > 1 && (
             <h4>
-              {selectedMonster.name} — pick a version
+              Pick a version of {selectedMonster.name}
               <select
                 value={formIdx}
                 onChange={(e) => setFormIdx(parseInt(e.target.value, 10))}
@@ -190,7 +190,7 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
               </select>
             </h4>
           )}
-          <h4>{selectedMonster.name} — pick an emotion</h4>
+          <h4>Pick an emotion for {selectedMonster.name}</h4>
           <div className={styles.grid}>
             {Object.keys(selectedForm?.emotions || {}).map((emotion) => (
               <div

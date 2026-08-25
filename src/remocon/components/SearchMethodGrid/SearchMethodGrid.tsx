@@ -12,7 +12,7 @@ import SearchMethodGridItem from "./SearchMethodGridItem";
 import TuningGridItem from "./TuningGridItem";
 
 // Title and Artist each search both catalogs at once, so they're one row of
-// two rather than a per-service block — the service a result came from is a
+// two rather than a per-service block. The service a result came from is a
 // badge on the row and a filter chip above the list, not a decision you make
 // before typing. The brand banners survive on the charts below, which really
 // are per-service: DAM and JOYSOUND publish different Top 100s.
@@ -27,7 +27,7 @@ const SearchMethodGrid = () => (
       {/* The two YouTube ways in sit directly under the catalog searches:
           searching the karaoke channels is the same "type a song name" move as
           Title/Artist, and pasting a URL is its neighbour. Shorter than them,
-          though — see .youtubeSection. */}
+          though. See .youtubeSection. */}
       <div className={styles.youtubeSection}>
         <SearchMethodGridItem method="karaoke" text="YouTube Search" />
         <SearchMethodGridItem method="youtube" text="YouTube URL" />

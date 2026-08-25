@@ -26,13 +26,13 @@ HOSTING=$(printf '%s' "$IPJSON" | sed -n 's/.*"hosting":\([a-z]*\).*/\1/p')
 
 echo
 if [ "$CC" != "JP" ]; then
-  echo "  [FAIL] not a Japanese IP ($CC) -- login will be geo-blocked."
+  echo "  [FAIL] not a Japanese IP ($CC). Login will be geo-blocked."
 else
   echo "  [ok]   Japan IP."
 fi
-[ "$FLAGGED" = "true" ] && echo "  [WARN] flagged proxy=true  -- this is what burns DAM exits."
-[ "$HOSTING" = "true" ] && echo "  [WARN] flagged hosting=true -- CDN 403s datacenter ranges."
-[ "$FLAGGED" = "false" ] && [ "$HOSTING" = "false" ] && echo "  [ok]   clean (not flagged proxy/hosting) -- this is what you want."
+[ "$FLAGGED" = "true" ] && echo "  [WARN] flagged proxy=true. This is what burns DAM exits."
+[ "$HOSTING" = "true" ] && echo "  [WARN] flagged hosting=true. CDN 403s datacenter ranges."
+[ "$FLAGGED" = "false" ] && [ "$HOSTING" = "false" ] && echo "  [ok]   clean (not flagged proxy/hosting). This is what you want."
 
 echo
 echo "=== 2. DAM auth gate (dummy creds; we only care JSON vs HTML) ==="
@@ -44,9 +44,9 @@ BODY=$("${CURL[@]}" -X POST \
   --data 'loginId=000000000000&password=zzzzzzzz&format=json')
 
 if printf '%s' "$BODY" | grep -qi 'Unauthorized access'; then
-  echo "  [FAIL] CloudFront returned the block page -- this exit is banned."
+  echo "  [FAIL] CloudFront returned the block page. This exit is banned."
 elif printf '%s' "$BODY" | grep -q '{'; then
-  echo "  [PASS] got JSON back -- auth gate is open from this exit."
+  echo "  [PASS] got JSON back. The auth gate is open from this exit."
   echo "         (an auth error in the JSON is expected; the creds are fake)"
 else
   echo "  [????] unexpected response:"
@@ -57,7 +57,7 @@ echo
 echo "=== 3. DAM CDN gate (the one that is actually failing) ==="
 # A blocked exit is rejected at the openresty edge before any token lookup:
 # x-oke-front1-time: 0.000 and an identical 992-byte page for ANY path.
-# This is a COMPARATIVE probe -- record it on a known-bad exit (Nord JP today
+# This is a COMPARATIVE probe. Record it on a known-bad exit (Nord JP today
 # gives 403/992) and compare against a candidate. A different status or length
 # means the edge is at least talking to you.
 HDRS=$("${CURL[@]}" -D - -o /dev/null \
@@ -69,7 +69,7 @@ if [ "$CODE" = "403" ] && [ "${LEN:-0}" = "992" ]; then
   echo "  [FAIL] matches the known edge-block fingerprint (403 / 992 bytes)."
   echo "         This is the gate that breaks DAM playback."
 else
-  echo "  [????] differs from the known-bad fingerprint -- promising."
+  echo "  [????] differs from the known-bad fingerprint, which is promising."
   echo "         Confirm for real: play a DAM song and check"
   echo "         \$TMPDIR/karafriends_tmp/dam-<id>.log for a 403."
 fi

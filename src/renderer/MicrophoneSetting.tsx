@@ -29,14 +29,14 @@ export default function MicrophoneSetting({ mic, onChange }: Props) {
   const value = mic ? `${mic.name}_${mic.channel}` : "";
   // Bumped on every pick so the effect below re-runs even when `value` itself
   // doesn't change. The trailing "add a mic" row is always rendered with
-  // mic={null} — picking in it appends a *new* row upstream and leaves this
+  // mic={null}. Picking in it appends a *new* row upstream and leaves this
   // one on "", so without this the fake dropdown would keep displaying the
   // device that was just picked while the real <select> is back on the
   // placeholder.
   const [pickSeq, setPickSeq] = useState(0);
 
   // Materialize snapshots the <select>'s label into its fake dropdown at init
-  // time, so the wrapper has to be rebuilt whenever the value changes — in the
+  // time, so the wrapper has to be rebuilt whenever the value changes. In the
   // popped-out window the current selection arrives asynchronously over the
   // bus, well after mount.
   useEffect(() => {

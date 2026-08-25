@@ -1,7 +1,7 @@
 @use "sass:color";
 
 // Sampled from the services' own logo assets. Deliberately identical in both
-// themes — a brand doesn't have a dark variant, and the old global invert
+// themes. A brand doesn't have a dark variant, and the old global invert
 // collapsed these two into the same pale pink with the darker one coming out
 // lighter.
 $joysound-red: #d70e18;
@@ -9,13 +9,13 @@ $dam-red: #b80009;
 
 // Ranking-tile colors: gold/platinum/bronze reads as "award" rather than
 // doubling up on the brand-red banner right next to it. Oricon takes the
-// bronze — same family as the two in-house charts it sits below, third place
+// bronze, the same family as the two in-house charts it sits below, third place
 // among them because it's the one you can't queue directly from.
 $ranking-gold: #d4af37;
 $ranking-platinum: #a8aab4;
 // Lighter than a literal bronze (#cd7f32): light mode keeps each tile's own
 // lightness and paints the label at L=26%, so the metal has to stay light
-// enough to read against it — the gold above it is L=52%, and this sits just
+// enough to read against it. The gold above it is L=52%, and this sits just
 // above that. Hue is what separates it from the gold, not depth.
 $ranking-bronze: #d99f61;
 
@@ -28,7 +28,7 @@ $search-method-colors: (
   youtube: #e79ca1,
   niconico: #ababab,
   oricon: $ranking-bronze,
-  // Indigo, matching the warm-up's SourceBadge -- it isn't a service, and it
+  // Indigo, matching the warm-up's SourceBadge. It isn't a service, and it
   // must not read as either red brand.
   tuning: #a79ce7,
   joysound: $ranking-gold,
@@ -39,7 +39,7 @@ $banner-width: 30px;
 $tile-gap: 8px;
 
 // Golden ratio width:height for the Title/Artist tiles and the third-width
-// bottom row. The chart rows opt out (their section sets a height) — a
+// bottom row. The chart rows opt out (their section sets a height), since a
 // full-width button at this ratio would be half the screen tall.
 $golden-ratio: 1.618;
 
@@ -53,7 +53,7 @@ $golden-ratio: 1.618;
   gap: $tile-gap;
   // So a row can size itself off the grid's own width (see .youtubeSection).
   // A percentage height would resolve against the grid's HEIGHT, which is
-  // whatever its rows add up to — circular, and it just collapses.
+  // whatever its rows add up to. That is circular, and it just collapses.
   container-type: inline-size;
 }
 
@@ -72,7 +72,7 @@ $golden-ratio: 1.618;
 }
 
 // The two YouTube ways in. Half-width like the searches above them, but only
-// as TALL as a tile in the three-across bottom row — they're a second-choice
+// as TALL as a tile in the three-across bottom row. They're a second-choice
 // way to find a song, not a peer of Title/Artist, and at the golden ratio the
 // pair of them ate a third of the screen. Hence an explicit height rather than
 // .gridItem's ratio: one third of the grid's width, minus the two gaps that
@@ -92,8 +92,8 @@ $golden-ratio: 1.618;
 
   // min-width: grid items default to min-width:auto, so the labels below would
   // hold the columns open past half the row. aspect-ratio: a grid item with
-  // one does NOT stretch to its track — the ratio sets its height and the tile
-  // spills out the bottom of this shorter row, over the chart beneath it — so
+  // one does NOT stretch to its track. The ratio sets its height and the tile
+  // spills out the bottom of this shorter row, over the chart beneath it, so
   // the row's height only takes effect once .gridItem's ratio is switched off.
   > div {
     min-width: 0;
@@ -111,7 +111,7 @@ $golden-ratio: 1.618;
 
 // One service's chart: the thin vertical brand banner, then a full-width TOP
 // 100 button. It sets its own height rather than borrowing the tiles'
-// golden-ratio square, which at full width would be half a screen tall — but
+// golden-ratio square, which at full width would be half a screen tall, but
 // it can't go too far the other way either. These rows are ~twice the width
 // of a search tile, so at the 72px they started out at they read as squashed
 // slabs next to them (5.4:1 against the tiles' 1.6:1). Still deliberately
@@ -147,7 +147,7 @@ $dam-logo-ratio: 0.84;
   img {
     display: block;
     // Rotation swaps the axes, so the pre-rotation WIDTH is what has to fit
-    // the banner's HEIGHT — it can't exceed the chart row or the logo's ends
+    // the banner's HEIGHT. It can't exceed the chart row or the logo's ends
     // get clipped off, which is why it's derived from $ranking-height rather
     // than set by hand. (It was a flat 150px back when the banner spanned two
     // rows of search tiles.)
@@ -188,13 +188,13 @@ $dam-logo-ratio: 0.84;
 // white is a surface, black is an absence. Light mode faded each tile into the
 // white page, and because white is itself bright the tile still read as a
 // card. Fading into a near-black page instead deletes the right half of the
-// button, so dark mode looked muddy at every lightness we tried — the fix
+// button, so dark mode looked muddy at every lightness we tried. The fix
 // wasn't a brighter color, it was to stop fading.
 //
 // Two more things that went with the old gradient. The label used to be
 // `color: #333` + `mix-blend-mode: difference` + `filter: contrast(0.1)`, i.e.
 // |backdrop − midgray|, which auto-contrasts against a gradient's saturated
-// end and gives up at its faded end — "Top 100" is a wide, mostly-faded tile
+// end and gives up at its faded end. "Top 100" is a wide, mostly-faded tile
 // and was already barely legible in LIGHT mode. And the icon used to be the
 // tile color exactly, so it only appeared over the faded part; on a flat chip
 // it needs its own shade or it disappears entirely.
@@ -204,8 +204,8 @@ $dam-logo-ratio: 0.84;
 // L=79% (song periwinkle), so a relative shift lands every tile somewhere
 // different and the row stops reading as one set.
 
-// Light keeps each tile's own source lightness — today's palette untouched,
-// just no longer dissolving — so its ring and icon are relative deltas.
+// Light keeps each tile's own source lightness, today's palette untouched and
+// just no longer dissolving, so its ring and icon are relative deltas.
 $chip-sheen-light: 4%;
 $chip-ring-delta-light: -22%;
 $chip-icon-delta-light: -14%;
@@ -262,7 +262,7 @@ $label-lightness-dark: 92%;
     :global(html.dark) &.#{$method} {
       background: linear-gradient(to bottom, $top-d, $bottom-d);
       color: $icon-d;
-      // Ring only — a drop shadow on a near-black page is invisible, so the
+      // Ring only. A drop shadow on a near-black page is invisible, so the
       // ring is the whole edge there.
       box-shadow: 0 0 0 1px $ring-d;
 
@@ -287,11 +287,11 @@ $label-lightness-dark: 92%;
 }
 
 // The leftover row: Oricon, the warm-up, Niconico. Three equal columns, no
-// brand banner — a third-party chart, a thing that isn't a song search at all,
+// brand banner: a third-party chart, a thing that isn't a song search at all,
 // and the video service nobody opens first.
 //
-// No height of its own — .gridItem's golden-ratio aspect-ratio sets it. Setting
-// a height here instead fights that ratio and stretches the tiles.
+// No height of its own, since .gridItem's golden-ratio aspect-ratio sets it.
+// Setting a height here instead fights that ratio and stretches the tiles.
 .extrasSection {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

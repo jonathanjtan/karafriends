@@ -26,8 +26,8 @@ function melodyCacheFilename(songId: string): string {
 // not only on reboot, so a melody extracted last week is simply gone. Same
 // reasoning as song-history.json and the people registry.
 //
-// The composited videos in the temp dir are a genuine cache -- they re-download
-// -- but a melody is the one thing offline scoring work cannot reconstruct
+// The composited videos in the temp dir are a genuine cache and re-download,
+// but a melody is the one thing offline scoring work cannot reconstruct
 // without re-fetching the song, and it is a few KB of deterministic output per
 // song. scripts/replayScoring.mjs reads this directory too.
 const MELODY_MIRROR_DIR = path.join(app.getPath("userData"), "melodies");
@@ -57,7 +57,7 @@ function writeMelodyCache(songId: string, scoringData: Uint8Array): void {
 // this build would produce, so it reads as absent and gets rebuilt. Both
 // callers of ensureJoysoundGuideMelody already hold the audio (the ogg on
 // download, the composited video on a cache hit), so healing costs an ffmpeg
-// decode and a pitch-track pass -- no refetch, nothing the room waits on.
+// decode and a pitch-track pass, with no refetch and nothing the room waits on.
 function isCurrent(scoringData: Uint8Array, songId: string): boolean {
   const version = scoringDataExtractionVersion(scoringData);
   if (version === GUIDE_MELODY_EXTRACTION_VERSION) return true;
@@ -174,7 +174,7 @@ async function extractAndCache(
 // Whether a melody has actually been extracted and cached for this song.
 //
 // Distinct from getJoysoundScoringData returning null, which also covers "the
-// extraction ran and found no usable melody channel" -- that result is cached
+// extraction ran and found no usable melody channel". That result is cached
 // deliberately so it isn't retried forever. A caller that needs to tell a
 // finished-but-empty extraction from one that never ran (ffmpeg missing, the
 // fetch failing) has to ask about the file.

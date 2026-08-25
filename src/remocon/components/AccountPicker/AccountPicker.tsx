@@ -133,7 +133,7 @@ const AccountPicker = ({
   const [commitDelete] =
     useMutation<AccountPickerDeletePersonMutation>(deletePersonMutation);
 
-  // Same client-side admin check the queue uses (SongQueueItem) — the app has
+  // Same client-side admin check the queue uses (SongQueueItem). The app has
   // no auth at all on the LAN, so this hides the controls rather than
   // enforcing anything. Only offered where someone is actually signed in, so
   // an unclaimed device at the gate never sees it.
@@ -227,7 +227,7 @@ const AccountPicker = ({
     );
   }
 
-  // Null while the registry is still loading — render the heading alone
+  // Null while the registry is still loading, so render the heading alone
   // rather than flashing an empty grid and a "new account" button at someone
   // who does have an account.
   if (people === null) {
@@ -258,7 +258,7 @@ const AccountPicker = ({
                   ? ` ${styles.personCurrent}`
                   : ""
               }`}
-              // While editing, the card itself does nothing — the only
+              // While editing, the card itself does nothing. The only
               // action is the remove badge, so a mis-tap can't switch you
               // to someone else mid-cleanup.
               onClick={() => (editing ? undefined : claim(person))}

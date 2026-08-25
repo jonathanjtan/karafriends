@@ -97,7 +97,7 @@ const DamQueueButton = ({
       },
       onCompleted: (response) => {
         // A resolver error nulls out the whole payload while onCompleted
-        // still fires - don't destructure it blindly.
+        // still fires, so don't destructure it blindly.
         const queueDamSong = response?.queueDamSong;
 
         switch (queueDamSong?.__typename) {

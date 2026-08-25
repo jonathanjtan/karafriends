@@ -9,7 +9,7 @@ import { SongRange, songRangeFromScoringData } from "../common/vocalRange";
 // Reading a range means having the song's reference melody, and the two
 // catalogs differ enormously in what that costs:
 //
-//   * DAM ships an authored scoring blob -- one minsei call, fast, and the
+//   * DAM ships an authored scoring blob: one minsei call, fast, and the
 //     trustworthy reading because a human charted it.
 //   * JOYSOUND has no chart. Ours is extracted from the guide-melody channel of
 //     the song's ogg, which costs a fetch plus an ffmpeg decode plus a
@@ -31,8 +31,8 @@ export interface SongRangeRecord extends SongRange {
 const RANGES_PATH = path.join(app.getPath("userData"), "song-ranges.json");
 const FILE_VERSION = 1;
 
-// Keyed "SOURCE:songId", matching how merged-search node ids are qualified --
-// the two catalogs hand out overlapping numeric ids, so an unqualified key
+// Keyed "SOURCE:songId", matching how merged-search node ids are qualified.
+// The two catalogs hand out overlapping numeric ids, so an unqualified key
 // would collide them.
 let ranges = new Map<string, SongRangeRecord>();
 
@@ -91,7 +91,7 @@ export function cachedSongRange(
 }
 
 // Compute and cache from a scoring blob already in hand. Returns null when the
-// blob carries no notes -- some JOYSOUND songs genuinely have no usable guide
+// blob carries no notes. Some JOYSOUND songs genuinely have no usable guide
 // melody, and that is a real answer worth not recomputing.
 export function rememberSongRange(
   source: string,

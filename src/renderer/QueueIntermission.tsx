@@ -43,7 +43,7 @@ function nicknameBadge(nickname: string) {
 // Gap (px) between the end of one copy of the track name and the start of
 // the next, while it scrolls.
 const BGM_MARQUEE_GAP_PX = 60;
-// Scroll speed in px/sec — kept constant so short and long names scroll at
+// Scroll speed in px/sec, kept constant so short and long names scroll at
 // the same pace rather than taking the same total duration.
 const BGM_MARQUEE_PX_PER_SEC = 60;
 
@@ -137,7 +137,7 @@ export default function QueueIntermission(props: {
   const [nextUp, ...upcoming] = props.queue;
   const hiddenCount = Math.max(upcoming.length - MAX_VISIBLE_UPCOMING, 0);
   // useQueue's ETAs are seeded with the current song's full playtime, but
-  // during the intermission that song has already finished — rebase so each
+  // during the intermission that song has already finished. Rebase so each
   // row shows time-until-it-starts measured from the next song starting now.
   const baseEta = nextUp ? nextUp[1] : 0;
 
@@ -158,7 +158,7 @@ export default function QueueIntermission(props: {
       ) : null}
       {breakActive ? (
         <div className="queueIntermissionBreak">
-          休憩中 / On Break —{" "}
+          休憩中 / On Break.{" "}
           {props.queue.length > 0
             ? `Up next in ${formatDuration(breakRemainingMs)}...`
             : `Break ends in ${formatDuration(breakRemainingMs)}...`}
@@ -216,7 +216,7 @@ export default function QueueIntermission(props: {
         <div className="queueIntermissionNextUp">
           <div className="queueIntermissionSongName">Nothing...</div>
           <div className="queueIntermissionArtistName">
-            waiting for songs — scan a QR code to queue
+            waiting for songs. Scan a QR code to queue.
           </div>
         </div>
       )}

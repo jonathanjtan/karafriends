@@ -22,8 +22,8 @@ interface Props {
   selected: SearchSource | null;
   onSelect: (source: SearchSource | null) => void;
   // Rows loaded so far, per source. These count what's on screen rather than
-  // what the catalogs hold — the chips filter the loaded list, they don't
-  // re-run the search — so they climb as "More" pulls further pages.
+  // what the catalogs hold. The chips filter the loaded list rather than
+  // re-running the search, so they climb as "More" pulls further pages.
   counts: Record<SearchSource, number>;
   // Catalogs that didn't answer. Their chip goes quiet and unselectable
   // rather than disappearing, so a filtered-to-nothing list is explained.

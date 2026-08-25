@@ -46,7 +46,7 @@ export interface KarafriendsConfig {
   // recorded through the input path, so a sung pitch reaches the scorer late;
   // scoring shifts each sample back by this much to line it up with the note
   // it was actually aimed at. Live output latency (AudioContext.outputLatency)
-  // is added on top at runtime -- this covers everything that latency can't
+  // is added on top at runtime. This covers everything that latency can't
   // see, chiefly the input/ADC/USB path, which the OS does not report
   // truthfully on macOS. Machine-specific: measure it with
   // scripts/measureMicLatency.mjs (its answer minus the ~25ms live output

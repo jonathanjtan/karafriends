@@ -31,11 +31,11 @@ const experimentalScoringEnabledSubscription = graphql`
 `;
 
 // EXPERIMENTAL: whether a song ending shows a performance score. Off by
-// default. The formula (src/common/scoring.ts) is ours rather than DAM's --
-// the reference blob carries notes and phrase intervals but no scoring rules
-// -- so the numbers are not comparable to a commercial machine and are still
-// being tuned. Only DAM and JOYSOUND songs carry the guide melody it needs;
-// Youtube and Niconico simply never show a card.
+// default. The formula (src/common/scoring.ts) is ours rather than DAM's,
+// because the reference blob carries notes and phrase intervals but no scoring
+// rules, so the numbers are not comparable to a commercial machine and are
+// still being tuned. Only DAM and JOYSOUND songs carry the guide melody it
+// needs; Youtube and Niconico simply never show a card.
 //
 // A discrete toggle, so commits go out immediately (no debounce), matching
 // useMicRmsGateEnabled.

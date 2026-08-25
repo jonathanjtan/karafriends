@@ -4,7 +4,7 @@ import React from "react";
 import * as styles from "./RankingFilters.module.scss";
 
 // Mirrors the RankingCategory / RankingPeriod GraphQL enums. VTUBER and DUET
-// are DAM-only (see rankings.ts) — callers pass `categories` to restrict
+// are DAM-only (see rankings.ts), so callers pass `categories` to restrict
 // which chips are offered on a given page.
 export type RankingCategory =
   | "OVERALL"
@@ -16,7 +16,7 @@ export type RankingCategory =
   | "DUET";
 export type RankingPeriod = "WEEKLY" | "MONTHLY";
 
-// The category row also offers "ARTIST", which isn't a genre — it swaps the
+// The category row also offers "ARTIST", which isn't a genre. It swaps the
 // list to the top-artist chart. Kept as a frontend-only selection since the
 // artist ranking is a separate query with a different result type.
 export type RankingSelection = RankingCategory | "ARTIST";
@@ -35,7 +35,7 @@ const ALL_SELECTIONS: ReadonlyArray<{
   { value: "ARTIST", label: "Artists" },
 ];
 
-// Default (JOYSOUND-safe) selection set — excludes the DAM-only categories.
+// Default (JOYSOUND-safe) selection set, minus the DAM-only categories.
 const DEFAULT_SELECTIONS: ReadonlyArray<RankingSelection> = [
   "OVERALL",
   "ANIME",

@@ -37,7 +37,7 @@ const App = () => {
   useQueueNotifications(deviceId);
 
   // NavBar owns the dark-mode toggle, but it doesn't mount behind the
-  // identity gate — without this, an unclaimed device on a dark-mode phone
+  // identity gate. Without this, an unclaimed device on a dark-mode phone
   // gets a white gate. Applying the persisted choice here covers both.
   useEffect(() => {
     document.documentElement.classList.toggle(

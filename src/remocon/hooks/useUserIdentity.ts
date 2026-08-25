@@ -38,7 +38,7 @@ export function setProfilePictureFrame(frame: ProfilePictureFrame) {
 }
 
 // The deviceId is generated here rather than in the hook's effect because the
-// identity gate needs it before anything renders — it's the key it asks the
+// identity gate needs it before anything renders. It's the key it asks the
 // server about.
 export function ensureDeviceId(): string {
   const existing = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
@@ -74,7 +74,7 @@ export function adoptPerson(person: {
   notifyIdentityChanged();
 }
 
-// "Not me": forget who this device was acting as. The deviceId is kept — it
+// "Not me": forget who this device was acting as. The deviceId is kept. It
 // still identifies the browser, it just isn't attached to anyone until the
 // gate resolves again.
 export function forgetPerson() {

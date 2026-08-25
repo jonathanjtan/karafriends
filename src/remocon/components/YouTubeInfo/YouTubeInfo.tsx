@@ -43,8 +43,8 @@ interface Props {
   videoId: string;
   // Song and artist parsed from the video title by the karaoke-channel
   // search, when that's where this page was opened from. Null when a URL was
-  // pasted in by hand -- then the video's own title and uploader are all
-  // there is to go on.
+  // pasted in by hand, in which case the video's own title and uploader are
+  // all there is to go on.
   songOverride?: { name: string; artistName: string } | null;
 }
 
@@ -65,7 +65,7 @@ const YouTubeInfo = ({ videoId, songOverride = null }: Props) => {
   // An embedded player shows a bare "Video unavailable" when the video is
   // region-locked out of the US (phones usually aren't on the VPN), when the
   // uploader disabled embedding, or when the device trips a restriction the
-  // host didn't see — fall back to the thumbnail instead. None of that affects
+  // host didn't see. Fall back to the thumbnail instead. None of that affects
   // playback: the download runs on the VPN'd host.
   const { canEmbed, unembeddableReason, showThumbnailsInstead } =
     useYouTubeEmbed(
@@ -96,7 +96,7 @@ const YouTubeInfo = ({ videoId, songOverride = null }: Props) => {
             alt={videoInfo.title}
           />
           {/* YouTube auto-generates stills at 25/50/75% of every video at
-              predictable URLs — a quick way to check the content without a
+              predictable URLs, a quick way to check the content without a
               playable embed. */}
           <div className={styles.stills}>
             {[1, 2, 3].map((n) => (
@@ -108,8 +108,9 @@ const YouTubeInfo = ({ videoId, songOverride = null }: Props) => {
             ))}
           </div>
           <p>
-            {unembeddableReason && UNEMBEDDABLE_REASON_TEXT[unembeddableReason]}{" "}
-            — but it can still be queued and played.{" "}
+            {unembeddableReason
+              ? `${UNEMBEDDABLE_REASON_TEXT[unembeddableReason]}, but it can still be queued and played.`
+              : "It can still be queued and played."}{" "}
             <a
               className={styles.videoLink}
               href={`https://www.youtube.com/watch?v=${videoId}`}

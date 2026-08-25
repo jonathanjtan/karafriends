@@ -15,7 +15,7 @@ interface Props {
 // volume, crosses track switches with a fade-out/fade-in, and ducks away
 // quickly when the next song starts. Same-track looping is untouched.
 // In shuffle mode, the outgoing track fades out over its final seconds
-// instead of ending abruptly — except when a track shuffles into itself and
+// instead of ending abruptly, except when a track shuffles into itself and
 // is loopable, in which case it restarts seamlessly with no fade.
 const FADE_IN_MS = 2000;
 const TRACK_SWITCH_FADE_OUT_MS = 1200;
@@ -104,7 +104,7 @@ export default function BackgroundMusic({
     };
     const step = (now: number) => {
       // rAF hands the frame's vsync timestamp, which can lag the
-      // performance.now() captured at schedule time — an unfloored progress
+      // performance.now() captured at schedule time. An unfloored progress
       // goes slightly negative on the first frame, and the ramp then computes
       // a volume just outside [0, 1], which HTMLMediaElement.volume rejects
       // with an IndexSizeError.
@@ -157,7 +157,7 @@ export default function BackgroundMusic({
   const nextShufflePick = useRef<string | null>(null);
 
   // Nearing the end of a shuffle track: pick what comes next and start the
-  // fade-out — unless the pick is the same track and it loops seamlessly,
+  // fade-out, unless the pick is the same track and it loops seamlessly,
   // in which case leave the volume alone and let onEnded restart it.
   const onShuffleTimeUpdate = () => {
     const audio = audioRef.current;
@@ -210,7 +210,7 @@ export default function BackgroundMusic({
     shuffleTransitionArmed.current = false;
     nextShufflePick.current = null;
     if (shouldPlay) {
-      // Ease in from silence — covers both BGM resuming after a song ends
+      // Ease in from silence. This covers both BGM resuming after a song ends
       // and a newly swapped track starting.
       if (audio.paused) {
         audio.volume = 0;
@@ -229,15 +229,15 @@ export default function BackgroundMusic({
 
   // Watchdog: transitions (skips, rapid playback-state flaps, remounts,
   // rejected play() calls, an end-of-track shuffle fade that finished before
-  // the swap) can strand the element paused — or playing but stuck at
-  // volume 0 — while the intent says "playing". Converge on the intent
-  // instead of trusting every path.
+  // the swap) can strand the element paused, or playing but stuck at volume
+  // 0, while the intent says "playing". Converge on the intent instead of
+  // trusting every path.
   //
   // It also has to handle loads that fail outright or hang: at launch the
   // dev static server can 404 (or serve a half-copied file) for a beat while
   // parcel watch's initial build re-copies static/bgm, leaving the element
   // "playing" (paused === false, play fired) but errored or making no
-  // progress — permanently silent, because a MediaError makes every later
+  // progress. That is permanent silence, because a MediaError makes every later
   // play() reject until load() resets the element. Track currentTime across
   // ticks and reload when it freezes or an error is set.
   useEffect(() => {
@@ -280,7 +280,7 @@ export default function BackgroundMusic({
         performance.now() - shuffleTransitionArmedAt.current > 15000
       ) {
         // Arming happens at most SHUFFLE_END_FADE_OUT_MS before the track
-        // ends, and every legitimate exit resets the flag — one this old is
+        // ends, and every legitimate exit resets the flag, so one this old is
         // stale and would suppress the volume-restore rescue below.
         console.warn("BGM watchdog: clearing stale shuffle transition flag");
         shuffleTransitionArmed.current = false;
@@ -292,7 +292,7 @@ export default function BackgroundMusic({
         audio.play().catch((e) => console.warn("BGM watchdog play failed", e));
         fadeTo(audio, () => volumeRef.current, FADE_IN_MS);
       } else if (audio.currentTime === lastTime) {
-        // Not paused, no error, but no progress either — a fetch that never
+        // Not paused, no error, but no progress either. A fetch that never
         // delivered data or stalled mid-stream. Reload after a few frozen
         // ticks (a healthy element always advances between 1s ticks).
         frozenTicks += 1;
@@ -305,7 +305,7 @@ export default function BackgroundMusic({
           !shuffleTransitionArmed.current
         ) {
           // Playing inaudibly with no fade in progress and not mid
-          // end-of-track shuffle fade — e.g. a fade-out to 0 that never got
+          // end-of-track shuffle fade, e.g. a fade-out to 0 that never got
           // a matching fade back in. Restore the volume so BGM isn't
           // silently "playing".
           console.warn(
@@ -320,13 +320,13 @@ export default function BackgroundMusic({
   }, [mountedFilename, shouldPlay]);
 
   // "Now Playing" is driven by the element's real playback events, not by
-  // intent — if playback silently fails, the label must not claim otherwise.
+  // intent. If playback silently fails, the label must not claim otherwise.
   // Note it keys off `playing` (data is actually being rendered), not `play`
   // (which fires on the mere request, even for a src that 404s or stalls).
   const [isAudible, setIsAudible] = useState(false);
 
   // A remounted element starts paused, but the outgoing element never fires
-  // onPause when React unmounts it — reset explicitly.
+  // onPause when React unmounts it, so reset explicitly.
   useEffect(() => {
     setIsAudible(false);
   }, [mountedFilename]);
@@ -341,7 +341,7 @@ export default function BackgroundMusic({
 
   if (!mountedFilename) return null;
   // key={mountedFilename} forces React to fully remount the element (instead
-  // of just updating its src in place) when switching tracks — Chromium
+  // of just updating its src in place) when switching tracks. Chromium
   // doesn't pick up a new src on an already-loaded <audio> element without
   // an explicit load() call, so without this, switching tracks silently
   // kept playing whatever was already loaded.

@@ -27,8 +27,8 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 const PITCH_RING_WINDOWS: usize = 40;
 
 // The detector's analysis window, as a divisor of the sample rate: 1/40th of a
-// second, 25ms. Bounded below by the lowest pitch worth resolving -- already
-// only two cycles at 80Hz -- so it does not shrink.
+// second, 25ms. Bounded below by the lowest pitch worth resolving, already
+// only two cycles at 80Hz, so it does not shrink.
 const PITCH_WINDOW_DIVISOR: u32 = 40;
 
 // How far the window slides between readings: 1/100th of a second, 10ms. This,
@@ -153,7 +153,7 @@ impl InputDevice {
         let pitch_sample_count = input_config.sample_rate.div_ceil(PITCH_WINDOW_DIVISOR) as usize;
         // Deep enough to hold a stall. The consumer is a JS setInterval sharing
         // a renderer with a WebGL draw loop, so it runs late routinely, and
-        // push_slice writes only what fits and drops the rest -- so a shallow
+        // push_slice writes only what fits and drops the rest, so a shallow
         // ring loses the *newest* audio precisely when the poll is behind.
         // Nothing is discarded on the read side any more, so the ring is sized
         // to survive the stall rather than to paper over it.
@@ -541,7 +541,7 @@ impl InputDevice {
 
             pitch_tx.push_slice(&mono_samples);
 
-            // Everything below is the speaker path — what the room hears out
+            // Everything below is the speaker path, what the room hears out
             // of the app's own output device. Muting gates it here, at the
             // reverb's input, so the tail decays out naturally instead of
             // being chopped off mid-tail; the pitch feed above is untouched,

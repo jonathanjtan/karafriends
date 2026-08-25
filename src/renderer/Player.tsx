@@ -172,8 +172,9 @@ const DAM_GAIN = 1.0;
 const NON_DAM_GAIN = 0.8;
 const MAX_HLS_FATAL_ERROR_RETRIES = 2;
 // HTMLMediaElement.readyState: below this the element has no frame at all, so
-// it isn't playing and can't be seeked or ended — the signature of a song that
-// never loaded, as opposed to one someone paused with the on-screen controls.
+// it isn't playing and can't be seeked or ended. That's the signature of a song
+// that never loaded, as opposed to one someone paused with the on-screen
+// controls.
 const HAVE_CURRENT_DATA = 2;
 // Consecutive watchdog ticks (POLL_INTERVAL_MS apart) before it resumes the
 // queue. A stalled-and-paused player is unambiguous; a source that simply
@@ -196,8 +197,8 @@ const SCORE_CARD_FADE_MS = 1400;
 const SCORE_CARD_HOLD_MS = 9000;
 // The card's whole life, hold plus fade. When a song ends with nothing queued
 // behind it there is no intermission hold to sit inside, so the queue is held
-// off by exactly this long instead — otherwise pollQueue's clearScoreCard
-// wipes the card in the same tick it was revealed and it never paints.
+// off by exactly this long instead. Otherwise pollQueue's clearScoreCard wipes
+// the card in the same tick it was revealed and it never paints.
 const SCORE_CARD_TOTAL_MS = SCORE_CARD_HOLD_MS + SCORE_CARD_FADE_MS;
 
 function Player(props: {
@@ -214,7 +215,7 @@ function Player(props: {
   const trackRef = useRef<HTMLTrackElement>(null);
   const [scoringData, setScoringData] = useState<readonly number[]>([]);
   // The current song's id, passed to PianoRoll only so the latency-probe
-  // capture can tag each sample -- lets a multi-song probe log be split by
+  // capture can tag each sample, which lets a multi-song probe log be split by
   // song later. Not used for scoring itself.
   const [scoringSongId, setScoringSongId] = useState<string>("");
 
@@ -241,7 +242,7 @@ function Player(props: {
   // because "ended" is handled here and PianoRoll's GL effect still rebuilds
   // whenever the song (or mic list, or pitch shift) changes, which would
   // discard the performance. It used to rebuild on every render of this
-  // component too -- that was a bug in PianoRoll's effect deps, since fixed;
+  // component too. That was a bug in PianoRoll's effect deps, since fixed;
   // it was silently erasing the sung-pitch trail mid-song. It is fed from
   // PianoRoll's poll loop and read once, on "ended".
   const scoreAccumulatorRef = useRef<ScoreAccumulator | null>(null);
@@ -251,7 +252,7 @@ function Player(props: {
     null,
   );
   // Which song and singer the armed take belongs to. Kept apart from the card's
-  // meta because the card has no use for it -- it is what the score record is
+  // meta because the card has no use for it. It is what the score record is
   // keyed on when the take is persisted.
   const scoredSongIdentityRef = useRef<{
     songType: string;
@@ -282,7 +283,7 @@ function Player(props: {
 
   // Read through a ref by the once-on-mount "ended" handler. Songs always
   // accumulate (the cost is a map insert per poll), and only the reveal
-  // consults the toggle -- so switching scoring on part-way through a song
+  // consults the toggle, so switching scoring on part-way through a song
   // still produces a card for the whole performance, and switching it off
   // suppresses one immediately.
   const { experimentalScoringEnabled } = useExperimentalScoringEnabled();
@@ -398,7 +399,8 @@ function Player(props: {
   // the idle screen any time we're WAITING with nothing playing too (fresh
   // launch, or the setting flipped on while idle). It comes down via the
   // pop-success handler when a song actually starts. A break forces it up
-  // even with the intermission setting off — it doubles as the break screen.
+  // even with the intermission setting off, since it doubles as the break
+  // screen.
   useEffect(() => {
     if (
       playbackState === "WAITING" &&
@@ -446,8 +448,8 @@ function Player(props: {
     // Total mic-to-score latency compensation, read fresh per song. The
     // config value covers the input/ADC/USB path (measured with the sweep;
     // macOS/cpal cannot report it truthfully), and live outputLatency covers
-    // the playback path the singer is reacting to -- that one genuinely
-    // changes at runtime (wired speakers vs Bluetooth swing it by tens of ms),
+    // the playback path the singer is reacting to. That one genuinely changes
+    // at runtime (wired speakers vs Bluetooth swing it by tens of ms),
     // so it is read here rather than folded into the constant. outputLatency
     // is unset on some backends; treat a missing value as 0.
     const micLatencyCompensationMs = (): number => {
@@ -460,7 +462,7 @@ function Player(props: {
 
     // Arm scoring for a song that carries usable reference notes. DAM's blob
     // and Joysound's extracted melody share a layout, so both arrive here.
-    // Deliberately not gated on the toggle -- see the ref above. A melody too
+    // Deliberately not gated on the toggle. See the ref above. A melody too
     // thin to judge leaves scoring disarmed, which is also what keeps
     // Youtube/Nico (no reference data at all) from ever showing a card.
     const armScoring = (
@@ -523,7 +525,7 @@ function Player(props: {
       // includes this play. It also means a slow query can't delay the card.
       //
       // Zero when history recording is off (the dev default), which the card
-      // reads the same as one -- see the copy in ScoreCard.
+      // reads the same as one. See the copy in ScoreCard.
       fetchQuery<PlayerSongPlayCountQuery>(environment, songPlayCountQuery, {
         songType: song.songType,
         songId: song.songId,
@@ -560,9 +562,9 @@ function Player(props: {
 
       const result = accumulator.finalize();
       if (result === null) return false;
-      // Nobody sang against a single note — a skipped song (the skip seeks to
-      // the end, and a seek resets the tally) or an empty room. Scoring that
-      // as a D is worse than staying quiet.
+      // Nobody sang against a single note. That's a skipped song (the skip
+      // seeks to the end, and a seek resets the tally) or an empty room.
+      // Scoring that as a D is worse than staying quiet.
       if (result.notesAttempted === 0) return false;
 
       // Persisted before the card is even drawn: this is the durable record a
@@ -685,9 +687,9 @@ function Player(props: {
       // No poll is in flight once we're inside one, whether this call came
       // from the timer (whose handle is already spent) or straight from a
       // media event. Leaving a stale handle parked here silently disabled the
-      // wedge watchdog below for the rest of the session — it requires "no
-      // poll in flight", and nothing on the success path ever nulled this —
-      // and let a pending timer double-pop behind a direct call.
+      // wedge watchdog below for the rest of the session, which requires "no
+      // poll in flight" and never got nulled on the success path. It also let
+      // a pending timer double-pop behind a direct call.
       if (pollTimeoutRef.current) {
         clearTimeout(pollTimeoutRef.current);
         pollTimeoutRef.current = null;
@@ -741,7 +743,7 @@ function Player(props: {
 
           // Start each item in the key it was queued for. This used to be an
           // unconditional reset to 0, which is exactly what a null/absent value
-          // still means -- older clients and everything already in queue.json
+          // still means, so older clients and everything already in queue.json
           // behave as they always did.
           //
           // The `in` guard is for Relay's "%other" branch, which stands for a
@@ -765,7 +767,7 @@ function Player(props: {
                   `DAM data unavailable for song ${popSong.songId}, skipping`,
                 );
                 M.toast({
-                  html: `<span>Skipped "${popSong.name}" — DAM unreachable</span>`,
+                  html: `<span>Skipped "${popSong.name}" because DAM is unreachable</span>`,
                 });
                 pollQueue();
                 return;
@@ -830,7 +832,7 @@ function Player(props: {
                   // blip: hls.js has no level parsed to resume, so startLoad()
                   // is a no-op that emits no further events, and the give-up
                   // path below never runs. DAM's CDN 403s from some exit IPs
-                  // (see CLAUDE.md), which is exactly this case — the song sat
+                  // (see CLAUDE.md), which is exactly this case. The song sat
                   // there with the room staring at a stalled player.
                   const manifestUnrecoverable =
                     data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
@@ -858,7 +860,7 @@ function Player(props: {
                   );
                   hls?.destroy();
                   M.toast({
-                    html: `<span>Skipped "${popSong.name}" — playback failed</span>`,
+                    html: `<span>Skipped "${popSong.name}" because playback failed</span>`,
                   });
                   pollQueue();
                 });
@@ -968,7 +970,7 @@ function Player(props: {
                 })
                 .catch((error) => {
                   // Without this, a missing/corrupt telop file means play()
-                  // is never called and no media event ever fires — the poll
+                  // is never called and no media event ever fires. The poll
                   // loop dies with playbackState stuck on PLAYING (silent
                   // room, stale "Now Playing", no BGM) until relaunch.
                   console.error(
@@ -976,7 +978,7 @@ function Player(props: {
                     error,
                   );
                   M.toast({
-                    html: `<span>Skipped "${popSong.name}" — lyrics data unavailable</span>`,
+                    html: `<span>Skipped "${popSong.name}" because its lyrics are missing</span>`,
                   });
                   pollQueue();
                 });
@@ -1025,8 +1027,8 @@ function Player(props: {
               videoRef.current.play();
               break;
             case "TuningQueueItem":
-              // The exercise *is* the guide tone -- there is no track behind it
-              // -- so a room that had the guide turned down would hear nothing
+              // The exercise *is* the guide tone, with no track behind it, so
+              // a room that had the guide turned down would hear nothing
               // to sing against. Stash the room's value and go to full; every
               // path out of here restores it (see restoreGuideMelodyVolume).
               guideVolumeBeforeWarmupRef.current = guideMelodyVolumeRef.current;
@@ -1037,8 +1039,8 @@ function Player(props: {
               setPianoRollDucked(false);
               setShouldShowJoysound(false);
               setShouldShowAdhocLyrics(false);
-              // Never null in practice -- the exercise is generated at queue
-              // time. The field is nullable only to satisfy Relay's union
+              // Never null in practice, since the exercise is generated at
+              // queue time. The field is nullable only to satisfy Relay's union
               // typing (see the schema comment).
               setScoringData(popSong.scoringData ?? []);
               setScoringSongId(popSong.songId);
@@ -1091,11 +1093,11 @@ function Player(props: {
           setPopPending(false);
           restoreGuideMelodyVolume();
           // Without this, any unexpected popSong failure (GraphQL error,
-          // dropped connection, etc.) would kill the poll loop for good —
-          // nothing else re-schedules it.
+          // dropped connection, etc.) would kill the poll loop for good,
+          // since nothing else re-schedules it.
           console.error("popSong mutation failed, retrying", error);
           M.toast({
-            html: "<span>⚠️ Couldn't reach the queue — retrying</span>",
+            html: "<span>⚠️ Couldn't reach the queue, retrying</span>",
           });
           pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
         },
@@ -1124,8 +1126,8 @@ function Player(props: {
           return;
         }
         // While the intermission screen is held (a plain between-songs hold
-        // or an active break) the room is idle — flip to WAITING so BGM
-        // plays. pollQueue flips it back to PLAYING when the next song pops.
+        // or an active break) the room is idle. Flip to WAITING so BGM plays.
+        // pollQueue flips it back to PLAYING when the next song pops.
         if (playbackStateRef.current !== "WAITING") {
           setPlaybackState("WAITING");
         }
@@ -1147,13 +1149,13 @@ function Player(props: {
       // a synchronous call would blow the card away in the tick it appeared.
       // holdIntermission is the delay mechanism rather than a bare setTimeout
       // because it parks the handle the skip path cancels and the poll
-      // watchdog checks — a raw timer would let a skip mid-card double-pop.
+      // watchdog checks. A raw timer would let a skip mid-card double-pop.
       // Only one of the two can be armed, so at most one card goes up; the
       // queue-hold logic below treats them identically.
       const scoreCardShown = revealScoreCard() || revealRangeCard();
 
       // Hand the guide volume back the moment the exercise ends, rather than
-      // waiting for the next pop -- the card and intermission hold for ~10s
+      // waiting for the next pop. The card and intermission hold for ~10s
       // after this, and leaving every remocon's slider pinned at 100% through
       // that reads as the app having taken the setting over. The pop path still
       // calls this as a backstop; it no-ops once this has run.
@@ -1186,7 +1188,9 @@ function Player(props: {
         "Fatal <video> element error, skipping current song",
         videoRef.current?.error,
       );
-      M.toast({ html: "<span>Skipped current song — playback failed</span>" });
+      M.toast({
+        html: "<span>Skipped the current song because playback failed</span>",
+      });
       pollQueue();
     };
 
@@ -1196,21 +1200,21 @@ function Player(props: {
 
     // Watchdog: the queue only advances through this chain of callbacks
     // (media events -> pollQueue -> commitMutation callbacks), and nothing
-    // re-arms it if a link dies — the bootstrap above runs once at mount. A
-    // song that never reaches play() (and so never fires ended/error) leaves
+    // re-arms it if a link dies, since the bootstrap above runs once at mount.
+    // A song that never reaches play() (and so never fires ended/error) leaves
     // playbackState wedged on PLAYING with a silent room, a stale
-    // "Now Playing", and no BGM until relaunch. Detect that state — PLAYING
-    // but the <video> never started (or already ended) with no pop, poll, or
-    // intermission hold in flight — and restart the loop.
+    // "Now Playing", and no BGM until relaunch. Detect that state and restart
+    // the loop: PLAYING, but the <video> never started (or already ended),
+    // with no pop, poll, or intermission hold in flight.
     //
     // currentTime === 0 / ended distinguishes a wedge from someone pausing
     // mid-song with the on-screen video controls (which doesn't go through
     // playbackState and must not trigger a skip).
     //
-    // "Nothing is playing" is not just video.paused: play() flips paused to
-    // false optimistically, before any data arrives, so a source that never
+    // "Nothing is playing" takes more than video.paused. play() flips paused
+    // to false optimistically, before any data arrives, so a source that never
     // loads (hls.js on a 403 manifest) leaves paused === false forever and the
-    // watchdog looking the other way. readyState covers that — no frame at all
+    // watchdog looking the other way. readyState covers that. No frame at all
     // is never a healthy song, and a hand-paused one has data and a nonzero
     // currentTime, so the clause below still can't fire on it. SKIPPING counts
     // as wedgeable for the same reason: it's a transient state, and a skip that
@@ -1237,7 +1241,7 @@ function Player(props: {
       }
       wedgedTicks += 1;
       // A song still loading looks exactly like one that never will, just
-      // earlier — time is the only thing that tells them apart, so a source
+      // earlier. Time is the only thing that tells them apart, so a source
       // that hasn't produced a frame yet gets a longer leash than a player
       // that's outright paused and stalled.
       if (
@@ -1304,7 +1308,7 @@ function Player(props: {
         }
         // A song that never actually loaded (DAM CDN 403, missing local file)
         // has no duration and no data, so seeking to the end can't fire
-        // "ended" and the skip did nothing at all — the queue stayed wedged and
+        // "ended" and the skip did nothing at all. The queue stayed wedged and
         // playbackState stuck on SKIPPING, with the remocon's skip button doing
         // visibly nothing however many times it was pressed. Pop the next song
         // directly instead; the watchdog above only backstops this.

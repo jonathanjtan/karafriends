@@ -2,11 +2,11 @@
 // its reference melody, and suggests a key shift when one would genuinely help.
 //
 // Pure logic, no electron/DOM/network imports, so it can be exercised offline
-// against a recorded trace -- same contract as scoring.ts and guideMelody.ts.
+// against a recorded trace, the same contract as scoring.ts and guideMelody.ts.
 //
 // **This module never produces a negative judgement about a song or a singer.**
 // suggestKeyShift returns null rather than nagging, and sitsComfortably is a
-// positive-only signal whose absence means "no opinion" -- which is also what an
+// positive-only signal whose absence means "no opinion", which is also what an
 // uncached song legitimately conveys. Nothing here should ever grow a "you
 // can't sing this" reading; people sing whatever they want.
 
@@ -30,7 +30,7 @@ export const VOCAL_RANGE_VERSION = 1;
 // song take useless for range: a tracker octave error or a rumble at half the
 // frequency folds neatly onto the note and is credited. Reading the 2nd
 // percentile of detected pitch that way put every take in the corpus at MIDI
-// 42-44 -- F2, for singers who plainly were not there
+// 42-44, F2, for singers who plainly were not there
 // (docs/scoring-scorecard-proposal.md:207). Here the target is known, so an
 // octave error is simply 12 semitones away and gets dropped.
 const REACH_TOLERANCE_SEMIS = 1.0;
@@ -63,7 +63,7 @@ export interface TargetOutcome {
 
 export interface VocalRangeResult {
   version: number;
-  // Null throughout when the exercise produced nothing usable -- an empty room,
+  // Null throughout when the exercise produced nothing usable: an empty room,
   // a muted mic. A null range is reported as "we couldn't hear you", never as a
   // range of zero.
   lowMidi: number | null;
@@ -85,7 +85,7 @@ function median(values: number[]): number {
 }
 
 // Longest run of consecutive 25ms slots, in slots. Slots are absolute indices,
-// so consecutive means n immediately followed by n+1 -- a gap, whether silent
+// so consecutive means n immediately followed by n+1. A gap, whether silent
 // or off-target, breaks the run. Mirrors longestOnPitchRun in scoring.ts.
 function longestRun(slots: Set<number>): number {
   const indices = [...slots].sort((a, b) => a - b);
@@ -101,7 +101,7 @@ function longestRun(slots: Set<number>): number {
 }
 
 // Measures the take. compensationMs shifts every sample back before it is
-// matched to a target, exactly as placeSamples does -- the singer hears through
+// matched to a target, exactly as placeSamples does. The singer hears through
 // the output path and is recorded through the input path, so a sung pitch
 // arrives late.
 export function estimateVocalRange(
@@ -250,8 +250,8 @@ export interface SongRange {
   noteCount: number;
   // Seconds of singing at each MIDI number, as [midi, seconds] pairs.
   //
-  // This is what makes the whole feature affordable. Every fit question --
-  // "does this sit comfortably", "would -2 help" -- is a duration-weighted
+  // This is what makes the whole feature affordable. Every fit question,
+  // "does this sit comfortably" or "would -2 help", is a duration-weighted
   // count of note time inside a band, which needs the note list. Shipping or
   // re-fetching that per song is out of the question (a DAM blob is a network
   // call, a JOYSOUND melody is an 8s extraction), but the histogram answers all
@@ -283,7 +283,7 @@ function weightedPercentile(
 //
 // Tessitura is duration-weighted percentiles rather than min/max **on purpose**.
 // JOYSOUND's own guide synth caps its register, playing the top note or two of a
-// song an octave below the rest of the melody (~9% of notes in validation --
+// song an octave below the rest of the melody (~9% of notes in validation,
 // see the header of guideMelody.ts), and that is a property of JOYSOUND's audio,
 // not of our tracker. Absolute min/max is precisely the statistic those notes
 // poison; a percentile shrugs them off. The absolute bounds are reported too,
@@ -329,8 +329,8 @@ export interface SingerBand {
 // the singer would actually sing it.
 //
 // **This is not a correction of the singer, it is a correction of the data.**
-// Measured across 56 song/take pairs -- every cached melody with a probe trace
-// of somebody singing it -- the extracted JOYSOUND guide melody sits an octave
+// Measured across 56 song/take pairs, every cached melody with a probe trace
+// of somebody singing it, the extracted JOYSOUND guide melody sits an octave
 // above the singer on 33, two octaves above on 20, and in the same octave on
 // only 3. Remove whole octaves and the residual median is 0.03 semitones: the
 // pitch classes are exactly right and only the register is displaced. Two
@@ -339,8 +339,8 @@ export interface SingerBand {
 //   * JOYSOUND's guide synth plays above notation (guideMelody.ts's header
 //     documents the register capping; F0_MAX_HZ is 1500 to accommodate tones
 //     around 1.1-1.25kHz, which is D6), and
-//   * people sing in whichever octave suits them, which is normal and correct
-//     -- a lower voice taking a high vocal line down an octave is not an error
+//   * people sing in whichever octave suits them, which is normal and correct.
+//     A lower voice taking a high vocal line down an octave is not an error
 //     and must never be treated as one.
 //
 // So the octave is not a meaningful axis for matching: the singer picks it,
@@ -385,7 +385,7 @@ function comfortableFraction(
 }
 
 // At or above this much of the song inside the band, the song is a nice fit and
-// we say so. Below it we simply say nothing -- there is no "bad fit" state.
+// we say so. Below it we simply say nothing. There is no "bad fit" state.
 //
 // Fitted against the 54 cached melodies rather than chosen by taste, and only
 // meaningful *after* octave normalisation (before it, real songs sat 1-2 octaves
@@ -434,7 +434,7 @@ export function sitsComfortably(
 //
 // Null is the common and correct answer: the song already fits, or no shift
 // meaningfully helps, or we have no measurement. The caller shows nothing at
-// all in that case -- never a warning, never a "this is a stretch". A returned
+// all in that case: never a warning, never a "this is a stretch". A returned
 // suggestion is an offer that sits *beside* the normal queue button, never in
 // place of it.
 export function suggestKeyShift(
@@ -444,7 +444,7 @@ export function suggestKeyShift(
   if (histogram.length === 0) return null;
 
   // Everything below is measured on top of the octave the singer would take
-  // this song in anyway, so the suggestion is purely the semitone part -- the
+  // this song in anyway, so the suggestion is purely the semitone part, the
   // only part the transpose button changes. See songOctaveShiftFor.
   const octave = songOctaveShiftFor(histogram, band);
   const atZero = comfortableFraction(histogram, band, octave);
@@ -452,8 +452,8 @@ export function suggestKeyShift(
 
   let best = 0;
   let bestFraction = atZero;
-  // Ascending |shift| so the smallest shift wins ties naturally -- a strictly
-  // greater test never replaces an equally good, smaller move.
+  // Ascending |shift| so the smallest shift wins ties naturally, since a
+  // strictly greater test never replaces an equally good, smaller move.
   for (let magnitude = 1; magnitude <= MAX_SHIFT_SEMIS; magnitude++) {
     for (const semis of [-magnitude, magnitude]) {
       const fraction = comfortableFraction(histogram, band, octave + semis);

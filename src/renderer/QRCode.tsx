@@ -40,7 +40,7 @@ function QRCode(props: {
       const x = (size - logoSize) / 2;
       const y = (size - logoSize) / 2;
 
-      // The logo PNG is a circle on a transparent background — fill a
+      // The logo PNG is a circle on a transparent background. Fill a
       // quiet-zone square behind it first so no QR modules show through
       // the corners, matching each variant's module background color.
       ctx.fillStyle = props.inverted ? "#000000" : "#ffffff";
@@ -54,7 +54,7 @@ function QRCode(props: {
       // html.oledFriendly applies `filter: invert(1) hue-rotate(180deg)` to
       // the whole sidebar. That combo is a no-op for achromatic QR modules
       // (invert alone round-trips black/white) but NOT for the logo's
-      // non-fully-saturated blue (28,179,255) — hue-rotate(180) preserves
+      // non-fully-saturated blue (28,179,255). hue-rotate(180) preserves
       // saturation/lightness while only rotating hue, so a color that isn't
       // already at 50% lightness/100% saturation comes out darker. The
       // filter is an involution (applying it twice is identity), so

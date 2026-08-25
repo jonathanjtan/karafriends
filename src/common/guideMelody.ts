@@ -7,7 +7,7 @@
 // pitch-class agreement), so tracking its pitch yields scoring-quality note
 // data on the native Joysound timeline.
 //
-// This module is pure DSP over raw PCM — no electron/fs/network imports — so
+// This module is pure DSP over raw PCM, with no electron/fs/network imports, so
 // it can be exercised standalone. Callers decode the FC channel to s16le mono
 // PCM at GUIDE_MELODY_SAMPLE_RATE_HZ (via ffmpeg) and feed it in.
 //
@@ -36,7 +36,7 @@ const CORRELATION_THRESHOLD = 0.6;
 // period T. Prefer the shortest local maximum within this fraction of the
 // best score; this eliminated nearly all octave/subharmonic errors when
 // validated against DAM reference notes. The full lag range is searched on
-// every voiced frame — narrowing the search around the previous frame's
+// every voiced frame. Narrowing the search around the previous frame's
 // pitch was tried as an optimization but locks onto subharmonics at melodic
 // leaps (a fifth up lands its 2/3-frequency subharmonic inside the narrowed
 // window), which measurably corrupted whole phrases.
@@ -51,8 +51,8 @@ const NOTE_MERGE_GAP_MS = 60;
 // Measured against the median of the whole song this misfires on any melody
 // wider than its threshold: Dancing Queen spans 21 semitones in DAM's chart, so
 // its lowest genuine notes sit more than 11 below the median and were folded an
-// octave up (18 of 204 notes moved), while the real tracking errors -- a fifth
-// lower again -- were folded twice and landed past where they started. Local
+// octave up (18 of 204 notes moved), while the real tracking errors, a fifth
+// lower again, were folded twice and landed past where they started. Local
 // context separates the two cleanly, because a wide melody arrives at its
 // extremes through its neighbours and a tracking error does not: the errors are
 // isolated notes 15-25 semitones below the notes on either side of them.
@@ -73,7 +73,7 @@ const MIN_TOTAL_VOICED_MS = 20000;
 
 // Bump when a change to this module would produce a different note track from
 // the same audio. Cached melodies carry it (see buildScoringData), and
-// joysoundMelody.ts treats an older one as a cache miss -- re-extraction runs
+// joysoundMelody.ts treats an older one as a cache miss. Re-extraction runs
 // off the ogg or the composited video, both already on disk, so healing the
 // cache costs an ffmpeg decode and no network.
 //
@@ -236,7 +236,7 @@ function segmentNotes(frames: (FramePitch | null)[]): GuideMelodyNote[] {
 // Duration-weighted median pitch of the notes within OCTAVE_CONTEXT_SECS of
 // `notes[index]`, excluding the note itself. Weighted by duration so a spray of
 // passing sixteenths can't outvote the held note they decorate. Null when the
-// note has too little company to judge it by -- the ends of the song, and songs
+// note has too little company to judge it by: the ends of the song, and songs
 // so sparse there is no local register to speak of.
 function localMedianPitch(
   notes: readonly GuideMelodyNote[],
@@ -359,8 +359,8 @@ export function buildScoringData(notes: GuideMelodyNote[]): Uint8Array {
   // DAM's real blobs do put something in word 5 (6333 and 6500 on the two
   // surveyed), but nothing reads it: parseScoringData takes every count it
   // needs from words 1-4. So it is free for our version in the blobs *we*
-  // write, and the version check only ever runs against our own cache files --
-  // a DAM blob never reaches it.
+  // write, and the version check only ever runs against our own cache files.
+  // A DAM blob never reaches it.
   words[5] = GUIDE_MELODY_EXTRACTION_VERSION;
 
   let w = 6;

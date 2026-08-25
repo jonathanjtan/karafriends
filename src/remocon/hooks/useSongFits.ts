@@ -10,7 +10,7 @@ import { useSongFitsQuery } from "./__generated__/useSongFitsQuery.graphql";
 // Returns a map keyed "SOURCE:songId" -> true. **Only positive entries exist**:
 // a song that isn't a nice fit, and a song we have no cached range for, are
 // both simply absent, and callers render nothing for either. That equivalence
-// is deliberate -- it is what lets the cache be partial (a JOYSOUND song nobody
+// is deliberate. It is what lets the cache be partial (a JOYSOUND song nobody
 // has played has no extracted melody, and extracting one costs ~8s) without the
 // UI ever implying something negative about a song.
 //

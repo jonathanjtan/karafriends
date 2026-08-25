@@ -139,7 +139,7 @@ export class JoysoundAPI extends RESTDataSource {
   async post<T>(url: string, data: object): Promise<T> {
     // Values must be percent-encoded: raw UTF-8 Japanese happens to survive
     // an x-www-form-urlencoded body, but a literal % (e.g. searching
-    // 勇気100%), & or = corrupts it — sound-cafe answers 400.
+    // 勇気100%), & or = corrupts it, and sound-cafe answers 400.
     const body = Object.entries(data)
       .map(([k, v]) => `${k}=${encodeURIComponent(v)}`)
       .join("&");

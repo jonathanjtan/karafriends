@@ -4,12 +4,12 @@
 .scoreCard {
   position: absolute;
   inset: 0;
-  /* Above the queue intermission (z-index 10) -- the score is the first thing
-     shown when a song ends, and the intermission carries on underneath it --
-     and above the "history off" badge (z-index 30), which is pinned to the same
-     bottom-left corner as the ribbon's caption and legend and lands on top of
-     both. All four corners of the card are spoken for, so there is nowhere to
-     move the badge to; it gives up its nine seconds instead. */
+  /* Above the queue intermission (z-index 10), because the score is the first
+     thing shown when a song ends and the intermission carries on underneath
+     it. Also above the "history off" badge (z-index 30), which is pinned to
+     the same bottom-left corner as the ribbon's caption and legend and lands
+     on top of both. All four corners of the card are spoken for, so there is
+     nowhere to move the badge to; it gives up its nine seconds instead. */
   z-index: 40;
   display: grid;
   grid-template-columns: 30vh 1fr;
@@ -48,7 +48,7 @@
   }
 }
 
-/* Provenance strip. Deliberately the quietest thing on the card -- it is here
+/* Provenance strip. Deliberately the quietest thing on the card. It is here
    to be honest, not to be read from the sofa. */
 .scoreCardTopRail {
   grid-column: 1 / -1;
@@ -284,15 +284,15 @@
 }
 
 /* Letting this absorb all the leftover height put it at nearly 60% on a 720p
-   screen, which drowned the numbers -- so it takes a fixed share. But 32vh left
+   screen, which drowned the numbers, so it takes a fixed share. But 32vh left
    the card 26% empty: measured off a rendered card, 12.1% above the score block
    and 14.1% of dead band between it and the ribbon. The rows are centred, so
    every vh here comes half off each gap; 42vh brings them to 7.1% and 9.1%,
    which reads as deliberate space rather than a hole, and leaves the ribbon and
-   its legend at 44% -- well short of the 58% that drowned the numbers.
+   its legend at 44%, well short of the 58% that drowned the numbers.
 
-   The height is also not just decoration: the ribbon's vertical axis is pitch,
-   so the extra 10vh is 30% more room to separate one note from the next. */
+   The height does real work as well. The ribbon's vertical axis is pitch, so
+   the extra 10vh is 30% more room to separate one note from the next. */
 .scoreCardRibbon {
   display: block;
   width: 100%;
@@ -326,7 +326,7 @@
   margin-left: auto;
 }
 
-/* Times sung. Sits under the score as a quiet aside -- it is colour, not a
+/* Times sung. Sits under the score as a quiet aside. It is colour, not a
    result, so it must not compete with the number above it. */
 .scoreCardTimesSung {
   font-family: ui-monospace, "SF Mono", Menlo, monospace;

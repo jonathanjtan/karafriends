@@ -16,7 +16,7 @@ type OriconSongParams = {
 //
 // Both services are searched by the charted title. The Oricon artist is shown
 // rather than used to filter, because the three sources spell credits
-// differently ("WhiteFlame feat.初音ミク" vs the catalogs' own forms) — a
+// differently ("WhiteFlame feat.初音ミク" vs the catalogs' own forms). A
 // strict artist match would hide real results, so the caller picks instead.
 // This used to be two per-service lists under two headings; the merged search
 // covers the same ground in one ranked list, and carries the same "one
@@ -36,8 +36,8 @@ const OriconSongPage = () => {
       <p className={styles.lookupHeader}>
         Oricon lists this as{" "}
         <span className={styles.lookupTitle}>{charted}</span>
-        {artist ? ` — ${artist}` : null}. Pick the matching entry below to queue
-        it.
+        {artist ? ` by ${artist}` : null}. Pick the matching entry below to
+        queue it.
       </p>
 
       <SongSearchResults query={query} />

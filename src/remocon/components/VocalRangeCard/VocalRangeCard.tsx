@@ -94,7 +94,8 @@ const VocalRangeCard = () => {
             : range.hitFloor
               ? "bottom"
               : "top"}{" "}
-          of the warm-up — there's more to find with a different starting note.
+          of the warm-up, so there's more to find with a different starting
+          note.
         </div>
       ) : null}
     </div>

@@ -62,7 +62,7 @@ function nicknameBadge(nickname: string) {
 }
 
 // One axis: its name, its score, a meter, and the raw fact behind it. The fact
-// is the point -- an unfamiliar metric is only trustworthy next to its
+// is the point. An unfamiliar metric is only trustworthy next to its
 // evidence, and "81" means nothing until you know it's 53 held notes.
 //
 // An axis the song can't be judged on shows "—" and says why, rather than being
@@ -160,7 +160,7 @@ export default function ScoreCard(props: {
           <span className="scoreCardOverallUnit">pts</span>
         </div>
         <div className="scoreCardTimesSung">{timesSungLabel(timesSung)}</div>
-        {/* Compared only against themselves -- nothing on this card ranks one
+        {/* Compared only against themselves. Nothing on this card ranks one
             singer against another. Beating it is the interesting case, so say
             so rather than making them do the subtraction. */}
         {personalBest === null ? null : (

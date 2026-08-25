@@ -47,7 +47,7 @@
   overflow-wrap: anywhere;
 
   img {
-    // PMD portraits are 40x40 pixel art — keep them crisp when scaled up.
+    // PMD portraits are 40x40 pixel art, so keep them crisp when scaled up.
     width: 64px;
     height: 64px;
     image-rendering: pixelated;

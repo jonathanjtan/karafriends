@@ -3,7 +3,7 @@
 // The exercise is a sequence of sustained tones walking outward from a
 // comfortable centre: a few repeats to let the singer find the tone, then down
 // to the floor, then up to the ceiling. One target pitch at a time is the whole
-// point -- because the target is known, vocalRange.ts can accept or reject a
+// point. Because the target is known, vocalRange.ts can accept or reject a
 // mic sample against it *without* octave folding, which is what makes the
 // measurement trustworthy where a post-hoc read of a song take is not (see
 // docs/scoring-scorecard-proposal.md:207, where the 2nd percentile of detected
@@ -38,7 +38,7 @@ const PIANO_ROLL_TAIL_SECS = 3;
 
 // The walk moves by scale degree, not by a fixed number of semitones.
 //
-// It used to step a constant 2 semitones, which is a **whole-tone scale** --
+// It used to step a constant 2 semitones, which is a **whole-tone scale**:
 // C D E F# G# A#, no perfect fifth and no leading tone. That is the Debussy
 // dream-sequence sound, and it reads as eerie and unresolved to anybody asked
 // to sing it. A major scale is what a vocal warm-up actually uses, it is
@@ -67,7 +67,7 @@ function scaleNote(tonic: number, degree: number): number {
 //
 // This used to be a +/-16 window around the centre, because the piano roll's
 // vertical axis was fixed at +/-18 semitones and a wider exercise had its
-// extremes -- the interesting part -- silently clipped off the canvas. The roll
+// extremes, the interesting part, silently clipped off the canvas. The roll
 // now scales to whatever it is given (see midiNumberToYCoord's spanSemis), so
 // the exercise is bounded by human voices instead of by the display.
 export const VOCAL_FLOOR_MIDI = 40; // E2
@@ -116,8 +116,8 @@ export interface TuningExercise {
 
 export interface TuningExerciseOptions {
   centreMidi?: number;
-  // Default to the full plausible vocal range. Overrides are clamped to it --
-  // there is no musical reason to ask anybody for a note below E2 or above C6,
+  // Default to the full plausible vocal range. Overrides are clamped to it.
+  // There is no musical reason to ask anybody for a note below E2 or above C6,
   // and an unbounded exercise would just be long.
   floorMidi?: number;
   ceilingMidi?: number;

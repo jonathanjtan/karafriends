@@ -1,6 +1,6 @@
 // Serves THIS worktree's built remocon (build/dev/remocon) while proxying
-// everything it can't serve — /graphql (POST + graphql-ws upgrade),
-// /portraits/* — to a karafriends app already listening on :8080.
+// everything it can't serve, /graphql (POST + graphql-ws upgrade) and
+// /portraits/*, to a karafriends app already listening on :8080.
 //
 // Why not .claude/tcp-proxy-8080.js: that forwards every byte to the app,
 // which reverse-proxies page requests to whichever checkout's dev static

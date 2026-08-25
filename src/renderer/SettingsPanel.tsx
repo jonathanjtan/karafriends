@@ -15,7 +15,7 @@ import {
 import Sidebar from "./Sidebar";
 import { SettingsPanelClearQueueMutation } from "./__generated__/SettingsPanelClearQueueMutation.graphql";
 
-// Keep asking the big screen for a snapshot until one arrives — the panel is
+// Keep asking the big screen for a snapshot until one arrives. The panel is
 // useless without one, and a single request lost to a reload on the other side
 // would leave it stuck on the placeholder forever.
 const OWNER_STATE_RETRY_INTERVAL_MS = 500;

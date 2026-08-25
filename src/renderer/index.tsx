@@ -16,7 +16,7 @@ import KarafriendsAudio from "./webAudio";
 
 // This bundle is loaded by three windows: the big screen and the two
 // popped-out panels (settings, join QR). Only the big screen gets an audio
-// graph and a kuromoji dictionary — the panels have no player, and a second
+// graph and a kuromoji dictionary. The panels have no player, and a second
 // AudioContext / dictionary load would just cost memory.
 function root() {
   switch (panelKind()) {

@@ -2,7 +2,7 @@
    scales with whatever projector the room has rather than with a pixel guess.
 
    Visually calmer than the score card on purpose. This is a measurement, not a
-   result -- there is nothing to celebrate or regret, so no band colour, no
+   result. There is nothing to celebrate or regret, so no band colour, no
    gold, no big number. */
 .rangeCard {
   position: absolute;
@@ -17,7 +17,7 @@
   padding: 5vh 8vh;
   background: linear-gradient(160deg, #0d0d1c 0%, #191933 60%, #0d0d1c 100%);
   color: white;
-  /* Keep durations in sync with SCORE_CARD_FADE_MS in Player.tsx -- the range
+  /* Keep durations in sync with SCORE_CARD_FADE_MS in Player.tsx. The range
      card is revealed through the same timers. */
   animation: rangeCardFadeIn 1400ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -132,8 +132,8 @@
 
 /* Green is "on the note" everywhere else in this app, so it means that here
    too. Reached-but-not-solid is the same amber the note ribbon uses for
-   "close". Untried is the ribbon's ghost blue -- absence, not failure, which is
-   why it is never red. */
+   "close". Untried is the ribbon's ghost blue, absence rather than failure,
+   which is why it is never red. */
 .rangeCardRungSolid {
   background: #5dff9b;
 }

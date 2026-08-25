@@ -58,9 +58,9 @@ type Query {
   # sang and those must not reach the history, the play counts, or anything
   # else keyed off it.
   historyRecordingEnabled: Boolean!
-  # The "host:port" a phone should use to reach the remocon — what the QR
-  # codes encode. Synced rather than renderer-local so every window that draws
-  # a QR (the sidebar, the intermission screen, the popped-out QR window)
+  # The "host:port" a phone should use to reach the remocon, which is what the
+  # QR codes encode. Synced rather than renderer-local so every window that
+  # draws a QR (the sidebar, the intermission screen, the popped-out QR window)
   # agrees without a relay. Defaults to a private LAN IPv4 of this machine.
   hostname: String!
   nicoVideoInfo(videoId: String): NicoVideoInfoResult!
@@ -100,11 +100,11 @@ type Query {
     after: String
   ): SearchedArtistConnection!
   # The karaoke YouTube channels karafriends knows how to read, for the filter
-  # chips. Static data -- it describes what `karaokeChannelSongs` will search.
+  # chips. Static data. It describes what `karaokeChannelSongs` will search.
   karaokeChannels: [KaraokeChannel!]!
   # One search across those channels. Deliberately not a connection: YouTube's
   # channel search answers with a single padded page and gives no offset to
-  # resume from, so there is no second page to hand out -- see
+  # resume from, so there is no second page to hand out. See
   # KaraokeChannelSongs.
   karaokeChannelSongs(
     keyword: String
@@ -135,13 +135,13 @@ type Query {
   joysoundRankingMonths: [RankingMonth!]!
   # Oricon's current-week karaoke Top 20 (oricon.co.jp), which the site splits
   # over two pages. Past years are paywalled, never change, and are only ever a
-  # Top 10, so those ship as a static table in common/oriconChart.ts — the live
+  # Top 10, so those ship as a static table in common/oriconChart.ts. The live
   # week is the only part that needs fetching.
   oriconWeeklyRanking: OriconWeeklyChart!
   # Everyone in the registry, most recently seen first. Drives the identity
   # gate's picker and the switch-account sheet.
   people: [Person!]!
-  # The singer this device last claimed, or null if the device is unclaimed —
+  # The singer this device last claimed, or null if the device is unclaimed,
   # which is what puts the remocon behind the identity gate.
   personByDevice(deviceId: String!): Person
   # Whether JOYSOUND romaji lyrics are segmented at word boundaries (kuromoji
@@ -153,9 +153,9 @@ type Query {
   # How many times this singer has already sung this song, counted over
   # songHistory and including the play in progress. Zero only when history
   # recording is off, so callers should read 0 and 1 the same way ("first
-  # time"). Matched on personId when both sides have one, otherwise nickname --
-  # entries from before the singer registry carry no personId.
-  # This singer's stored scores for one song, newest formula only -- a record
+  # time"). Matched on personId when both sides have one, otherwise nickname,
+  # since entries from before the singer registry carry no personId.
+  # This singer's stored scores for one song, newest formula only. A record
   # from an older formula was produced on a different scale and would make a
   # personal best nobody can beat. Empty until a take has been scored and
   # recorded, which only happens while history recording is on.
@@ -175,11 +175,11 @@ type Query {
   # warm-up. Matched on personId when both sides have one, otherwise nickname.
   vocalRange(nickname: String!, personId: String): VocalRangeRecord
   # Where a song sits. `allowFetch: false` (the default) answers only from the
-  # local cache and never touches the network -- that is the mode list surfaces
+  # local cache and never touches the network. That is the mode list surfaces
   # use, where an 8s extraction per row is out of the question. A song detail
   # page, opening one song the user actually tapped, may pass true.
   # How a batch of songs sits for one singer, answered **from the local cache
-  # only** -- this is the list-surface counterpart of songVocalRange, and it
+  # only**. This is the list-surface counterpart of songVocalRange, and it
   # never fetches or extracts anything. Songs with no cached range are simply
   # absent from the result, which callers render as no marker at all.
   #
@@ -248,7 +248,7 @@ type Mutation {
   updateUserIdentity(identity: UserIdentityInput!): Boolean!
   # Register a new singer and attach this device to them.
   createPerson(input: CreatePersonInput!): Person!
-  # Attach this device to an existing singer — the "that's me" tap on the
+  # Attach this device to an existing singer: the "that's me" tap on the
   # identity gate, and the switch-account sheet.
   claimPerson(personId: String!, deviceId: String!): Person!
   # Remove a singer from the registry (admin cleanup for duplicates and
@@ -270,7 +270,7 @@ type Mutation {
   setHistoryRecordingEnabled(enabled: Boolean!): Boolean!
   # Fetch a JOYSOUND song's audio and extract its guide melody into the cache,
   # without downloading a video or queueing anything. Exists so a lost melody
-  # cache can be rebuilt from a list of songIds -- the sung performances in
+  # cache can be rebuilt from a list of songIds. The sung performances in
   # probe-logs/ are useless for offline scoring work without the melody they
   # were sung against. See scripts/backfillMelodies.mjs.
   backfillGuideMelody(songId: String!): GuideMelodyBackfill!
@@ -436,8 +436,8 @@ type JoysoundSong {
 }
 
 # Chart categories both services publish (DAM calls ANIME "anison" and
-# WESTERN "foreign"; the resolvers translate). VTUBER and DUET are DAM-only —
-# clubdam.com charts them but joysound.com has no equivalent page — so
+# WESTERN "foreign"; the resolvers translate). VTUBER and DUET are DAM-only,
+# because clubdam.com charts them but joysound.com has no equivalent page, so
 # joysoundRanking rejects them; the remocon only offers them on the DAM page.
 enum RankingCategory {
   OVERALL
@@ -449,7 +449,7 @@ enum RankingCategory {
   DUET
 }
 
-# Chart windows both services publish. Neither archives past months —
+# Chart windows both services publish. Neither archives past months, so
 # MONTHLY is the current rolling month.
 enum RankingPeriod {
   WEEKLY
@@ -464,7 +464,7 @@ enum RankingPeriod {
 #
 # Deliberately NOT named `id`: the same song charts in multiple categories,
 # so a field literally called `id` would make Relay normalize every chart's
-# entry for that song to one shared record — and its `rank` (which differs
+# entry for that song to one shared record, and its `rank` (which differs
 # per chart) would get clobbered by whichever category query resolved last,
 # scrambling the visible ranking. A non-`id` field keeps each chart's rows
 # scoped to their own query.
@@ -491,7 +491,7 @@ type RankingArtist {
 # One entry of Oricon's karaoke chart. Unlike RankingSong there is no id of
 # any kind: Oricon is a third-party chart that spells titles and artists its
 # own way, so a row only becomes singable once it's searched for on DAM or
-# JOYSOUND. (Also keeps Relay from normalizing rows across charts — see the
+# JOYSOUND. (Also keeps Relay from normalizing rows across charts. See the
 # note on RankingSong.songId.)
 type OriconChartSong {
   rank: Int!
@@ -626,7 +626,7 @@ input QueueDamSongInput {
   streamingUrlIdx: Int!
   userIdentity: UserIdentityInput!
   # Semitone shift to start this song at, from a key suggestion. Null/absent
-  # means 0 -- the previous behaviour.
+  # means 0, the previous behaviour.
   pitchShiftSemis: Int
 }
 
@@ -642,7 +642,7 @@ input QueueJoysoundSongInput {
   # (waveform sync / end-together pad). Null means enabled.
   youtubeVideoSyncEnabled: Boolean
   # Semitone shift to start this song at, from a key suggestion. Null/absent
-  # means 0 -- the previous behaviour.
+  # means 0, the previous behaviour.
   pitchShiftSemis: Int
 }
 
@@ -656,7 +656,7 @@ input QueueYoutubeSongInput {
   captionCode: String
   gainValue: Float!
   # Semitone shift to start this song at, from a key suggestion. Null/absent
-  # means 0 -- the previous behaviour.
+  # means 0, the previous behaviour.
   pitchShiftSemis: Int
 }
 
@@ -667,7 +667,7 @@ input QueueNicoSongInput {
   playtime: Int
   userIdentity: UserIdentityInput!
   # Semitone shift to start this song at, from a key suggestion. Null/absent
-  # means 0 -- the previous behaviour.
+  # means 0, the previous behaviour.
   pitchShiftSemis: Int
 }
 
@@ -751,7 +751,7 @@ enum SongRangeProvenance {
 # nobody has played has no extracted melody, and extracting one costs an ogg
 # fetch plus an ffmpeg decode (~8s). That is fine once per song someone opens,
 # and unacceptable per row of a search list, so list surfaces ask for cached
-# ranges only. Callers show nothing at all when this is UNAVAILABLE -- absence
+# ranges only. Callers show nothing at all when this is UNAVAILABLE. Absence
 # of a suggestion is the same as having no opinion, which is the truth.
 type SongVocalRangeResult {
   range: SongVocalRange
@@ -779,7 +779,7 @@ type SongFit {
   # True when the song already sits nicely, in the octave the singer would
   # naturally take it in. False simply means "no comment".
   comfortable: Boolean!
-  # A semitone shift that would be easier on the voice, or null -- which is the
+  # A semitone shift that would be easier on the voice, or null, which is the
   # common answer. Null when the song already fits, when no shift meaningfully
   # helps, or when the best shift still wouldn't land well. Never a nag.
   suggestedShiftSemis: Int
@@ -806,7 +806,7 @@ type KaraokeChannel {
 }
 
 # One playable karaoke render found on such a channel. Queued through the
-# ordinary YouTube path -- these are YouTube videos, just ones we can read --
+# ordinary YouTube path, since these are YouTube videos, just ones we can read,
 # so there is no KaraokeQueueItem; the parsed name/artist ride along to the
 # queue so the history doesn't fill up with raw video titles.
 type KaraokeChannelSong {
@@ -832,7 +832,7 @@ type KaraokeChannelSong {
 # Not a connection (no cursors): one page is all YouTube's channel search
 # gives. `unavailableChannels` carries the labels of channels that didn't
 # answer, so one rate-limited channel shows a notice instead of failing the
-# whole search -- the same bargain the merged DAM/JOYSOUND search makes.
+# whole search, the same bargain the merged DAM/JOYSOUND search makes.
 type KaraokeChannelSongs {
   songs: [KaraokeChannelSong!]!
   unavailableChannels: [String!]!
@@ -869,7 +869,7 @@ enum SongSource {
 
 # A row in a merged search. `id` is source-qualified ("DAM:1234") because
 # Relay normalizes its store by type+id and the two catalogs hand out
-# overlapping numeric ids — same-id rows from the two services would otherwise
+# overlapping numeric ids. Same-id rows from the two services would otherwise
 # collapse into one record and render as duplicates of whichever arrived last.
 # `songId` is the raw service id the routes and mutations want.
 type SearchedSong {
@@ -1003,7 +1003,7 @@ type NicoQueueItem implements QueueItemInterface {
 # special handling anywhere in the queue. Carries its own generated reference
 # melody (sustained tones walking outward from a centre) rather than fetching
 # anything, and plays against a silent generated video that exists only to give
-# the renderer a media clock -- everything downstream of Player keys off
+# the renderer a media clock. Everything downstream of Player keys off
 # <video>.currentTime, and the queue only advances on its media events.
 type TuningQueueItem implements QueueItemInterface {
   songId: String!
@@ -1021,7 +1021,8 @@ type TuningQueueItem implements QueueItemInterface {
   # Nullable purely to match DamQueueItem/JoysoundQueueItem: Relay rejects a
   # union whose members give the same field name different nullability, since
   # every member is selected into one response shape. It is never actually null
-  # here -- the exercise is generated at queue time and cannot fail to exist.
+  # here, since the exercise is generated at queue time and cannot fail to
+  # exist.
   scoringData: [Int!]
   # The parameters it was generated from, so the renderer can rebuild the exact
   # target list to measure against without re-deriving it from the blob.
@@ -1072,7 +1073,7 @@ type YoutubeVideoInfo implements VideoInfo {
   title: String!
   viewCount: Int!
   gainValue: Float!
-  # False when YouTube's metadata region-locks the video out of the US —
+  # False when YouTube's metadata region-locks the video out of the US, where
   # an embedded preview on a non-VPN phone would show "Video unavailable"
   # (the download still works; it runs on the VPN'd host). Null = unknown.
   availableInUs: Boolean

@@ -9,8 +9,8 @@ import * as styles from "./JoinPage.module.scss";
 // Deliberately `window.location.origin` rather than the synced `hostname`
 // setting: this page is served from an address the holder's phone is
 // demonstrably able to reach, so it cannot be misconfigured the way reading
-// an address off the TV can. (The TV's own QR does use the synced hostname —
-// it has no other way to know which of its interfaces to advertise.)
+// an address off the TV can. (The TV's own QR does use the synced hostname,
+// since it has no other way to know which of its interfaces to advertise.)
 export default function JoinPage() {
   const joinUrl = window.location.origin;
   const [dataUrl, setDataUrl] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export default function JoinPage() {
     <div className={styles.page}>
       <div className={styles.title}>Join karafriends</div>
       <div className={styles.blurb}>
-        Have them point their camera at this code — it opens the same remocon on
+        Have them point their camera at this code. It opens the same remocon on
         their phone.
       </div>
       <div className={styles.codePlate}>

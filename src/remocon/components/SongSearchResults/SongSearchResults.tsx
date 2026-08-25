@@ -115,7 +115,7 @@ const SongSearchResults = ({ query, initialSource = null }: Props) => {
         <span>
           {edges.length === 0
             ? "No results found"
-            : `No ${effectiveSource} results among the ones loaded — try More.`}
+            : `No ${effectiveSource} results among the ones loaded. Try More.`}
         </span>
       ) : (
         <List>

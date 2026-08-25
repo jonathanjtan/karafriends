@@ -56,7 +56,7 @@ export interface RankingMonth {
 
 // Mirrors the RankingCategory / RankingPeriod GraphQL enums. Both services
 // publish 100-entry weekly and monthly charts for most categories (neither
-// archives past months — "monthly" is the current rolling month) — except
+// archives past months, so "monthly" is the current rolling month), except
 // VTUBER and DUET, which clubdam.com charts but joysound.com doesn't publish
 // at all (confirmed 404 on both /ranking/vtuber/ and /ranking/duet/ style
 // paths), so those two are DAM-only.
@@ -87,7 +87,7 @@ function isJoysoundCategory(
 }
 
 // DAM's overall chart lives on /ranking/ with differently-named section ids
-// than the per-genre pages (weekly-ranking vs ranking-weekly — really). DUET
+// than the per-genre pages (weekly-ranking vs ranking-weekly, really). DUET
 // is also rooted at /ranking/ (not /genre/) but its page happens to carry
 // both id spellings, so either works; VTUBER is a normal /genre/ page.
 const DAM_GENRE_PATHS: {
@@ -141,7 +141,7 @@ function damRankingSource(
   };
 }
 
-// Plain-browser UA — both sites serve the scraped markup to regular
+// Plain-browser UA. Both sites serve the scraped markup to regular
 // browsers; no reason to advertise a headless client instead.
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0";
@@ -169,7 +169,7 @@ async function fetchPage(url: string): Promise<string> {
   return resp.text();
 }
 
-// Oricon serves Shift_JIS, unlike joysound.com and clubdam.com — resp.text()
+// Oricon serves Shift_JIS, unlike joysound.com and clubdam.com, and resp.text()
 // would mangle every Japanese title, so its pages are decoded explicitly.
 // The final URL comes back too: the dateless weekly URL redirects to the
 // newest week, and that's how we learn which week we got.
@@ -221,7 +221,7 @@ function decodeHtmlEntities(str: string): string {
 // ItemList: { itemListElement: [{ position, item: { name, byArtist: { name },
 // url: ".../web/search/song/<id>" } }] }. NOTE: that id is joysound.com's
 // own web catalog id, NOT the sound-cafe.jp selSongNo the app plays through
-// (e.g. 残酷な天使のテーゼ is 9629 on the web but selSongNo 9630) — so the
+// (e.g. 残酷な天使のテーゼ is 9629 on the web but selSongNo 9630), so the
 // parse keeps name/artist only and the id is resolved separately against the
 // sound-cafe search API.
 interface JoysoundChartEntry {
@@ -269,7 +269,7 @@ function parseJoysoundRanking(html: string): JoysoundChartEntry[] {
 // clubdam.com pages carry several top-100 sections in one page (the overall
 // /ranking/ page has daily/weekly/monthly, genre pages weekly/monthly with a
 // teaser + full-list copy of the same chart); each entry <li> holds a
-// songleaf link (requestNo — the same id dkwebsys search results use), an
+// songleaf link (requestNo, the same id dkwebsys search results use), an
 // <h4 class="p-song__title"> and a <div class="p-song__artist">. Slice from
 // the wanted section id to the next section container and dedupe repeats.
 function parseDamRanking(html: string, sectionId: string): RankingSongEntry[] {
@@ -304,7 +304,7 @@ function parseDamRanking(html: string, sectionId: string): RankingSongEntry[] {
 
 // JOYSOUND's artist ranking is the same JSON-LD ItemList shape as the song
 // charts, but the items are MusicGroup nodes whose url is
-// /web/search/artist/<id>. That id — unlike the song web ids — IS the
+// /web/search/artist/<id>. That id, unlike the song web ids, IS the
 // sound-cafe artist id the app's artist pages use, so it's taken directly.
 function parseJoysoundArtistRanking(html: string): RankingArtistEntry[] {
   const entries: RankingArtistEntry[] = [];
@@ -345,7 +345,7 @@ function parseJoysoundArtistRanking(html: string): RankingArtistEntry[] {
 
 // DAM's artist chart (/ranking/artist/) reuses the song-list markup, but each
 // <li> links to artistleaf?artistCode=<id> (the dkwebsys artist id the app's
-// DAM artist pages use) and carries only <h4 class="p-song__title"> — no
+// DAM artist pages use) and carries only <h4 class="p-song__title">, with no
 // artist sub-line, since the title *is* the artist.
 function parseDamArtistRanking(
   html: string,
@@ -505,15 +505,14 @@ async function resolveJoysoundEntry(
 }
 
 // Charts are cached to disk (like reading-cache.json) so the expensive first
-// fetch — JOYSOUND resolves ~100 songs against the search API — is paid once
-// and survives relaunches. A cached chart stays fresh for the whole period
+// fetch, where JOYSOUND resolves ~100 songs against the search API, is paid
+// once and survives relaunches. A cached chart stays fresh for the whole period
 // window it belongs to (a weekly chart until the calendar week rolls over, a
-// monthly chart until the month does), matching how often the sources
-// actually change; a stale chart is refetched but served from cache in the
-// meantime if the refetch fails.
-// Entries are one of the ranking shapes (songs, artists) or the month list;
-// the cache is generic and the on-disk JSON is shape-agnostic, so all of them
-// share one persisted file keyed by service:kind:params.
+// monthly chart until the month does), matching how often the sources actually
+// change; a stale chart is refetched but served from cache in the meantime if
+// the refetch fails. Entries are one of the ranking shapes (songs, artists) or
+// the month list; the cache is generic and the on-disk JSON is shape-agnostic,
+// so all of them share one persisted file keyed by service:kind:params.
 interface CachedRanking {
   fetchedAt: number;
   entries: unknown[];
@@ -542,7 +541,7 @@ function loadRankingCache(): void {
       }
     }
   } catch {
-    // No cache yet (or corrupt / unreadable) — start empty.
+    // No cache yet (or corrupt / unreadable), so start empty.
   }
 }
 
@@ -582,7 +581,7 @@ export function flushRankingCacheOnShutdown(): void {
   }
 }
 
-// Monday-anchored week key (local time) — two dates in the same week share
+// Monday-anchored week key (local time), so two dates in the same week share
 // it, sidestepping ISO week-number/year-boundary edge cases.
 function periodBucket(date: Date, period: RankingPeriod): string {
   if (period === "MONTHLY") {
@@ -602,7 +601,7 @@ function isFresh(cached: CachedRanking, period: RankingPeriod): boolean {
 }
 
 // Serve from disk cache while the period window holds; otherwise scrape,
-// persist, and return — but if a stale refresh fails, fall back to the stale
+// persist, and return. If a stale refresh fails, fall back to the stale
 // entries rather than erroring (an old chart beats none). Only a cold-cache
 // failure propagates so the remocon can show a retry.
 function withRankingCache<T>(
@@ -658,8 +657,8 @@ export function getJoysoundRanking(
         await fetchPage(joysoundRankingUrl(category, period, month)),
       ).slice(0, 100);
 
-      // An empty parse means the page layout changed, not an empty chart —
-      // surface it as an error so the remocon shows a retry instead of a
+      // An empty parse means the page layout changed, not an empty chart, so
+      // surface it as an error and the remocon shows a retry instead of a
       // blank-but-successful page.
       if (chart.length === 0) {
         throw new Error(
@@ -672,9 +671,9 @@ export function getJoysoundRanking(
       );
 
       // No-match entries are expected (catalog gaps) and cacheable, but if
-      // every catalog lookup errored the whole result is garbage — throw so it
-      // isn't persisted and the next visit retries instead of pinning a fully
-      // unclickable chart for the period.
+      // every catalog lookup errored the whole result is garbage, so throw and
+      // it isn't persisted and the next visit retries instead of pinning a
+      // fully unclickable chart for the period.
       if (entries.every((entry) => entry.searchFailed)) {
         throw new Error("All JOYSOUND ranking catalog lookups failed");
       }
@@ -753,7 +752,7 @@ export function getDamArtistRanking(
   );
 }
 
-// Oricon's chart pages — weekly and yearly alike — render each entry as a
+// Oricon's chart pages, weekly and yearly alike, render each entry as a
 // <section class="box-rank-entry"> holding the rank, title and artist. No
 // catalog ids anywhere: it's a third-party chart, so rows are mapped onto
 // singable songs later, by search.
@@ -786,18 +785,18 @@ function parseOriconRanking(html: string): OriconChartEntry[] {
   return entries;
 }
 
-// Oricon publishes karaoke charts weekly and yearly only — there is no
+// Oricon publishes karaoke charts weekly and yearly only. There is no
 // /rank/ko/m/ monthly page (404). Past years are paywalled and immutable, so
 // they're a static table in common/oriconChart.ts; only the current week has
 // to be fetched. The dateless /rank/ko/w/ redirects to the newest week, so
-// this needs no date arithmetic — which week we landed on is read back off
+// this needs no date arithmetic. Which week we landed on is read back off
 // the final URL.
 //
-// The weekly chart is a Top 20 split over two pages (…/ and …/p/2/), unlike
-// the yearly one, which really is a Top 10 — /y/<year>/p/2/ 404s. Page 2 is
+// The weekly chart is a Top 20 split over two pages (…/ and …/p/2/), unlike the
+// yearly one, which really is a Top 10, since /y/<year>/p/2/ 404s. Page 2 is
 // best-effort: a chart of 10 beats erroring out of the whole thing.
 //
-// Cached with weekly freshness, so this is two fetches per calendar week —
+// Cached with weekly freshness, so this is two fetches per calendar week,
 // which is what keeps a rate-limit-happy site at arm's length.
 export function getOriconWeeklyRanking(): Promise<OriconWeeklyChart> {
   return withRankingCache<OriconWeeklyChart>(
@@ -872,11 +871,11 @@ const ALL_PERIODS: RankingPeriod[] = ["WEEKLY", "MONTHLY"];
 // background so a chart is already resolved by the time someone opens the
 // page. Runs sequentially and best-effort: withRankingCache short-circuits
 // fresh entries (so a warm launch does almost nothing), and each fetch is
-// guarded so one failure neither stops the sweep nor — critically — escapes
-// as an unhandled rejection (which would take the whole app down).
+// guarded so one failure neither stops the sweep nor, critically, escapes as
+// an unhandled rejection (which would take the whole app down).
 //
 // `onEntries` (if given) is handed each resolved chart's entries so the caller
-// can enrich them out-of-band — used to prime DAM's canonical readings for the
+// can enrich them out-of-band, used to prime DAM's canonical readings for the
 // chart rows, which the scrapes themselves don't carry. It must not throw; it
 // runs inside the guarded sweep but is otherwise fire-and-forget.
 export function primeRankings(
@@ -912,7 +911,7 @@ export function primeRankings(
           );
       }
 
-      // Artist charts (current month only — past-month archives on demand).
+      // Artist charts (current month only; past-month archives on demand).
       await getDamArtistRanking(period)
         .then((entries) => onArtistEntries?.(entries))
         .catch((error) =>

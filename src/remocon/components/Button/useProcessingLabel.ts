@@ -4,7 +4,7 @@ const ELLIPSIS_INTERVAL_MS = 400;
 const MAX_DOTS = 3;
 
 // Terminal/static states (errors, ETAs, percentages that already convey
-// motion on their own) shouldn't get the animated ellipsis - only the
+// motion on their own) shouldn't get the animated ellipsis. Only the
 // "something is happening, no other feedback yet" states should.
 function isProcessing(text: string, defaultText: string): boolean {
   return (

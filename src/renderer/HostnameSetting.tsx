@@ -6,7 +6,7 @@ import useHostname from "../common/hooks/useHostname";
 import "./global";
 
 // The addresses this machine can be reached on. Renderer-side because the
-// list comes from the preload's `ipAddresses()` — the *selected* value is a
+// list comes from the preload's `ipAddresses()`. The *selected* value is a
 // synced setting (see useHostname), but which interfaces exist is a property
 // of whichever machine is running the big screen.
 function hostnameOptions(): Map<string, string> {
@@ -30,7 +30,7 @@ export default function HostnameSetting() {
 
   // Whatever the server says is current always has to be selectable, even if
   // it isn't one of this machine's addresses right now (a value saved on a
-  // network we're no longer on, say) — otherwise the <select> would show a
+  // network we're no longer on, say). Otherwise the <select> would show a
   // different address than the QR codes actually encode.
   const entries = Array.from(options);
   if (hostname !== "" && !entries.some(([, value]) => value === hostname)) {
@@ -38,7 +38,7 @@ export default function HostnameSetting() {
   }
 
   // The synced hostname arrives after the first render, and materialize's
-  // FormSelect copies the native <select> into its own DOM at init time — so
+  // FormSelect copies the native <select> into its own DOM at init time, so
   // it has to be re-initialised whenever the value changes, or the dropdown
   // keeps displaying whatever was selected before the fetch landed.
   useEffect(() => {

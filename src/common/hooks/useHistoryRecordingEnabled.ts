@@ -34,8 +34,8 @@ const historyRecordingEnabledSubscription = graphql`
 // whether this is a packaged build (main's DEFAULT_HISTORY_RECORDING): parties
 // run the packaged app and development doesn't, so testing a download or a sync
 // fix doesn't quietly fill the history with songs nobody sang. Overridable at
-// runtime for the two cases that cross the split -- testing on a packaged
-// build, demoing from a dev one -- and re-derived every launch, so an override
+// runtime for the two cases that cross the split, testing on a packaged build
+// and demoing from a dev one, and re-derived every launch, so an override
 // can't outlive the session that wanted it.
 //
 // A discrete toggle, so commits go out immediately (no debounce), matching

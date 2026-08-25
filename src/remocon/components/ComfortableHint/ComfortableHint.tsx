@@ -11,8 +11,8 @@ import { ComfortableHintQuery } from "./__generated__/ComfortableHintQuery.graph
 // can say: "this should sit comfortably", or "-2 would be easier on your
 // voice". There is no "too high", no warning, no discouragement, and no state
 // that suggests somebody shouldn't sing something. Rendering nothing is the
-// common case and always an acceptable one -- no measured range, no cached song
-// range, an unremarkable fit, they all collapse to the same silence.
+// common case and always an acceptable one. No measured range, no cached song
+// range, an unremarkable fit: they all collapse to the same silence.
 //
 // It never replaces or disables the normal queue button; it sits beside it.
 const comfortableHintQuery = graphql`

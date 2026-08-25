@@ -51,7 +51,7 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
   // An embedded player shows a bare "Video unavailable" when the video is
   // region-locked out of the US (phones usually aren't on the VPN), when the
   // uploader disabled embedding, or when the device trips a restriction the
-  // host didn't see — fall back to the thumbnail instead. None of that affects
+  // host didn't see. Fall back to the thumbnail instead. None of that affects
   // the actual karaoke playback: the download runs on the (VPN'd) host.
   const { canEmbed, unembeddableReason, showThumbnailsInstead } =
     useYouTubeEmbed(
@@ -93,7 +93,7 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
             />
           )}
           {/* YouTube auto-generates stills at 25/50/75% of every video at
-              predictable URLs — a quick way to check the content without
+              predictable URLs, a quick way to check the content without
               scrubbing through it. */}
           <div className={styles.stills}>
             {[1, 2, 3].map((n) => (
@@ -113,9 +113,9 @@ const JoysoundYouTubeInfo = ({ videoId, setYoutubeVideoId }: Props) => {
             </button>
           ) : (
             <p>
-              {unembeddableReason &&
-                UNEMBEDDABLE_REASON_TEXT[unembeddableReason]}{" "}
-              — but it will still work as the background video.
+              {unembeddableReason
+                ? `${UNEMBEDDABLE_REASON_TEXT[unembeddableReason]}, but it will still work as the background video.`
+                : "It will still work as the background video."}
             </p>
           )}
         </>

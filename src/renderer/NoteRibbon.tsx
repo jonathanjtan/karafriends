@@ -8,14 +8,14 @@ import { InstrumentalBreak } from "../common/scoringData";
 // The performance replayed as a note chart: one mark per reference note, pitch
 // on the vertical, time across, coloured by how well it landed. The point is
 // that it's the same shape the singer just spent four minutes watching scroll
-// past on the piano roll, so it reads without a legend -- where the good
-// singing was is visible before any number is.
+// past on the piano roll, so it reads without a legend. Where the good singing
+// was is visible before any number is.
 //
 // Canvas rather than SVG: a song is 200-900 notes, and this is generative
 // drawing rather than markup worth putting in the DOM.
 
 // Credit at or above this is a hit, above the next is close, below is missed.
-// Matches nothing in scoring.ts on purpose -- these are display buckets for a
+// Matches nothing in scoring.ts on purpose. These are display buckets for a
 // continuous value, not thresholds the score depends on.
 const HIT_CREDIT = 0.75;
 const CLOSE_CREDIT = 0.45;

@@ -69,7 +69,7 @@ const SongQueueItem = ({
     // personId is the real owner key; the nickname/deviceId comparison is the
     // fallback for items queued before the registry existed. (It used to
     // compare the item's deviceId against *our nickname*, which never
-    // matched — supervised mode was leaning entirely on the name.)
+    // matched, so supervised mode was leaning entirely on the name.)
     const itemOwnedByUser =
       identity.personId && item.userIdentity!.personId
         ? item.userIdentity!.personId === identity.personId

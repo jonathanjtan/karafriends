@@ -6,7 +6,7 @@
 // in the temp dir, which macOS sweeps by age (~3 days untouched) rather than
 // only on reboot. That is how the original 29-take corpus was lost. Melodies
 // are mirrored to <userData>/melodies/ now, but anything extracted before that
-// has to be re-fetched -- which needs the song's audio, not another
+// has to be re-fetched, which needs the song's audio, not another
 // performance. Nobody has to sing again.
 //
 // Drives the running app rather than reimplementing anything: the
@@ -68,8 +68,8 @@ function parseArgs() {
   return out;
 }
 
-// The packaged app and `run-dev` keep separate userData dirs -- the dev one is
-// named after the Electron executable -- so anything written there lands in a
+// The packaged app and `run-dev` keep separate userData dirs, the dev one
+// named after the Electron executable, so anything written there lands in a
 // different place depending on which build produced it. Both are searched; the
 // packaged one comes first because that is where real parties write.
 function userDataDirs() {
@@ -104,7 +104,7 @@ const isCached = (songId) =>
   );
 
 // songIds in the order they were first sung, so a partial run covers the
-// oldest takes first -- those are the ones whose melodies have expired.
+// oldest takes first. Those are the ones whose melodies have expired.
 function songIdsFromLogs(logTarget) {
   const files = fs.statSync(logTarget).isDirectory()
     ? fs

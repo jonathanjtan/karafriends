@@ -9,7 +9,7 @@ type Props =
   KaraokeChannelSearchResultsQuery$data["karaokeChannelSongs"]["songs"][0];
 
 // These rows are YouTube videos, so they open the YouTube page and queue
-// through the ordinary YouTube path -- no new detail route, no new mutation.
+// through the ordinary YouTube path, with no new route and no new mutation.
 // The parsed song and artist ride along in router state: without them the
 // queue and the song history record the raw video title ("[TJ노래방] 하루하루
 // - 빅뱅(BIGBANG) / TJ Karaoke") as the song name, which is exactly the mess

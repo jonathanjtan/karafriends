@@ -116,7 +116,7 @@ const JoysoundQueueButton = ({
             ) => {
               // The server keeps the download-queue entry alive until the
               // song actually lands in the queue, so -1 (no entry) means
-              // done - and 100% means the raw download finished but the
+              // done, and 100% means the raw download finished but the
               // intro-sync + compositing steps are still running.
               if (data.videoDownloadProgress.progress === -1.0) {
                 setText("Finished Downloading");
@@ -124,7 +124,7 @@ const JoysoundQueueButton = ({
                 setText("Processing video");
               } else {
                 setText(
-                  `Downloading -- ${(
+                  `Downloading ${(
                     data.videoDownloadProgress.progress * 100
                   ).toFixed(1)}%`,
                 );
@@ -173,7 +173,7 @@ const JoysoundQueueButton = ({
       },
       onCompleted: (response) => {
         // A resolver error nulls out the whole payload while onCompleted
-        // still fires - don't destructure it blindly.
+        // still fires, so don't destructure it blindly.
         const queueJoysoundSong = response?.queueJoysoundSong;
 
         switch (queueJoysoundSong?.__typename) {

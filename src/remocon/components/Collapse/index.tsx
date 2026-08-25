@@ -12,7 +12,7 @@ interface Props {
   // settings panel under the nav bar), "up" rises from the bottom edge (e.g.
   // the queue above the control bar).
   direction: "down" | "up";
-  // Positions the clipping wrapper (typically position: fixed) — the drawer
+  // Positions the clipping wrapper (typically position: fixed). The drawer
   // overlays the page instead of pushing content around.
   className: string;
   children: React.ReactNode;
@@ -39,8 +39,8 @@ const Collapse = ({ open, direction, className, children }: Props) => {
   }, [open]);
 
   // Once the drawer is mounted, force a synchronous style flush so the
-  // browser registers the off-screen transform before the open class lands —
-  // otherwise the transition has no start point and the drawer snaps open.
+  // browser registers the off-screen transform before the open class lands.
+  // Otherwise the transition has no start point and the drawer snaps open.
   // (rAF-based deferral is not reliable for this: depending on where in the
   // frame cycle the triggering click lands, the callbacks can coalesce into
   // the same paint and skip the animation.)

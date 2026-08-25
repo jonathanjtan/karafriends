@@ -47,7 +47,7 @@ function getSubscriptionUrl(): string {
 
 // Fired on window whenever the subscription websocket (re)connects, so
 // synced-setting hooks can refetch values that changed while disconnected.
-// Without this — and without infinite retries — a client left open across a
+// Without this, and without infinite retries, a client left open across a
 // server restart exhausted graphql-ws's default 5 retry attempts (~30s of
 // backoff, less than a dev rebuild), permanently lost its subscriptions, and
 // displayed stale state until a manual reload.
@@ -60,7 +60,7 @@ const subscriptionClient = createClient({
   // graphql-ws's default retry wait is uncapped exponential backoff, so a
   // server that takes a while to come up (kuromoji dictionary load at
   // launch, a dev rebuild) could strand clients in a minutes-long gap
-  // between attempts — subscriptions (and the WS_RECONNECTED refetch that
+  // between attempts. Subscriptions (and the WS_RECONNECTED refetch that
   // rescues stale settings) stayed dead the whole time. Cap the wait so
   // clients reconnect within seconds of the server being ready.
   retryWait: async (retries) => {

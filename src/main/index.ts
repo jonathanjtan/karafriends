@@ -15,8 +15,8 @@ const nativeAudio = require(fileURLToPath(nativeAudioUrl)); // tslint:disable-li
 function handleError(err: unknown) {
   console.error("Fatal error:", err);
   // The old `await Sentry.close(...)` incidentally gave stderr time to drain
-  // before exiting. `console.error` to a pipe — which is what `run-dev` has,
-  // via concurrently — is async, so exiting in the same tick can truncate the
+  // before exiting. `console.error` to a pipe, which is what `run-dev` has via
+  // concurrently, is async, so exiting in the same tick can truncate the
   // message that is now the only record of a fatal error. Give it a tick.
   setTimeout(() => process.exit(1), 100);
 }
@@ -29,7 +29,7 @@ process.on("unhandledRejection", handleError);
 // SIGINT handling exits immediately without draining pending debounce
 // timers, so any reading/ranking cache entries resolved in the last
 // debounce window (or a whole in-flight primeRankings sweep) never reached
-// disk — and got re-searched against DAM/JOYSOUND on the very next launch.
+// disk, and got re-searched against DAM/JOYSOUND on the very next launch.
 // Flush synchronously before exiting so restarts actually see prior work.
 function flushCachesAndExit() {
   flushReadingCacheOnShutdown();
@@ -145,7 +145,7 @@ function createSettingsPanelWindow() {
     // Always framed, even in the fullscreen production build: this window
     // exists to be moved to a second display and closed again.
     frame: true,
-    title: "karafriends — Settings",
+    title: "karafriends Settings",
     width: 420,
     height: 900,
     minWidth: 260,
@@ -174,7 +174,7 @@ function createQrPanelWindow() {
     // Framed even in the fullscreen production build: the point of this
     // window is to be dragged to a second display and left there.
     frame: true,
-    title: "karafriends — Join",
+    title: "karafriends Join",
     width: 480,
     height: 620,
     minWidth: 240,
@@ -233,7 +233,7 @@ function createWindow() {
     // Technically should await this promise
 
     // session.setProxy only covers Chromium's network stack. ffmpeg is
-    // *spawned*, so the one thing it can inherit is http_proxy -- and
+    // *spawned*, so the one thing it can inherit is http_proxy, and
     // downloadDamVideo deliberately passes no `env:` of its own, so setting it
     // here is what routes DAM's CDN through the proxy. youtubeSpawnEnv() and
     // the Niconico path strip it back out, keeping YouTube on the real IP
@@ -345,12 +345,12 @@ function createWindow() {
 
   // Append a batch of latency-probe sample lines to a per-day log under the
   // app's own data dir (next to config.yaml), so scoring calibration data can
-  // be collected from the packaged app just by turning pitchProbeEnabled on --
-  // no terminal or stdout capture needed (a Finder-launched .app has nowhere to
-  // tee). userData rather than a temp dir so a night's captures survive an OS
-  // temp sweep. The renderer only sends batches while the flag is on.
-  // Best-effort: a failed write is logged and dropped, never thrown across the
-  // boundary.
+  // be collected from the packaged app just by turning pitchProbeEnabled on,
+  // with no terminal or stdout capture needed (a Finder-launched .app has
+  // nowhere to tee). userData rather than a temp dir so a night's captures
+  // survive an OS temp sweep. The renderer only sends batches while the flag is
+  // on. Best-effort: a failed write is logged and dropped, never thrown across
+  // the boundary.
   ipcMain.on("append-probe-log", (_event, lines: string[]) => {
     if (!Array.isArray(lines) || lines.length === 0) return;
     try {

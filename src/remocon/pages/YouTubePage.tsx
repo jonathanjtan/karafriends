@@ -62,7 +62,7 @@ const YouTubePage = () => {
 
   // A row from the karaoke-channel search arrives with the song and artist
   // already parsed out of the video title, and those are what should land in
-  // the queue -- "Mr. Brightside" by "The Killers", not "The Killers - Mr.
+  // the queue: "Mr. Brightside" by "The Killers", not "The Killers - Mr.
   // Brightside (Karaoke Version)". Pasting a different URL into the form
   // below drops them: they described the video we navigated in with.
   const routedSong = location.state as {

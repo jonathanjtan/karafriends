@@ -4,7 +4,7 @@
 // Replaces `parcel serve` in run-dev. `parcel serve` runs its own in-memory
 // HMR build that, with multiple browser targets, hoists bundles to the server
 // root and serves an index/asset layout inconsistent with the on-disk
-// `parcel build` output — which whitescreens the remocon behind the
+// `parcel build` output, which whitescreens the remocon behind the
 // `/remocon/`-prefixing reverse proxy. Serving the already-built, self-
 // consistent `build/dev/{remocon,renderer}/*` files (produced with
 // `--public-url .`) sidesteps that entirely. `parcel build --watch` keeps the
@@ -67,7 +67,7 @@ const server = http.createServer((req, res) => {
       filePath = path.join(filePath, "index.html");
     }
   } catch {
-    // stat failed (missing) — fall through to the read error below.
+    // stat failed (missing), so fall through to the read error below.
   }
 
   fs.readFile(filePath, (err, data) => {

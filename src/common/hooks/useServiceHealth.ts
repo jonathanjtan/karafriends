@@ -39,7 +39,7 @@ export interface ServiceHealthState {
 // `onTransition` fires whenever reachability flips healthy⇄unhealthy, so a
 // surface can announce it (the big screen toasts the room). It's opt-in
 // because the renderer bundle runs in two windows and the remocon in as many
-// phones as there are guests — they'd otherwise all announce the same flip.
+// phones as there are guests, and they'd otherwise all announce the same flip.
 export default function useServiceHealth({
   onTransition,
 }: {

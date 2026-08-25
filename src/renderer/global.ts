@@ -19,7 +19,7 @@ declare global {
         send(message: unknown): void;
         subscribe(callback: (message: unknown) => void): () => void;
       };
-      // Window control for the popped-out join-QR window. No bus — it reads
+      // Window control for the popped-out join-QR window. No bus. It reads
       // the hostname over GraphQL like any other synced setting.
       qrPanel: {
         open(): void;
@@ -30,7 +30,7 @@ declare global {
         outputDevices: () => string[];
         inputDevice_new: (name: string, channelSelection: number) => number;
         inputDevice_delete: (deviceId: number) => void;
-        // Every reading since the last call, oldest first -- the analysis hop
+        // Every reading since the last call, oldest first. The analysis hop
         // (10ms) is finer than the caller's poll interval, so a poll collects a
         // batch rather than a value. Empty when less than one window has
         // arrived.

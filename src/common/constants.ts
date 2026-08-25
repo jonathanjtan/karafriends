@@ -22,14 +22,14 @@ export const PIANO_ROLL_LOOKAHEAD_SECS =
 // discarded while the Pitch Gate setting is on. Singing into a properly
 // gained mic runs around -20..-12 dBFS RMS, while a mixer's FX-return bleed
 // on an idle channel sits well below its dry source. The pitch detector is
-// amplitude-invariant, so this floor — not confidence — is what separates
+// amplitude-invariant, so this floor, not confidence, is what separates
 // the two.
 //
 // The working value is the synced micRmsGateThreshold setting rather than a
 // constant, because no single number is right for every room: how far the
 // bleed sits below the dry signal depends on the mixer's gain staging and on
 // how much FX send is up, and it can only be judged with people actually
-// singing — which a packaged app can't be rebuilt to do mid-session.
+// singing, which a packaged app can't be rebuilt to do mid-session.
 // The bounds run from -46 dBFS (barely above a quiet room) to -16.5 dBFS,
 // which is already inside normal singing level: past that you gate the
 // singer, not the bleed.

@@ -10,13 +10,13 @@ import { SongSearchResults_searchSongs$data } from "./__generated__/SongSearchRe
 type Props =
   SongSearchResults_searchSongs$data["searchSongs"]["edges"][0]["node"] & {
     // True only when this song would sit nicely for whoever is holding the
-    // phone. There is deliberately no falsy counterpart to render -- false and
+    // phone. There is deliberately no falsy counterpart to render. False and
     // "we have no idea" are the same thing here, and both show nothing.
     comfortable?: boolean;
   };
 
-// The two catalogs' song pages are separate routes — they queue through
-// different mutations and only JOYSOUND takes a background MV — so a merged
+// The two catalogs' song pages are separate routes. They queue through
+// different mutations and only JOYSOUND takes a background MV, so a merged
 // row still opens its own service's page. `songId` rather than `id` because
 // `id` is source-qualified for Relay's benefit (see schema.graphql).
 const SongSearchResultsItem = ({

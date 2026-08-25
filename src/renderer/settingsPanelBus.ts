@@ -3,7 +3,7 @@ import "./global";
 // Messages exchanged between the big screen (<App>) and the popped-out
 // settings window (<SettingsPanel>), relayed by the main process.
 //
-// Everything else in the sidebar is a *synced setting* — it lives in the main
+// Everything else in the sidebar is a *synced setting*. It lives in the main
 // process and both surfaces reach it over GraphQL, so it needs nothing here.
 // This bus exists only for the two pieces of sidebar state that are owned by
 // the big-screen renderer process and can't be moved:
@@ -18,7 +18,7 @@ import "./global";
 // renders whatever snapshot comes back.
 //
 // The hostname used to travel over here too. It's a synced setting now, so
-// windows that only need *it* (the QR window) need no relay at all — which is
+// windows that only need *it* (the QR window) need no relay at all, which is
 // the whole reason it moved.
 
 export interface MicSelection {

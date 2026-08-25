@@ -11,7 +11,7 @@ type ArtistSearchParams = {
 };
 
 interface Props {
-  // See SongSearchPage — the service-specific routes land here with the
+  // See SongSearchPage. The service-specific routes land here with the
   // catalog preselected.
   initialSource?: SearchSource | null;
   routeBase?: string;
@@ -26,7 +26,7 @@ const ArtistSearchPage = ({
 
   return (
     <SearchFormWrapper>
-      {/* Names both catalogs — see SongSearchPage. */}
+      {/* Names both catalogs. See SongSearchPage. */}
       <h2>Search JOYSOUND/DAM by artist name</h2>
       <DebouncedInput
         period={500}

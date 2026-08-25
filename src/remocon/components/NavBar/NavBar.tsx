@@ -26,13 +26,13 @@ const NavBar = () => {
   const { deviceId, personId, profilePictureUrl, profilePictureFrame } =
     useUserIdentity();
   // The handed-around-phone case: tap the avatar, become yourself, queue,
-  // hand it back. Not persisted like the settings drawer — switching is a
+  // hand it back. Not persisted like the settings drawer. Switching is a
   // one-off action, not a mode you leave open.
   const [showAccounts, setShowAccounts] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState<boolean>(
     () => localStorage.getItem(DARK_MODE_STORAGE_KEY) === "true",
   );
-  // Persisted so the settings panel stays collapsed across reloads — during
+  // Persisted so the settings panel stays collapsed across reloads. During
   // regular operation the phone should just show the queue, not the panel.
   const [showSettings, _setShowSettings] = useState<boolean>(
     () => localStorage.getItem(SHOW_SETTINGS_STORAGE_KEY) === "true",

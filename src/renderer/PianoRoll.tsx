@@ -451,7 +451,7 @@ class PitchDetectionBuffer {
 }
 
 // The roll's default vertical window: 18 rows behind the canvas, and notes can
-// align in-between rows, so 36 positions -- +/-18 semitones around the median.
+// align in-between rows, so 36 positions, +/-18 semitones around the median.
 // Every real song fits inside this, and it stays the exact historical geometry.
 const DEFAULT_SPAN_SEMIS = 36;
 
@@ -461,9 +461,10 @@ const DEFAULT_SPAN_SEMIS = 36;
 //
 // The guided range exercise is what needs this: it walks the whole plausible
 // vocal range (E2..C6, 44 semitones) so that nobody's measurement is cut short
-// by a preset they chose before knowing their range. At a fixed 36 its extremes
-// -- the entire point of the test -- were clipped off the top and bottom of the
-// canvas by PianoRollMidi.vert.glsl, which discards anything outside y 0..1.
+// by a preset they chose before knowing their range. At a fixed 36 its
+// extremes, the entire point of the test, were clipped off the top and bottom
+// of the canvas by PianoRollMidi.vert.glsl, which discards anything outside
+// y 0..1.
 function spanSemisFor(midiNumbers: number[], medianMidiNumber: number) {
   if (midiNumbers.length === 0) return DEFAULT_SPAN_SEMIS;
   const furthest = Math.max(
@@ -489,8 +490,8 @@ interface RollStyleVars extends React.CSSProperties {
 
 // Octave rails: which C's are visible, and where.
 //
-// The roll's vertical axis floats -- it is relative to the song's median note,
-// with no clef and no absolute reference -- so without these there is nothing
+// The roll's vertical axis floats. It is relative to the song's median note,
+// with no clef and no absolute reference, so without these there is nothing
 // on screen that says which octave anything is in. They are informational only:
 // the sung-pitch trace is still octave-folded onto the guide (that is what
 // keeps it readable), and scoring is still octave-blind on purpose, because
@@ -503,7 +504,7 @@ function octaveRails(medianMidiNumber: number, spanSemis: number) {
   const lowest = Math.ceil(medianMidiNumber - spanSemis / 2);
   const highest = Math.floor(medianMidiNumber + spanSemis / 2);
   for (let midi = lowest; midi <= highest; midi++) {
-    if (midi % 12 !== 0) continue; // C's only -- one label per octave
+    if (midi % 12 !== 0) continue; // C's only, one label per octave
     const y = midiNumberToYCoord(midi, medianMidiNumber, spanSemis);
     if (y < 0.02 || y > 0.98) continue; // would be clipped at the edge
     // y is bottom-up in GL, top-down in CSS.
@@ -534,7 +535,7 @@ export default function PianoRoll(props: {
   // meters. This has to be published from here rather than polled separately:
   // getPitch() *pops* the native ring buffer, so a second poller would steal
   // samples from this one and degrade pitch detection for everyone. A ref
-  // rather than state — it updates at 40Hz per mic and must not re-render
+  // rather than state, since it updates at 40Hz per mic and must not re-render
   // the big screen.
   micLevelsRef?: React.MutableRefObject<number[]>;
   // Gates the fade-in so the roll doesn't cover a JOYSOUND title card.
@@ -612,7 +613,7 @@ export default function PianoRoll(props: {
     return () => video.removeEventListener("timeupdate", onTimeUpdate);
     // Only what the effect actually reads. Depending on `props` wholesale
     // would re-run this on every Player render, since the props object is a
-    // fresh literal each time -- see the effect below, where that was
+    // fresh literal each time. See the effect below, where that was
     // silently wiping the sung-pitch trail mid-song.
   }, [props.scoringData, props.videoRef]);
 
@@ -620,8 +621,8 @@ export default function PianoRoll(props: {
     if (!canvasRef.current || !props.videoRef.current) return;
 
     // Read once, not per sample: the pitch-probe capture is a calibration aid,
-    // and the poll loop is hot. Toggle with config.yaml's pitchProbeEnabled --
-    // the renderer is the big-screen window, so a config flag is far easier to
+    // and the poll loop is hot. Toggle with config.yaml's pitchProbeEnabled.
+    // The renderer is the big-screen window, so a config flag is far easier to
     // reach than its devtools localStorage, and it lives beside the
     // micLatencyCalibrationMs the capture is used to set.
     const pitchProbeEnabled =
@@ -632,7 +633,7 @@ export default function PianoRoll(props: {
     // Samples are batched here and flushed via main to the per-day probe log
     // in the app's data dir (probe-logs/, beside config.yaml), rather than
     // console.logged: that way calibration data collects from the packaged app
-    // just by enabling the flag -- no terminal or stdout capture, which a
+    // just by enabling the flag, with no terminal or stdout capture, which a
     // Finder-launched .app has no way to provide.
     const probeBuffer: string[] = [];
     let probeFlushInterval: ReturnType<typeof setInterval> | null = null;
@@ -663,7 +664,7 @@ export default function PianoRoll(props: {
 
     const medianMidiNumber = median(notes.map((note) => note.midiNumber));
     // Widens only when the note set genuinely doesn't fit the historical
-    // +/-18 window -- in practice, only the guided range exercise.
+    // +/-18 window, which in practice means only the guided range exercise.
     const effectSpanSemis = spanSemisFor(
       notes.map((note) => note.midiNumber),
       medianMidiNumber,
@@ -710,7 +711,7 @@ export default function PianoRoll(props: {
       const estimates = mic.getPitches();
       if (estimates.length === 0) return;
 
-      // Publish the newest level before the gate can discard anything — the
+      // Publish the newest level before the gate can discard anything. The
       // whole point of the meter is to show what the gate is rejecting.
       const newest = estimates[estimates.length - 1];
       if (props.micLevelsRef && typeof newest.rms === "number") {
@@ -762,7 +763,7 @@ export default function PianoRoll(props: {
             `PROBE_PITCH ${probeSongId} ${sampleTime.toFixed(4)} ${midiNumber.toFixed(3)} ${props.pitchShiftSemis}`,
           );
         }
-        // Every open mic feeds one accumulator -- whoever is singing counts.
+        // Every open mic feeds one accumulator, so whoever is singing counts.
         // Duplicate samples from mic bleed are deduplicated by frame slot
         // inside placeSamples, so extra mics can't inflate coverage. rms rides
         // along on the trace (nothing scores it yet); it is undefined on an
@@ -775,7 +776,7 @@ export default function PianoRoll(props: {
           rms,
         );
         // The warm-up's measurement. Fed from the same accepted samples so the
-        // range is measured on exactly what the roll drew -- but note the
+        // range is measured on exactly what the roll drew. Note that the
         // estimator applies its own, unfolded acceptance test against the known
         // target, which is the whole reason a guided exercise can measure a
         // range where a song take cannot.
@@ -893,12 +894,12 @@ export default function PianoRoll(props: {
           clearPitchDetectionBuffers,
         );
       }
-      // This effect tears down at each song's end (deps change) -- flush the
+      // This effect tears down at each song's end (deps change), so flush the
       // song's last samples before they're lost.
       if (probeFlushInterval !== null) clearInterval(probeFlushInterval);
       flushProbeBuffer();
     };
-    // Only what the effect actually reads -- NOT `props` wholesale. The props
+    // Only what the effect actually reads, NOT `props` wholesale. The props
     // object is a fresh literal on every Player render, so depending on it
     // tore down and rebuilt this whole effect (new PitchDetectionBuffers, so
     // an empty `positions`) whenever any unrelated Player state changed.

@@ -33,7 +33,7 @@ const micRmsGateEnabledSubscription = graphql`
 // Whether pitch tracking ignores quiet mic signal (an absolute RMS floor).
 // The pitch detector is amplitude-invariant, so when an external mixer's FX
 // return (echo/reverb of every mic) bleeds into the per-mic channels, an
-// idle mic ghost-draws the active singer's melody on the piano roll — the
+// idle mic ghost-draws the active singer's melody on the piano roll. The
 // bleed is quiet but cleanly periodic. The gate discards those frames.
 // Defaults to off (the historical behavior). Like useMicOutputEnabled, this
 // is a discrete toggle, so commits go out immediately (no debounce).

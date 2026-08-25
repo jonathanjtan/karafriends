@@ -27,7 +27,7 @@ function SongSearchPage({
 
   return (
     <SearchFormWrapper>
-      {/* Names both catalogs, because one search covers both — the YouTube
+      {/* Names both catalogs, because one search covers both. The YouTube
           tile next to it on the home grid searches something else entirely. */}
       <h2>Search JOYSOUND/DAM by song title</h2>
       <DebouncedInput

@@ -18,7 +18,7 @@ export class InputDevice {
   }
 
   // Every reading since the last call, oldest first. Batched because the
-  // detector's hop is finer than this poll -- see the Rust pitch_framer.
+  // detector's hop is finer than this poll. See the Rust pitch_framer.
   getPitches() {
     return window.karafriends.nativeAudio.inputDevice_getPitches(this.deviceId);
   }
@@ -30,7 +30,7 @@ export class InputDevice {
   // The addon can be older than the JS that calls it: `parcel watch` only
   // rebuilds the remocon and renderer targets, and Parcel will happily reuse a
   // cached copy of index.node under build/dev while rebuilding the preload
-  // bundle around it. This is a comfort toggle — an inert one beats an
+  // bundle around it. This is a comfort toggle, and an inert one beats an
   // uncaught throw, which takes <App> (and with it the whole big screen) down
   // and, once a mic is saved to localStorage, keeps doing so on every relaunch.
   setMicOutputEnabled(enabled: boolean) {

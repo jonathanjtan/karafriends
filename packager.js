@@ -25,8 +25,8 @@ const { glob } = require("glob");
       appBundleId: "party.karafriends",
       icon: "appIcons/icon.icns",
       // Only sign + notarize when a notarization key is provided (the release
-      // CI sets NOTARIZATION_KEY_PATH). Without it — e.g. a local dev building
-      // for their own machine — produce an unsigned .app that still runs
+      // CI sets NOTARIZATION_KEY_PATH). Without it, e.g. a local dev building
+      // for their own machine, produce an unsigned .app that still runs
       // locally instead of failing on a missing Developer ID cert.
       ...(process.env.NOTARIZATION_KEY_PATH && {
         osxNotarize: {

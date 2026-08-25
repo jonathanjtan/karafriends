@@ -7,17 +7,17 @@ const MAX_RETRY_DELAY_MS = 5000;
 // arrives in milliseconds. The browser's own fetch timeout is ~5 minutes,
 // and a request that hangs instead of erroring (a request landing mid
 // server boot, a half-open socket) used to stall the retry loop for that
-// whole window — e.g. BGM staying silent for minutes after launch because
+// whole window, e.g. BGM staying silent for minutes after launch because
 // bgmTrack never delivered. Treat a slow attempt as failed and retry.
 const ATTEMPT_TIMEOUT_MS = 10000;
 
 // The initial fetch a hook fires on mount can race the GraphQL server coming
 // up (dev launches the renderer alongside the server) and the very first
 // request after a fresh launch has historically flaked (a Parcel lazy-module
-// race, previously aggravated by Sentry's require patching — see CLAUDE.md).
-// A plain fetchQuery
-// with no error handler fails silently and the setting never syncs, so
-// retry with capped backoff until the query succeeds or the hook unmounts.
+// race, previously aggravated by Sentry's require patching, see CLAUDE.md).
+// A plain fetchQuery with no error handler fails silently and the setting
+// never syncs, so retry with capped backoff until the query succeeds or the
+// hook unmounts.
 export default function fetchQueryWithRetry<TQuery extends OperationType>(
   environment: Environment,
   query: GraphQLTaggedNode,

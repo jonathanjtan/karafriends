@@ -7,9 +7,9 @@ import { extraResourcesPath } from "../common/videoDownloader";
 
 // Serves the local mirror of the PMDCollab SpriteCollab avatar portraits
 // (built by scripts/getPortraits.mjs into extraResources/portraits/):
-//   /portraits/index.json — monster/form/emotion manifest the remocon
+//   /portraits/index.json, the monster/form/emotion manifest the remocon
 //     searches client-side, and
-//   /portraits/<form path>/<emotion>.png — individual 40x40 portraits, read
+//   /portraits/<form path>/<emotion>.png, individual 40x40 portraits read
 //     as byte slices out of the single portraits.pack blob.
 // Everything is immutable within one app run (the dataset only changes when a
 // build refetches it), so responses carry a day of client cache.

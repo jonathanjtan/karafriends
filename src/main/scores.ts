@@ -38,7 +38,7 @@ export interface ScoreRecord {
 
 // userData, not the temp dir: the whole point of a personal best is surviving,
 // and an OS temp sweep would wipe it. Same reasoning as people.json and the
-// song-history mirror -- and the melody cache learned this the hard way.
+// song-history mirror, and the melody cache learned this the hard way.
 const SCORES_PATH = path.join(app.getPath("userData"), "scores.json");
 const FILE_VERSION = 1;
 // A night is tens of records and each is small, but nothing prunes this file,
@@ -94,7 +94,7 @@ export function recordScore(record: ScoreRecord): void {
 }
 
 // Does this record belong to the singer being asked about? personId when both
-// sides have one, nickname otherwise -- the same rule songPlayCount uses, so
+// sides have one, nickname otherwise, the same rule songPlayCount uses, so
 // the card's "3rd time" and its "your best" can't disagree about who sang.
 function isSameSinger(
   record: ScoreRecord,

@@ -97,7 +97,7 @@ const BREAK_FONT_STROKE = 3;
 // Where the "（間奏　約N秒）" notice goes when the piano roll is hidden:
 // JOYSOUND's own bottom-of-screen subtitle position. With the roll visible
 // the notice is instead centered in the (ducked) roll's band, the one region
-// remapLyricsYPos guarantees lyrics never occupy — backing vocals can keep
+// remapLyricsYPos guarantees lyrics never occupy. Backing vocals can keep
 // singing through a guide-melody gap, and the bottom position collided with
 // their telop.
 const BREAK_Y_FRACTION = 0.82;
@@ -809,7 +809,7 @@ const LYRICS_BLOCK_DESCENT =
 // the roll's bottom edge and the bottom of the screen (so lyrics don't hug
 // the bottom of the screen as the roll grows). When that space can't fit the
 // original layout, the returned scale shrinks the row spacing AND the drawn
-// block size by the same factor — compressing spacing alone let a squeezed
+// block size by the same factor. Compressing spacing alone let a squeezed
 // row's furigana overlap the main text of the row above it at piano roll
 // sizes M/L. With no piano roll on screen (clearance 0) this is an exact
 // no-op.
@@ -926,9 +926,10 @@ export default function JoysoundRenderer(props: {
       : 0;
 
   // Vertical position (telop coordinates, drawTextToCanvas semantics) for
-  // the break notice: centered in the ducked piano roll's band — the region
-  // lyrics are remapped to clear, so the notice can't overlap them — or the
-  // classic bottom-of-screen spot when there's no roll on screen.
+  // the break notice. With a roll on screen it sits centered in the ducked
+  // roll's band, the one region lyrics are remapped to clear, so the notice
+  // can't overlap them. With no roll it takes the classic bottom-of-screen
+  // spot.
   const breakNoticeYPosRef = useRef(SCREEN_HEIGHT * BREAK_Y_FRACTION);
   breakNoticeYPosRef.current =
     props.pianoRollVisible && pianoRollSize > 0
@@ -969,7 +970,7 @@ export default function JoysoundRenderer(props: {
     // so a teardown that fires while parseJoysoundData is still pending
     // (StrictMode's double-mount does this on every mount) has no frame to
     // cancel yet, and the loop it would later start became an uncancellable
-    // zombie — still firing onBreakActiveChange with a stale song's breaks.
+    // zombie, still firing onBreakActiveChange with a stale song's breaks.
     let cancelled = false;
     let animationFrameRequest = 0;
 
@@ -981,8 +982,8 @@ export default function JoysoundRenderer(props: {
       //
       // A parse failure here must not throw out of refresh(): by the time
       // this effect runs, the previous effect instance's draw loop is already
-      // cancelled, so bailing would freeze the canvas on its last-drawn frame
-      // — typically the PREVIOUS song's title card — for the entire song (the
+      // cancelled, so bailing would freeze the canvas on its last-drawn frame,
+      // typically the PREVIOUS song's title card, for the entire song (the
       // EZ Romaji 6969-sentinel crash did exactly this). Degrade stepwise
       // instead: retry without word segmentation, then without romaji at all;
       // only if even the plain parse fails do we give up, and then we clear

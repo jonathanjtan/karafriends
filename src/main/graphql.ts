@@ -175,10 +175,10 @@ const kuroshiroReady = kuroshiro.init(
 // reads correctly as ひらのあや. Strip the noise before the reading guess so
 // it neither corrupts adjacent names nor leaks into the output.
 const READING_NOISE_PATTERNS = [
-  // (C.V. …) / （Ｃ．Ｖ．…） / (CV：…) — round parens, half/full width, opening
+  // (C.V. …) / （Ｃ．Ｖ．…） / (CV：…): round parens, half/full width, opening
   // with a C(.)V / CV voice-actor marker.
   /[(（]\s*[cCｃＣ][.．]?\s*[vVｖＶ][.．：:]*[^)）]*[)）]/g,
-  // feat. / ft. / featuring … — consume to the end of the string (the guest
+  // feat. / ft. / featuring …, consumed to the end of the string (the guest
   // credit is always a trailing clause on the primary artist name).
   /\s*(?:feat|ft|featuring)\.?\s.*$/gi,
 ];
@@ -206,8 +206,8 @@ function normalizeForYomiMatch(name: string): string {
 // human-curated katakana readings (canonical), a kuromoji IPADIC guess, and
 // this cache of everything we've already resolved. Persisting the cache
 // means a name we paid a DAM lookup or a kuromoji pass for once keeps its
-// reading across restarts, and — together with the snapshot taken in
-// pushSongToQueue — a queued song keeps the canonical reading its search
+// reading across restarts, and, together with the snapshot taken in
+// pushSongToQueue, a queued song keeps the canonical reading its search
 // found even after the app reloads. Keyed by normalized name; a canonical
 // (DAM) entry is authoritative and never downgraded by a later guess.
 interface CachedReading {
@@ -256,7 +256,7 @@ function scheduleReadingCacheSave(): void {
 }
 
 // Called on process shutdown so a pending debounced write (or one that never
-// got scheduled because the process died mid-sweep) isn't lost — otherwise
+// got scheduled because the process died mid-sweep) isn't lost. Otherwise
 // every name resolved in the last 2s (or the whole in-flight primeRankings
 // sweep, if killed before its first debounce fires) gets re-searched against
 // DAM/JOYSOUND on the next launch instead of hitting the persisted cache.
@@ -312,7 +312,7 @@ async function toYomi(text: string): Promise<string> {
 
 // JOYSOUND's artist-search API returns no per-artist song count (unlike DAM's
 // holdMusicCount), so it's derived by fetching a capped page of the artist's
-// song list and counting results — an extra request per artist the first
+// song list and counting results, an extra request per artist the first
 // time it's shown. Cached to disk (keyed by artist id) so repeat searches
 // are free; a count that hits the cap is an undercount for very prolific
 // artists, which we accept rather than paginating the whole catalog.
@@ -391,8 +391,8 @@ function getJoysoundArtistSongCount(
 // kuromoji's IPADIC dictionary simply doesn't carry (e.g. 涼宮→スズミヤ,
 // where kuromoji shatters it into 涼(リョウ)+宮(ミヤ)). We issue the *same*
 // keyword the user searched to DAM once and fold every returned title/artist
-// into the reading cache as canonical, so JOYSOUND rows — and any song later
-// queued — whose normalized name matches resolve to DAM's reading instead of
+// into the reading cache as canonical, so JOYSOUND rows, and any song later
+// queued, whose normalized name matches resolve to DAM's reading instead of
 // kuromoji's guess (see the God knows.../涼宮ハルヒ case). One DAM search per
 // query, deduped; failures are best-effort and leave the kuromoji fallback
 // in place.
@@ -402,7 +402,7 @@ const damPrimeCache = new Map<string, Promise<boolean>>();
 // リンゴの唄 returns songs titled りんごのうた and 林檎の唄, and Western titles
 // come back with trailing katakana annotations ("Billie Jean [ビリー・ジーン]"
 // for BILLIE JEAN). So a successful prime often caches canonical readings only
-// under the *returned* titles' keys, never under the searched name's own key —
+// under the *returned* titles' keys, never under the searched name's own key,
 // which is what the ranking sweeps below key their already-done skip on. Left
 // alone, those names get re-searched on every single launch forever. These
 // markers persist "this exact name was primed recently, whatever came of it";
@@ -576,7 +576,7 @@ function primeDamReadings(
       return true;
     })
     .catch((e) => {
-      // Don't poison the dedupe cache on a transient failure — drop it so a
+      // Don't poison the dedupe cache on a transient failure. Drop it so a
       // later search retries instead of sticking with the failure.
       damPrimeCache.delete(cacheKey);
       console.error(
@@ -590,24 +590,23 @@ function primeDamReadings(
   return promise;
 }
 
-// Top 100 chart rows arrive off the public ranking pages with no reading
-// data (JOYSOUND's JSON-LD and DAM's HTML both carry name/artist only), so
-// their romaji would fall back to a kuromoji guess — unlike search rows, which
-// mirror the user's keyword to DAM and pick up DAM's curated readings. There's
-// no per-visit keyword to mirror here, so instead prime canonical readings for
-// the chart itself: issue one DAM keyword search per charted title (deduped by
+// Top 100 chart rows arrive off the public ranking pages with no reading data
+// (JOYSOUND's JSON-LD and DAM's HTML both carry name/artist only), so their
+// romaji would fall back to a kuromoji guess, unlike search rows, which mirror
+// the user's keyword to DAM and pick up DAM's curated readings. There's no
+// per-visit keyword to mirror here, so instead prime canonical readings for the
+// chart itself: issue one DAM keyword search per charted title (deduped by
 // normalized name, and skipped when the name already has a canonical reading),
 // folding DAM's titleYomi/artistYomi into the persistent reading cache. Run in
 // the background off the launch prefetch (and on-demand chart visits), so the
-// ~hundreds of cold-start lookups are paid once — then only new chart entrants
+// ~hundreds of cold-start lookups are paid once. After that only new entrants
 // cost anything, since canonical readings never expire or downgrade. Names
 // whose search can never yield a same-key canonical reading (DAM matches
 // keywords by reading, so リンゴの唄 only returns りんごのうた/林檎の唄) are
-// covered by the persisted prime markers instead — searched once per marker
-// TTL, not once per launch. Throttled
-// and best-effort: primeDamReadings already swallows its own failures, but the
-// outer sweep is guarded too — an unhandled rejection in main takes down the
-// whole app.
+// covered by the persisted prime markers instead, searched once per marker
+// TTL, not once per launch. Throttled and best-effort: primeDamReadings
+// already swallows its own failures, but the outer sweep is guarded too,
+// because an unhandled rejection in main takes down the whole app.
 const RANKING_READING_CONCURRENCY = 4;
 
 function primeRankingReadings(
@@ -620,10 +619,10 @@ function primeRankingReadings(
     const key = normalizeForYomiMatch(entry.name);
     if (seen.has(key)) continue;
     seen.add(key);
-    // Already have DAM's curated reading for this title — don't spend a search.
+    // Already have DAM's curated reading for this title, so don't search.
     if (readingCache.get(key)?.canonical) continue;
     // Searched this exact name recently and nothing DAM returned matched it
-    // by name — don't re-pay the search on every launch.
+    // by name, so don't re-pay the search on every launch.
     if (isDamPrimedRecently("song", entry.name)) continue;
     names.push(entry.name);
   }
@@ -684,7 +683,7 @@ function primeRankingArtistReadings(
 }
 
 // The DAM lookup is a best-effort enrichment layered on top of JOYSOUND's
-// own results — never let a slow/unreachable DAM stall the search response
+// own results. Never let a slow or unreachable DAM stall the search response
 // the user is waiting on. Cap how long we'll wait, then fall back.
 const DAM_YOMI_TIMEOUT_MS = 2500;
 
@@ -751,29 +750,30 @@ function sortByTitleMatchTier<Item>(
   );
 }
 
-// Rows fetched per catalog per page of a merged search — so a page holds up
+// Rows fetched per catalog per page of a merged search, so a page holds up
 // to twice this many rows. Equal shares matter: JOYSOUND's own default was
 // 100 against DAM's 30, which in one list reads as "JOYSOUND with a few DAM
 // rows mixed in" rather than a merge.
 const SEARCH_PAGE_SIZE = 30;
 
-// Where one catalog's search is up to. Not just an offset: a romaji query is
-// really searched as a kana reading of itself (see searchWithRomajiFallback),
-// and the next page has to continue *that* keyword — resuming the literal one
-// re-runs the search that found nothing and returns an empty page.
+// Where one catalog's search is up to. It carries a keyword as well as an
+// offset, because a romaji query is really searched as a kana reading of
+// itself (see searchWithRomajiFallback), and the next page has to continue
+// *that* keyword. Resuming the literal one re-runs the search that found
+// nothing and returns an empty page.
 interface SearchPosition {
   readonly keyword: string;
   readonly offset: number;
 }
 
 // The two catalogs count rows from different origins: DAM from 0, JOYSOUND
-// from 1 (its argument reads like a page number and isn't — passing 2 for the
+// from 1 (its argument reads like a page number and isn't, so passing 2 for the
 // second page of 30 re-serves rows 2..31, the first page shifted by one).
 const DAM_FIRST_OFFSET = 0;
 const JOYSOUND_FIRST_OFFSET = 1;
 
 // Cursors are base64 JSON: a keyword is arbitrary text with no separator safe
-// to split on. They're opaque to clients, which only echo them back — decode
+// to split on. They're opaque to clients, which only echo them back. Decode
 // one by hand with
 // `JSON.parse(Buffer.from(cursor.split("#")[0], "base64").toString())`.
 function encodeCursor(value: unknown): string {
@@ -781,8 +781,8 @@ function encodeCursor(value: unknown): string {
 }
 
 // Edge cursors carry a "#<row>" suffix to stay distinct within a page, which
-// is meaningless for resuming — a page is the smallest unit a catalog can be
-// asked for — so it's dropped here. base64's alphabet has no "#", so the
+// is meaningless for resuming, since a page is the smallest unit a catalog can
+// be asked for, so it's dropped here. base64's alphabet has no "#", so the
 // split is safe.
 function decodeCursor(after: string | null): unknown {
   if (!after) return null;
@@ -806,7 +806,7 @@ function isSearchPosition(value: unknown): value is SearchPosition {
 }
 
 // A merged search advances both catalogs at once, so its cursor carries a
-// position for each — independently, since the two may end up paging
+// position for each, independently, since the two may end up paging
 // different readings of the same romaji query.
 interface SearchCursor {
   readonly dam: SearchPosition;
@@ -841,7 +841,7 @@ function parseSearchCursor(
 }
 
 // Each leg advances to the keyword its rows actually came from, at the next
-// page of offsets. Only a catalog that answered advances — otherwise a failed
+// page of offsets. Only a catalog that answered advances. Otherwise a failed
 // leg would silently skip a page of its own results once it comes back.
 function advanceSearchPosition<T>(
   position: SearchPosition,
@@ -884,7 +884,7 @@ function parsePositionCursor(
 }
 
 // Round-robin the two catalogs before the match-tier sort. That sort is
-// stable, so whatever order it's handed survives within a tier — and handing
+// stable, so whatever order it's handed survives within a tier, and handing
 // it one catalog's whole block followed by the other's would render as two
 // blocks with a seam rather than a merged list.
 function interleave<Item>(a: Item[], b: Item[]): Item[] {
@@ -896,9 +896,10 @@ function interleave<Item>(a: Item[], b: Item[]): Item[] {
   return merged;
 }
 
-// A merged search reports which catalogs didn't answer instead of failing:
-// a blocked exit IP takes DAM down routinely, and the room can still sing off
-// JOYSOUND. Logged too — a silent half-empty list is miserable to diagnose.
+// A merged search reports which catalogs didn't answer instead of failing: a
+// blocked exit IP takes DAM down routinely, and the room can still sing off
+// JOYSOUND. Logged too, because a silent half-empty list is miserable to
+// diagnose.
 function failedSources(
   keyword: string,
   damResult: PromiseSettledResult<unknown>,
@@ -925,12 +926,12 @@ function failedSources(
 // DAM and Joysound's search backends only match Japanese-script keywords;
 // a pure-romaji query like "aidoru" returns zero results even though the
 // target title is stored as "アイドル". But not every romaji-looking query
-// is romanized Japanese — both catalogs also carry western songs/artists
+// is romanized Japanese. Both catalogs also carry western songs/artists
 // under their literal English names (e.g. "Queen"), which must keep
 // matching, so the literal keyword is always searched. On top of that, a
 // literal match doesn't rule out a *different*, Japanese-titled song also
 // being what the user meant (e.g. "umapyoi" matching an English-titled
-// cover on DAM as well as "ウマぴょい伝説") — so if the query looks like
+// cover on DAM as well as "ウマぴょい伝説"), so if the query looks like
 // romaji, we also try a few kana readings and merge their results in
 // rather than only falling back when the literal search is empty.
 //
@@ -938,11 +939,11 @@ function failedSources(
 // single keyword, and `effectiveKeyword` is which one: the caller stores it
 // in its cursor and passes it back as `keyword`. Without that, page 2 of
 // "aidoru" re-ran the *literal* search, which is exactly the search that
-// found nothing in the first place — so a full first page was followed by an
+// found nothing in the first place, so a full first page was followed by an
 // empty second one and a "More" button that loaded nothing.
 interface RomajiSearch<T> {
   readonly result: T;
-  // The keyword these rows actually came from — the literal one, or the kana
+  // The keyword these rows actually came from: the literal one, or the kana
   // reading that produced the most of them. When several readings contribute
   // (uncommon: DAM and JOYSOUND both match by reading, so あいどる and
   // アイドル usually return the same rows and dedupe into one set), paging
@@ -964,11 +965,11 @@ async function searchWithRomajiFallback<T>(
   }
 
   // A romaji query is ambiguous about which mora should land in which kana
-  // script — titles and artist names routinely mix hiragana, katakana, and
+  // script. Titles and artist names routinely mix hiragana, katakana, and
   // kanji (e.g. Uma Musume's "ウマぴょい伝説"), so a single fixed-casing
   // conversion often misses even when the reading is otherwise right. Try
   // a few reasonable readings and merge in whichever ones hit.
-  // IMEMode mirrors how a real Japanese IME converts as you type — most
+  // IMEMode mirrors how a real Japanese IME converts as you type, most
   // relevant here for a dangling trailing "n" (e.g. "shinjuku" mid-typing),
   // which it resolves to "ん" immediately instead of waiting to see if a
   // vowel follows.
@@ -1002,18 +1003,18 @@ async function searchWithRomajiFallback<T>(
 }
 
 // Auto-generated "- Topic" uploads are audio-only (album art, no MV) and
-// show up in search alongside real uploads for the same track - never a
-// good pick for a background video.
+// show up in search alongside real uploads for the same track. They are never
+// a good pick for a background video.
 const TOPIC_CHANNEL_SUFFIX = " - Topic";
 
 // When an artist has an Official Artist Channel (OAC), YouTube's search API
 // misattributes their auto-generated Topic-channel tracks to the OAC's own
-// identity - author.name comes back as the plain artist name (e.g. "Green
+// identity. author.name comes back as the plain artist name (e.g. "Green
 // Day", not "Green Day - Topic") with is_verified_artist: true, so
 // TOPIC_CHANNEL_SUFFIX never sees the "- Topic" suffix and the audio-only
 // track can win tier 0 outright. oEmbed hits the video's real watch-page
 // metadata instead, which still reports the true uploader. It's a public,
-// unauthenticated JSON endpoint - no player JS / signature work - so unlike
+// unauthenticated JSON endpoint with no player JS or signature work, so unlike
 // yt-dlp/Innertube extraction it doesn't carry meaningful bot-wall risk, but
 // it's still a network round trip, so only call it on the few candidates
 // that actually make the final cut, not the whole raw search result set.
@@ -1050,7 +1051,7 @@ const EXCLUDED_TITLE_KEYWORDS = [
   "lyric",
   "vietsub",
   "engsub",
-  // Japanese-language equivalents - a huge fraction of covers/karaoke/lyric
+  // Japanese-language equivalents. A huge fraction of covers/karaoke/lyric
   // videos for JP songs are titled in Japanese, not English.
   "カラオケ", // karaoke
   "カバー", // cover
@@ -1101,7 +1102,7 @@ function parseViewCountText(text: string | undefined): number {
 // Official uploads routinely run 20-45s longer than Joysound's own catalog
 // duration (extra intro/outro), which used to let a merely duration-closer
 // repost/lyrics-translation video outrank the genuine artist-channel
-// upload even after a same-size bonus/penalty - a fixed point bonus can
+// upload even after a same-size bonus/penalty, since a fixed point bonus can
 // always be outweighed by a big enough duration gap. Rank by tier first
 // (how trustworthy the *source* is) and only use duration-closeness to
 // break ties within a tier, so a real match from the artist's own channel
@@ -1112,7 +1113,7 @@ function parseViewCountText(text: string | undefined): number {
 // from an entirely unrelated channel (e.g. searching a Hige Dandism song
 // surfaced a "Novelbright" upload titled as if it were the official video).
 // The bracketed "[Official Video]" tag convention is a much stronger,
-// independent signal though - it's a deliberate, widely-recognized
+// independent signal though. It's a deliberate, widely-recognized
 // first-party labeling convention that fan/cover channels don't typically
 // imitate, so it's trusted even without a channel-name match. This also
 // covers artists whose real channel uses a differently-scripted name than
@@ -1122,7 +1123,7 @@ function parseViewCountText(text: string | undefined): number {
 const OFFICIAL_VIDEO_TAG_PATTERN = /[([【（［]\s*official\b/i;
 
 // Fan-made anime music videos are a deliberate, well-produced pairing of the
-// song with edited footage - a reasonable background-video pick when no
+// song with edited footage, a reasonable background-video pick when no
 // official/artist-channel upload is available, but still a fan work, so it
 // should never outrank one. "AMV" isn't an English word, so a bare
 // word-boundary match is safe; "MAD" (the Japanese-fandom term for the same
@@ -1133,7 +1134,7 @@ const MAD_AMV_TAG_PATTERN =
 
 // Joysound stores artist names in Japanese script (宇多田ヒカル) while many
 // artists' official channels use a romanized name, usually in Western name
-// order ("Hikaru Utada") - a plain substring comparison can never match, so
+// order ("Hikaru Utada"), so a plain substring comparison can never match and
 // the genuine artist-channel upload was ranked tier 2 and lost the
 // duration tiebreak to AMVs/remixes. Compare on an order-insensitive,
 // diacritic-stripped ASCII token set as well as the literal name; Japanese
@@ -1180,7 +1181,7 @@ function musicVideoCandidateTier(
     );
   });
   // Strip the artist's own name before checking for a bare "official"
-  // mention - some artists (e.g. "Official髭男dism") have brand names that
+  // mention. Some artists (e.g. "Official髭男dism") have brand names that
   // themselves contain the word, which would otherwise look like a tag on
   // every single one of their videos regardless of who uploaded it.
   const titleWithoutArtistName = lowerVariants.reduce(
@@ -1190,7 +1191,7 @@ function musicVideoCandidateTier(
   const isOfficialTitle = titleWithoutArtistName.includes("official");
   const hasOfficialVideoTag = OFFICIAL_VIDEO_TAG_PATTERN.test(candidate.title);
   // YouTube's own "Official Artist Channel" badge is a stronger, independent
-  // trust signal than name matching - it can't be spoofed by a plainly-named
+  // trust signal than name matching. It can't be spoofed by a plainly-named
   // reupload/bootleg channel the way a bare exact-string match can (e.g. an
   // unofficial "米津玄師"-named tour-footage channel exact-matching the
   // literal artist name while the real official channel, bilingually named
@@ -1252,7 +1253,7 @@ async function pickMusicVideoCandidates(
     })
     // A video whose title doesn't even mention the song is almost certainly
     // a different song entirely (e.g. another upload from the same artist's
-    // channel) - this must be an outright exclusion, not just a lower tier,
+    // channel). This must be an outright exclusion rather than a lower tier,
     // otherwise it can still win a tie-break against a correctly-titled but
     // unverified-channel candidate purely on duration closeness.
     .filter((v) => {
@@ -1278,7 +1279,7 @@ async function pickMusicVideoCandidates(
     if (tierDiff !== 0) return tierDiff;
 
     // Within a tier, prefer the most-viewed video. Duration closeness is a
-    // bad discriminator between same-channel uploads - an artist's official
+    // bad discriminator between same-channel uploads. An artist's official
     // channel often carries a static album-art "audio" upload alongside the
     // real MV, and the audio track's length is *closer* to the karaoke
     // duration (One Last Kiss: 2M-view art track at Δ1s vs the 115M-view MV
@@ -1293,7 +1294,7 @@ async function pickMusicVideoCandidates(
   });
 
   // Verify only as many candidates as needed to fill maxCandidates, stopping
-  // as soon as we have enough - most songs' top picks are real videos, so
+  // as soon as we have enough. Most songs' top picks are real videos, so
   // this rarely runs past the first one or two.
   const verifiedCandidates: typeof candidates = [];
   for (const candidate of candidates) {
@@ -1547,7 +1548,7 @@ interface QueueItemInterface {
   readonly artistNameYomi?: string | null;
   // Semitone shift to start this item at, from a key suggestion. Absent on
   // older clients and on everything already in queue.json, which the renderer
-  // reads as 0 -- exactly what it used to do unconditionally.
+  // reads as 0, exactly what it used to do unconditionally.
   readonly pitchShiftSemis?: number | null;
 }
 
@@ -1713,12 +1714,12 @@ type NotARealDb = {
   // Whether a played song enters songHistory at all. Off under `run-dev`, on
   // in a packaged build (see DEFAULT_HISTORY_RECORDING), because testing a
   // download or a sync fix means queueing a dozen songs nobody sang, and those
-  // otherwise land in the history — and in the play counts and scores that
-  // hang off it — indistinguishable from a real party. Deliberately NOT
+  // otherwise land in the history, and in the play counts and scores that
+  // hang off it, indistinguishable from a real party. Deliberately NOT
   // restored from disk; loadDb re-derives it every launch.
   historyRecordingEnabled: boolean;
   // "host:port" the QR codes encode. Null until someone picks one, in which
-  // case the resolver serves defaultHostname() — the machine's LAN address
+  // case the resolver serves defaultHostname(). The machine's LAN address
   // can change between launches, so a stale persisted value shouldn't win
   // over a freshly computed default unless it was chosen deliberately.
   hostname: string | null;
@@ -1800,8 +1801,8 @@ const MIN_PIANO_ROLL_SIZE = 0.1;
 const MAX_PIANO_ROLL_SIZE = 0.5;
 
 // Record history in a packaged build, don't under `run-dev`. That split is how
-// the app is actually used — parties run the packaged build, development
-// doesn't — so the safe behaviour needs nobody to remember a toggle.
+// the app is actually used, since parties run the packaged build and
+// development doesn't, so the safe behaviour needs nobody to remember a toggle.
 const DEFAULT_HISTORY_RECORDING = !isDev;
 
 // TODO: make this gql context instead of global
@@ -1840,7 +1841,7 @@ let db: NotARealDb = {
 // The address a phone on the same WiFi can actually reach, with the remocon
 // port, so the QR codes are scannable out of the box. Prefer a private LAN
 // IPv4; fall back to the mDNS hostname when this machine has none. This used
-// to live in the renderer (over preload's ipAddresses()) — it moved here when
+// to live in the renderer (over preload's ipAddresses()). It moved here when
 // hostname became a synced setting, so every window agrees on one default.
 function defaultHostname(): string {
   const ipv4 = ipAddresses().filter((addr) =>
@@ -1872,7 +1873,7 @@ let runHealthCheckOnce:
 
 const DB_PATH = path.resolve(TEMP_FOLDER, "queue.json");
 
-// queue.json lives in the OS temp dir, which macOS wipes on every boot — a
+// queue.json lives in the OS temp dir, which macOS wipes on every boot. A
 // reboot mid-party (2026-07-25 is the case on record) took the room's whole
 // song history with it, along with the cached composites. The composites are
 // a cache and can be re-fetched; the history can't. Mirror it to userData,
@@ -1891,7 +1892,7 @@ function historyKey(item: SongHistoryItem): string {
 let lastMirroredHistory: string | null = null;
 
 function writeHistoryMirror(): void {
-  // saveDb runs on every mutation — a slider drag included — but the history
+  // saveDb runs on every mutation, a slider drag included, but the history
   // only moves on popSong, so skip the write unless it actually changed.
   const fingerprint = `${db.songHistory.length}:${
     db.songHistory.length ? historyKey(db.songHistory[0]) : ""
@@ -1953,7 +1954,7 @@ function saveDb() {
       pitchShiftSemis: 0,
       currentSong: null,
       currentSongAdhocLyrics: [],
-      // Re-queue the in-flight song so it survives a restart — but only if
+      // Re-queue the in-flight song so it survives a restart, but only if
       // there is one; a bare [db.currentSong, ...] spread persisted a null
       // on every idle-time save, which then broke the (non-nullable) queue
       // query on the next launch.
@@ -2019,7 +2020,7 @@ function loadDb(): NotARealDb {
   // packaged build share one OS temp dir and so one queue.json: a `true`
   // persisted by the packaged app would otherwise spread over the dev
   // default and quietly turn test-queue recording back on. Erring the other
-  // way is also better — a toggle flipped off for one test session can't
+  // way is also better, since a toggle flipped off for one test session can't
   // silently eat the next party's history.
   loaded.historyRecordingEnabled = DEFAULT_HISTORY_RECORDING;
   return loaded;
@@ -2049,7 +2050,7 @@ interface WatchData {
 
 // The identity a queue item should carry: the person's current name/avatar,
 // stamped with their personId, but keeping the device that actually queued
-// it. Replaces the old session-scoped latestIdentityByDevice map — the
+// it. Replaces the old session-scoped latestIdentityByDevice map. The
 // registry is the source of truth now, and it survives a relaunch.
 function identityFromPerson(person: Person, deviceId: string): UserIdentity {
   return {
@@ -2230,7 +2231,7 @@ const resolvers = {
     artistId(parent: RankingArtistEntry) {
       return parent.id;
     },
-    // Only nameYomi here — RankingArtist has no artistName(Yomi), so it can't
+    // Only nameYomi here. RankingArtist has no artistName(Yomi), so it can't
     // reuse the full nameYomiResolvers spread (schema-building rejects a
     // resolver for a field the type doesn't declare).
     nameYomi(parent: RankingArtistEntry) {
@@ -2342,7 +2343,7 @@ const resolvers = {
   },
 
   SearchedArtist: {
-    // Only nameYomi, not the full spread — SearchedArtist has no artistName,
+    // Only nameYomi, not the full spread. SearchedArtist has no artistName,
     // and schema-building rejects a resolver for a field the type doesn't
     // declare (same reason as RankingArtist above).
     nameYomi(parent: SearchedArtistParent) {
@@ -2364,7 +2365,7 @@ const resolvers = {
   DamQueueItem: {
     // These are fetched live from DAM on every popSong call rather than
     // cached at queue time, since streaming URLs expire. If DAM is
-    // unreachable, resolve to null instead of rejecting — a rejection here
+    // unreachable, resolve to null instead of rejecting. A rejection here
     // would null out the entire (non-nullable-field-bearing) popSong
     // response under GraphQL's error-propagation rules, silently dropping
     // the song with no signal to the player. Player.tsx treats a null
@@ -2394,7 +2395,7 @@ const resolvers = {
           const scoringData = Array.from(new Uint8Array(data));
           // Teach the song-range cache on the way past. This resolver runs on
           // every DAM pop and has already paid for the fetch, so the range
-          // costs one parse of a blob in hand -- which is what makes the
+          // costs one parse of a blob in hand, which is what makes the
           // comfortable-song hints work on list surfaces without any of them
           // ever touching the network. DAM's blob is authored, so this is the
           // trustworthy provenance of the two.
@@ -2416,7 +2417,7 @@ const resolvers = {
       const scoringData = await getJoysoundScoringData(parent.songId);
       // Same idea as the DAM path above, and free here too: the melody is
       // already extracted and cached on disk by the time a song pops. Null is
-      // routine -- a song whose guide-melody channel yielded nothing.
+      // routine: a song whose guide-melody channel yielded nothing.
       if (scoringData !== null) {
         rememberSongRange(
           "JOYSOUND",
@@ -2436,9 +2437,9 @@ const resolvers = {
     ...nameYomiResolvers,
   },
   TuningQueueItem: {
-    // Everything is stored on the item at queue time -- the exercise generates
-    // rather than fetches -- so this needs no resolvers of its own beyond the
-    // yomi fallback, which the queue-time snapshot satisfies anyway.
+    // Everything is stored on the item at queue time, since the exercise
+    // generates rather than fetches, so this needs no resolvers of its own
+    // beyond the yomi fallback, which the queue-time snapshot satisfies anyway.
     ...nameYomiResolvers,
   },
   Query: {
@@ -2811,7 +2812,7 @@ const resolvers = {
         // (identical) request the way the per-service resolvers do. Ordered
         // before the return, so the JOYSOUND rows' nameYomi field resolvers
         // see the cache already warm. Keyed by the keyword the rows actually
-        // came from, which for a romaji query is the kana reading — the
+        // came from, which for a romaji query is the kana reading. The
         // self-credit in damSongReadingPairs compares result titles against
         // it, and "aidoru" would never match one.
         if (damResult.status === "fulfilled") {
@@ -3240,7 +3241,7 @@ const resolvers = {
       // Cache only, never a fetch: this is called with a whole page of search
       // results, and a DAM round trip (or worse, a JOYSOUND extraction) per row
       // is exactly what the cache exists to avoid. A song we know nothing about
-      // is simply omitted, and the caller shows nothing -- which is the honest
+      // is simply omitted, and the caller shows nothing, which is the honest
       // reading anyway.
       const entries = [];
       for (const song of args.songs) {
@@ -3310,7 +3311,7 @@ const resolvers = {
       // Default false, and list surfaces leave it that way: a JOYSOUND cache
       // miss costs an ogg fetch plus an ffmpeg decode plus a pitch-track pass,
       // which is ~8s. Per row of a search list that is out of the question, and
-      // UNAVAILABLE is a perfectly good answer -- the caller shows nothing,
+      // UNAVAILABLE is a perfectly good answer. The caller shows nothing,
       // which is the same as having no opinion.
       if (args.allowFetch !== true) {
         return { range: null, availability: "UNAVAILABLE", fit: null };
@@ -3361,7 +3362,7 @@ const resolvers = {
               fit: fitFor(joysoundRange),
             };
       } catch (e) {
-        // A range is a nicety. Never fail the request over one -- the caller
+        // A range is a nicety. Never fail the request over one. The caller
         // renders nothing and the page it sits on still works.
         console.error(
           `Failed reading the vocal range for ${args.source}:${args.songId}`,
@@ -3384,7 +3385,7 @@ const resolvers = {
           return false;
         }
         const singer = song.userIdentity;
-        // personId is the real identity -- a phone handed around, or a cleared
+        // personId is the real identity. A phone handed around, or a cleared
         // localStorage, still resolves to the same singer. It is absent on
         // entries from before the registry existed, and on those the nickname
         // is the best available answer.
@@ -3402,7 +3403,7 @@ const resolvers = {
 
       // `first` is a count, not an end index: slice(afterInt, firstInt) made
       // every page after the first empty (page 2 is slice(30, 30)), so the
-      // remocon's "More" fetched nothing and then hid itself — capping the
+      // remocon's "More" fetched nothing and then hid itself, capping the
       // visible history at 30 no matter how much of it we'd kept.
       const edges = db.songHistory
         .slice(afterInt, afterInt + firstInt)
@@ -3460,7 +3461,7 @@ const resolvers = {
 
           // The microformat lists every country a video is watchable in
           // (~249 entries when unrestricted), so a missing "US" means the
-          // label region-locked it — an embed on a non-VPN US phone would
+          // label region-locked it, and an embed on a non-VPN US phone would
           // show "Video unavailable". Downloads still work (they run on the
           // VPN'd host), so this only gates the remocon preview.
           const availableCountries =
@@ -3516,7 +3517,7 @@ const resolvers = {
     ): Promise<SuggestedYoutubeVideosResult> => {
       // The telop is only needed for expectedDurationSec, not for the search
       // query itself. A previous download of this song already left it on
-      // disk — reading that beats re-fetching the multi-megabyte getFME
+      // disk, and reading that beats re-fetching the multi-megabyte getFME
       // payload (telop + ogg) just to compute a duration. When it's missing,
       // kick the raw-data fetch off alongside the YouTube search rather than
       // waiting for it before even starting the search.
@@ -3552,7 +3553,7 @@ const resolvers = {
 
       // Also match the artist's romanized name so official channels named in
       // Latin script ("Hikaru Utada" for 宇多田ヒカル) rank as artist
-      // channels; see romajiTokenKey. Best-effort - a kuromoji misreading
+      // channels; see romajiTokenKey. Best-effort, since a kuromoji misreading
       // just means no extra variant matches.
       const artistNameVariants = [songDetail.artistName];
       try {
@@ -3852,7 +3853,7 @@ const resolvers = {
       console.log(`queueTuningTest: pushToHead=${pushToHead}`);
 
       // Generate the silent video before queueing, so the item never reaches
-      // the player without the file it will try to play -- a src that 404s
+      // the player without the file it will try to play. A src that 404s
       // fires "error", which skips the song, and the singer would just see the
       // warm-up vanish.
       //
@@ -3920,7 +3921,7 @@ const resolvers = {
       });
 
       // The one place a song enters the history, so the one place the
-      // recording gate has to sit — play counts and anything else keyed off
+      // recording gate has to sit. Play counts and anything else keyed off
       // songHistory inherit it for free.
       //
       // The warm-up is excluded on top of that gate: it is queued and played
@@ -3947,7 +3948,7 @@ const resolvers = {
 
       saveDb();
       // Player.tsx polls popSong every few seconds whenever the queue is
-      // idle/empty — only trigger a health check on an actual song
+      // idle/empty, so only trigger a health check on an actual song
       // transition, not on every empty-queue poll.
       if (newSong) triggerHealthCheck();
       return newSong;
@@ -3968,7 +3969,7 @@ const resolvers = {
         }) ?? resolvePerson(identity);
       publishPeopleChanged();
 
-      // Everything this *person* has queued, not just this device — they may
+      // Everything this *person* has queued, not just this device. They may
       // have queued from a phone and renamed themselves on a laptop.
       const rewritten = (item: QueueItem): QueueItem => ({
         ...item,
@@ -3986,7 +3987,7 @@ const resolvers = {
         return rewritten(item);
       });
       // Update the playing song's snapshot too, but only announce it through
-      // queueChanged — publishing currentSongChanged would poke the renderer's
+      // queueChanged. Publishing currentSongChanged would poke the renderer's
       // playback machinery mid-song.
       if (db.currentSong && needsUpdate(db.currentSong)) {
         db.currentSong = rewritten(db.currentSong);
@@ -4257,14 +4258,14 @@ const resolvers = {
       const scoringData = await getJoysoundScoringData(args.songId);
 
       // A cached result means the extraction ran, and zero notes is then a real
-      // answer about the song. No cache file means it never got that far --
+      // answer about the song. No cache file means it never got that far.
       // ffmpeg missing is the usual reason (running the app outside run-dev
       // resolves extraResources into Electron's own bundle). Those are worth
       // retrying and a song with no melody channel is not, so they must not
       // report the same thing.
       if (!hasCachedGuideMelody(args.songId)) {
         throw new Error(
-          `Guide melody extraction produced nothing for ${args.songId} — check the app log for an ffmpeg spawn failure.`,
+          `Guide melody extraction produced nothing for ${args.songId}. Check the app log for an ffmpeg spawn failure.`,
         );
       }
 
@@ -4606,7 +4607,7 @@ const HEALTH_CHECK_RETRY_OPTIONS = { retries: 1, minTimeout: 500 };
 // Sized for a slow residential link + VPN, not just fiber: the probe is
 // RTT-bound (fresh TLS handshakes for login + streaming API + a 1-byte CDN
 // fetch, worst case ×2 attempts), which at a few hundred ms per round trip
-// can legitimately take >20s — a timeout that fires on a *working* slow
+// can legitimately take >20s, and a timeout that fires on a *working* slow
 // connection would falsely report the service down. Real failures (403,
 // DNS, refused) still return in a few seconds; the ceiling only guards
 // silent hangs.
@@ -4651,7 +4652,7 @@ async function checkDamStreamingUrl(
     : streamingUrls.list[0].highBitrateUrl;
   // Probe a single byte: this is the real video URL, and node-fetch only
   // backpressure-pauses an unconsumed body rather than cancelling it, so a
-  // bare GET leaves a socket slowly pulling video in the background — which
+  // bare GET leaves a socket slowly pulling video in the background, which
   // matters on slow (e.g. 40Mbps) connections where the periodic checks
   // would contend with an active download. 206 counts as ok; a CDN that
   // ignores Range just degrades to the old full-GET behavior.
@@ -4687,7 +4688,7 @@ async function checkDamHealth(
   }
 
   // Neither the last-known-good id nor the canary worked (possibly
-  // delisted) — fall back to a live search so this check never
+  // delisted), so fall back to a live search and this check never
   // permanently breaks.
   try {
     const searchResult = await dkwebsys.getMusicByKeyword("a", 1, 0);
@@ -4746,7 +4747,7 @@ async function runHealthCheck(
 // Dedupes overlapping triggers (periodic timer, per-song, and a manual
 // "check now" click could otherwise all fire a real network check at once).
 // A manual "check now" passes force=true to start a fresh check immediately
-// instead of joining an in-flight one — the whole point of the button is
+// instead of joining an in-flight one. The whole point of the button is
 // "my network just changed, re-probe NOW", and the in-flight check may have
 // started before the change (or, historically, be sitting in retry backoff).
 // The run counter lets a superseded run finish without clobbering the shared
@@ -4770,7 +4771,7 @@ function triggerHealthCheck(force = false): Promise<ServiceHealthState> {
     // A manual "check now" re-probes everything from scratch, including the
     // logins: a cached success may hold an auth token the service has since
     // expired, and without this the button couldn't recover from that.
-    // Periodic/per-song checks keep the cached creds — re-logging-in every
+    // Periodic/per-song checks keep the cached creds, since re-logging-in every
     // 3 minutes would be needless load on the services.
     minseiCredentialsProvider.reset();
     joysoundCredentialsProvider.reset();

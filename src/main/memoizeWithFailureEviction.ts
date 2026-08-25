@@ -7,7 +7,7 @@
 // rule; concurrent callers share the single in-flight promise.
 //
 // reset() drops a cached *success* too, so the next call re-runs fn from
-// scratch — used by the manual "check now" health check to recover from
+// scratch, used by the manual "check now" health check to recover from
 // stale-but-cached state (e.g. an expired auth token). In-flight callers
 // keep the promise they already hold.
 export default function memoizeWithFailureEviction<T>(

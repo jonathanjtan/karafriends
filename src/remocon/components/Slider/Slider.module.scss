@@ -1,7 +1,7 @@
 // A range input that draws its own groove.
 //
 // Chrome paints the unfilled half of a native range itself, and once
-// `accent-color` is set it uses a fixed near-black for it — ignoring both
+// `accent-color` is set it uses a fixed near-black for it, ignoring both
 // `color-scheme` and the theme. On the white page that's an 11.6:1 bar; on
 // `--surface-raised` it's 1.5:1 and on the control bar's `--chrome` it's
 // 1.3:1, i.e. the right-hand half of every slider effectively disappeared in
@@ -28,8 +28,8 @@
 }
 
 // The two engines want the same paint on differently-named pseudos, and
-// neither tolerates the other in a shared selector list — a single unknown
-// pseudo-element drops the whole rule — so they're written out twice.
+// neither tolerates the other in a shared selector list, where a single
+// unknown pseudo-element drops the whole rule, so they're written out twice.
 @mixin track {
   height: 4px;
   border-radius: 2px;

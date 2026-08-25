@@ -1,5 +1,5 @@
 // Fills the app shell (a fixed-inset flex column), so the picker owns the
-// whole screen — there is no nav bar or queue behind it to reach.
+// whole screen. There is no nav bar or queue behind it to reach.
 .gate {
   flex: 1;
   overflow: auto;

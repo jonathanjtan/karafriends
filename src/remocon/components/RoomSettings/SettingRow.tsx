@@ -27,7 +27,7 @@ export default function SettingRow(props: {
       const control = def.get(settings);
       return (
         <div className={styles.row}>
-          {/* The whole row is the target — these used to be full-width
+          {/* The whole row is the target. These used to be full-width
               buttons labelled "Software Echo: Off", where it was never clear
               whether tapping *set* Off or toggled away from it. A switch
               shows state and the tap changes it. */}

@@ -11,12 +11,12 @@ import type { Innertube } from "youtubei.js";
 // sitting in the song history and "Everybody Talks" by "Neon Trees".
 //
 // Several of them publish the same master twice, once with the guide-melody
-// synth in the mix and once without (JP: ガイドなし / No Guide Melody; KR:
-// 멜로디제거). For singing along, the no-guide render is the one you want --
-// a loud synth doubling the vocal line fights the singer -- so `rank` prefers
-// it and the standard render is the fallback. Every variant is labelled on the
-// row rather than hidden, because "why is this the quiet one" is a worse
-// mystery than an extra word in the list.
+// synth in the mix and once without (JP: ガイドなし / No Guide Melody;
+// KR: 멜로디제거). For singing along, the no-guide render is the one you
+// want, since a loud synth doubling the vocal line fights the singer, so
+// `rank` prefers it and the standard render is the fallback. Every variant is
+// labelled on the row rather than hidden, because "why is this the quiet one"
+// is a worse mystery than an extra word in the list.
 
 // Lower rank wins when the same song shows up as several renders on one
 // channel. 0 is "the render you actually want to sing to".
@@ -29,7 +29,7 @@ export interface ParsedKaraokeTitle {
   readonly name: string;
   readonly artistName: string;
   // Short tag shown on the row ("no guide", "female key"). Null for a
-  // channel's plain, unmarked render -- there is nothing to say about it.
+  // channel's plain, unmarked render, where there is nothing to say about it.
   readonly variant: string | null;
   // The channel's own catalog number where it publishes one in the title
   // (KY.NNNNN). Display only; nothing keys off it.
@@ -43,7 +43,7 @@ export interface KaraokeChannelDef {
   readonly language: string;
   readonly channelId: string;
   // Returns null for a video that isn't a parseable karaoke render on this
-  // channel -- trailers, sheet-music videos, channel announcements. Those are
+  // channel: trailers, sheet-music videos, channel announcements. Those are
   // dropped rather than guessed at.
   readonly parse: (title: string) => ParsedKaraokeTitle | null;
 }
@@ -112,7 +112,7 @@ function parseUtacchaoRomaji(title: string): ParsedKaraokeTitle | null {
 // カラオケ歌っちゃ王 proper: "【カラオケ】Song / Artist" with the guide, and
 // "【ガイドなし】Song/Artist【カラオケ】" without it. Some uploads append a
 // tie-up after a pipe ("... | 葬送のフリーレンOP"), and the binaural
-// 【立体音響カラオケ】 re-renders are a different mix entirely -- not a
+// 【立体音響カラオケ】 re-renders are a different mix entirely, not a
 // karaoke take anyone queues on purpose, so they're dropped.
 const UTACCHAOH_RE = /^【([^】]+)】\s*(.+?)\s*(?:【[^】]*】\s*)?$/;
 
@@ -143,7 +143,7 @@ function parseUtacchaoh(title: string): ParsedKaraokeTitle | null {
 
 // EdKara: "練習用カラオケ♬ Song - Artist 【ガイドメロディ付】…" and
 // "Karaoke♬ Song - Artist 【No Guide Melody】…" (the no-guide half is titled
-// in romaji, the with-guide half in Japanese -- which is why the two are hard
+// in romaji, the with-guide half in Japanese, which is why the two are hard
 // to pair by title, and why edkara.jp's own song pages are the reliable way
 // to find both). A leading 【原曲キー±8】 marks the hour-long every-key
 // compilation; the duration filter would catch it anyway, but naming it here
@@ -232,7 +232,7 @@ function parseKy(title: string): ParsedKaraokeTitle | null {
   };
 }
 
-// CC Karaoke: "Artist • Song (CC Karaoke / Instrumental)" -- a bullet, and
+// CC Karaoke: "Artist • Song (CC Karaoke / Instrumental)", with a bullet and
 // artist first. Anything after the (CC…) group is decoration ([UVR], emoji).
 const CC_RE = /^(.+?)\s*•\s*(.+?)\s*\(CC\b[^)]*\)/;
 
@@ -422,7 +422,7 @@ function getChannel(
 // The remocon debounces typing, but a nine-channel fan-out still turns one
 // search into nine requests, and backing up a character re-runs a search we
 // just ran. Short TTL because a channel's catalog does change (these upload
-// daily) -- this is about a burst of near-identical searches, not about
+// daily). This is about a burst of near-identical searches, not about
 // caching a catalog.
 const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000;
 const SEARCH_CACHE_MAX_ENTRIES = 200;
@@ -460,7 +460,7 @@ function normalizeForMatch(text: string): string {
 }
 
 // YouTube's channel search pads every response out to ~25-30 videos whether or
-// not it has that many relevant ones -- searching Sing King for "Weezer Buddy
+// not it has that many relevant ones. Searching Sing King for "Weezer Buddy
 // Holly" returns 9 videos, none of them Weezer. So relevance has to be decided
 // here: every word the user typed must appear somewhere in the parsed song and
 // artist. That is what makes these channels usable without a catalog behind

@@ -31,7 +31,7 @@ const oriconWeeklyQuery = graphql`
 
 // The only part of this page that touches the network. Past years are bundled
 // and render instantly; the live week is scraped (server-side, cached for the
-// calendar week) and so needs the loader/error boundary withLoader provides —
+// calendar week) and so needs the loader/error boundary withLoader provides.
 // Oricon rate-limits, and a failed fetch should degrade to a retry message
 // with the year chips still usable, not blank the page.
 const OriconWeeklyResults = withLoader(() => {

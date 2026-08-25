@@ -2,8 +2,8 @@
  *
  * Dark mode used to be `filter: invert(1) hue-rotate(180deg)` on the whole
  * app. That flips lightness while roughly preserving hue, which is why the
- * nav bar and every primary button stayed at full brightness in "dark" mode —
- * the accent blue round-trips back to itself. It also isn't a real hue
+ * nav bar and every primary button stayed at full brightness in "dark" mode.
+ * The accent blue round-trips back to itself. It also isn't a real hue
  * rotation (it's a linear matrix approximation), so saturated brand colors
  * came back desaturated and reordered: the JOYSOUND and DAM reds both landed
  * on the same pale pink, and the darker of the two came out lighter. And
@@ -33,7 +33,7 @@
   --surface: #fff;
   --surface-raised: #fff;
   --surface-sunken: #f7f9fa;
-  /* The Oricon blurb's cream plate — a warm tint that pairs with the gold
+  /* The Oricon blurb's cream plate, a warm tint that pairs with the gold
      rule beside it. */
   --surface-warm: #faf6e8;
 
@@ -59,7 +59,7 @@
   /* Unfilled switch tracks and disabled button fills. */
   --control-off: #ccc;
 
-  /* The groove of a range slider — its unfilled half. Chrome paints that half
+  /* The groove of a range slider, its unfilled half. Chrome paints that half
      itself and, once `accent-color` is set, uses a fixed near-black for it
      regardless of `color-scheme`; on a dark surface that's ~1.5:1 and the
      right-hand half of the slider vanishes. So the sliders draw their own
@@ -85,7 +85,7 @@
   --on-warning: #3e2723;
 }
 
-/* Plain `html.dark`, not `:global(html.dark)` — this file is not a
+/* Plain `html.dark`, not `:global(html.dark)`, because this file is not a
    `*.module.scss`, so Parcel ships it as global CSS and nothing gets hashed. */
 html.dark {
   color-scheme: dark;

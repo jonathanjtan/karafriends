@@ -111,7 +111,7 @@ const YouTubeQueueButton = ({
                 setText("Finished Downloading");
               } else {
                 setText(
-                  `Downloading -- ${(
+                  `Downloading ${(
                     data.videoDownloadProgress.progress * 100
                   ).toFixed(1)}%`,
                 );
@@ -161,7 +161,7 @@ const YouTubeQueueButton = ({
       },
       onCompleted: (response) => {
         // A resolver error nulls out the whole payload while onCompleted
-        // still fires - don't destructure it blindly.
+        // still fires, so don't destructure it blindly.
         const queueYoutubeSong = response?.queueYoutubeSong;
 
         switch (queueYoutubeSong?.__typename) {
@@ -179,7 +179,7 @@ const YouTubeQueueButton = ({
       onError: (error) => {
         console.error(error);
         // The "Error" text auto-resets and re-enables the button after a
-        // moment (see the effect above) - without it a dropped request
+        // moment (see the effect above). Without it a dropped request
         // leaves the button stuck disabled on "Waiting for server...".
         setText("Error: queueing failed, try again");
       },

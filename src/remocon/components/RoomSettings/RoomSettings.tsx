@@ -26,7 +26,7 @@ const DEFAULT_BREAK_MESSAGE = "⚠️ Don't forget to stay hydrated!";
 
 // The phone's settings drawer. Every row comes from the shared manifest
 // (common/settings), so this file is styling and the handful of remocon-only
-// concerns — supervised mode, and attributing a break message to whoever set
+// concerns: supervised mode, and attributing a break message to whoever set
 // it. The big screen renders the same manifest through renderer/Sidebar.
 const RoomSettings = ({ onNavigate }: { onNavigate?: () => void }) => {
   const settings = useRoomSettings();
@@ -72,12 +72,12 @@ const RoomSettings = ({ onNavigate }: { onNavigate?: () => void }) => {
   };
 
   // Service health is a live probe, not a setting, so it isn't in the
-  // manifest — it leads the Services section on both surfaces.
+  // manifest. It leads the Services section on both surfaces.
   const sectionExtras: Partial<
     Record<(typeof SECTIONS)[number]["id"], React.ReactNode>
   > = {
     // The TV fills this section with its interface picker; a phone already
-    // knows a working address — its own — so it offers to hand it on.
+    // knows a working address, its own, so it offers to hand it on.
     connection: (
       <div className={styles.row}>
         {/* Closing the drawer is the whole point: it covers the page, so

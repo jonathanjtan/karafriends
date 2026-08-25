@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld("karafriends", {
     overall: number;
   }): Promise<string | null> => ipcRenderer.invoke("save-score-card", meta),
   // Append latency-probe sample lines to the per-day log in the app data dir.
-  // Fire and forget (send, not invoke) -- the caller batches, and a dropped
+  // Fire and forget (send, not invoke). The caller batches, and a dropped
   // batch just costs a few samples of calibration data.
   appendProbeLog: (lines: string[]): void =>
     ipcRenderer.send("append-probe-log", lines),

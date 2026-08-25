@@ -25,7 +25,7 @@
     0px 0px 75px white;
 }
 
-/* Octave rails. Purely informational — the roll's vertical axis is relative to
+/* Octave rails. Purely informational. The roll's vertical axis is relative to
    the song's median note, so without these nothing on screen says which octave
    anything is in. Deliberately faint: this answers "where am I" for anyone who
    looks, and stays out of the way of everyone who doesn't. */

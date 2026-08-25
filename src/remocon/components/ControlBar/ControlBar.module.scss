@@ -31,11 +31,11 @@
   left: 0;
   // Negative, not positive. A positive delay leaves the span with no
   // animation-derived style until the delay elapses, so it renders at its
-  // base opacity: 1 — stacked right on top of the equally-opaque English
+  // base opacity: 1, stacked right on top of the equally-opaque English
   // label for the first half cycle. (animation-fill-mode: backwards doesn't
   // help; the 0% keyframe is opacity: 1 too.) Starting half a cycle in the
   // past has it already faded out at t=0, so the crossfade is correct from
-  // the first frame — which matters because this remounts on every
+  // the first frame, which matters because this remounts on every
   // null -> song transition, i.e. at the start of every song.
   animation-delay: -3s;
 }
@@ -97,7 +97,7 @@
 }
 
 // The expanded queue/controls are an overlay drawer sliding up from behind
-// the always-at-the-bottom expander bar — fixed positioning keeps the drawer
+// the always-at-the-bottom expander bar. Fixed positioning keeps the drawer
 // from pushing the page content or the bar itself around.
 .drawer {
   position: fixed;
@@ -111,7 +111,7 @@
   position: relative;
   background-color: var(--chrome);
   // The queue's card background would otherwise blend invisibly into the
-  // page it overlays — same shadow as the app header/footer.
+  // page it overlays, so it takes the app header/footer's shadow.
   box-shadow: 0 0 4px var(--shadow);
 }
 

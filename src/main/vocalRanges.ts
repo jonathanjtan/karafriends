@@ -87,7 +87,7 @@ export function recordVocalRange(record: VocalRangeRecord): void {
   writeRangesToDisk();
 }
 
-// personId when both sides have one, nickname otherwise -- the same rule
+// personId when both sides have one, nickname otherwise, the same rule
 // scoreHistoryFor and songPlayCount use, so the profile page and the song page
 // can't disagree about whose range they are showing.
 function isSameSinger(

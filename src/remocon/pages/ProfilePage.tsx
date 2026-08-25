@@ -119,7 +119,7 @@ const ProfilePage = () => {
           Remove avatar
         </Button>
       )}
-      {/* Frame color sits above the picker — below it, the full dex grid
+      {/* Frame color sits above the picker. Below it, the full dex grid
           pushes it thousands of pixels off-screen. It's always shown (not
           only once an avatar exists) so it doesn't pop in mid-page; with no
           avatar the frames are just empty. */}

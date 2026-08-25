@@ -27,7 +27,7 @@
 // icon.png bakes the light-mode chrome color (#1cb3ff) into its plate, so the
 // logo is invisible against the nav bar in light mode and becomes the
 // brightest thing on the screen against the dark one. Knock it back just
-// enough to sit in the bar's family — a plain brightness() dims the knocked-out
+// enough to sit in the bar's family. A plain brightness() dims the knocked-out
 // 空 too, so anything below ~0.8 costs more legibility than it buys calm.
 :global(html.dark) .navBar > img {
   filter: brightness(0.82);
@@ -46,7 +46,7 @@
   justify-self: end;
 }
 
-// PMD portraits are 40x40 pixel art — keep them crisp at nav size, framed
+// PMD portraits are 40x40 pixel art, so keep them crisp at nav size, framed
 // like the games' dialogue portraits (see pmd-frame.png).
 .avatar {
   display: block;
@@ -62,7 +62,7 @@
 }
 
 // The settings panel is an overlay drawer sliding down from under the nav
-// bar — fixed positioning keeps it from pushing the page content, and the
+// bar. Fixed positioning keeps it from pushing the page content, and the
 // max-height caps it above the collapsed queue bar (48px + a small gap); the
 // panel body scrolls the overflow.
 .settingsDrawer {
@@ -75,7 +75,7 @@
 }
 
 // The switch-account drawer shares the settings drawer's overlay slot, so it
-// needs its own surface — VolumeControls brings its own background.
+// needs its own surface. VolumeControls brings its own background.
 .accountDrawer {
   padding: 16px;
   background-color: var(--surface-raised);

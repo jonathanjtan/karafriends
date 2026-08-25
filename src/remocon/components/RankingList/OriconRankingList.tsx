@@ -19,7 +19,7 @@ const medalClasses: { [rank: number]: string } = {
   3: styles.bronze,
 };
 
-// Oricon rows carry no catalog ids and no readings — it's a third-party
+// Oricon rows carry no catalog ids and no readings. It's a third-party
 // chart, so there's nothing to link straight to and no yomi to romanize
 // (hence no WeebText here, unlike RankingList). Every row is tappable: the
 // lookup that finds the singable song runs on the next page, not now.
@@ -27,7 +27,7 @@ const OriconRankingList = ({ songs, linkBase }: Props) => (
   <List>
     {songs.map((song) => (
       <Link
-        // Rank alone isn't unique — charts tie (JOYSOUND's weekly currently
+        // Rank alone isn't unique. Charts tie (JOYSOUND's weekly currently
         // has two songs at 84), and a duplicate key lets React drop a row.
         key={`${song.rank}-${song.name}`}
         to={`${linkBase}/${encodeURIComponent(

@@ -3,10 +3,10 @@
 // how often each surface would actually fire across the 54 cached melodies.
 //
 // What we need to know:
-//   * COMFORTABLE_ENOUGH -- how often does the positive marker appear? Too high
+//   * COMFORTABLE_ENOUGH: how often does the positive marker appear? Too high
 //     and it never shows; too low and every song is "comfortable" and it means
 //     nothing.
-//   * SUGGESTION_WORTH_MAKING / MEANINGFUL_IMPROVEMENT -- how often does a key
+//   * SUGGESTION_WORTH_MAKING / MEANINGFUL_IMPROVEMENT: how often does a key
 //     offer appear, and is it landing somewhere good when it does?
 
 import { execFileSync } from "child_process";
@@ -72,7 +72,7 @@ const { midiToNoteName } = await import(
 );
 
 // The fit functions take a duration-weighted pitch histogram, which is what the
-// server caches per song -- so these checks exercise exactly the shape the app
+// server caches per song, so these checks exercise exactly the shape the app
 // asks the questions with.
 function hist(scoringData) {
   return songRangeFromScoringData(scoringData).histogram;

@@ -4,7 +4,7 @@
 //
 // The compensation differs per machine and audio backend, and on macOS the OS
 // does not report the input path truthfully, so it can't be derived at
-// runtime -- it has to be measured. This sweeps the compensation over a
+// runtime. It has to be measured. This sweeps the compensation over a
 // recorded (videoTime, midiNumber) sample stream and reports which offset
 // maximises the score the real ScoreAccumulator produces.
 //
@@ -12,8 +12,8 @@
 // calibration part only: subtract the live output term the app adds at runtime
 // (AudioContext.outputLatency, ~25ms) from this number before setting it.
 //
-// Every latency term is captured at once -- output path, input capture, the
-// detector's window centre, anything unenumerated -- because the singer's
+// Every latency term is captured at once, output path, input capture, the
+// detector's window centre and anything unenumerated, because the singer's
 // alignment against the guide melody is the only thing being optimised.
 //
 // Capturing a take: set pitchProbeEnabled: true in config.yaml, run the app
@@ -25,7 +25,7 @@
 //
 // Accuracy, measured against synthetic traces with a known lateness baked in
 // (0 / 60 / 120ms, real melody, 25ms polling): the estimate came back 8.75ms
-// low each time. The bias is structural -- a compensation slightly *under*
+// low each time. The bias is structural. A compensation slightly *under*
 // the truth still lands every sample inside its note, while one slightly over
 // pushes the first sample of each note in front of its onset, so the flat top
 // extends further below the true value than above it. Read the answer as
@@ -118,7 +118,7 @@ function compileScoring() {
 // probe log can hold several songs (the flag can be left on all session), so
 // samples must be split by song before scoring against one song's melody.
 // Also accepts the older, untagged format (PROBE_PITCH <t> <midi> <shift>) so
-// pre-tag logs still work -- those land under the "" song key.
+// pre-tag logs still work, and those land under the "" song key.
 function readSamplesBySong(logPath) {
   const bySong = new Map(); // songId -> { samples: [], shifts: Set }
   for (const line of fs.readFileSync(logPath, "utf8").split("\n")) {
@@ -196,7 +196,7 @@ console.log(
 );
 
 // The accumulator's own compensation defaults to 0 when unset, so shifting the
-// timestamp here is exactly equivalent to configuring it -- this sweeps the
+// timestamp here is exactly equivalent to configuring it. This sweeps the
 // total the app would need, whatever the config currently holds.
 function scoreAt(compensationMs) {
   const accumulator = new ScoreAccumulator(notes, lyricsIntervals);
@@ -213,7 +213,7 @@ for (let ms = 0; ms <= MAX_COMPENSATION_MS; ms += STEP_MS) {
 }
 
 if (results.length === 0) {
-  console.error("Nothing scoreable -- too few notes, or no overlap.");
+  console.error("Nothing scoreable: too few notes, or no overlap.");
   process.exit(1);
 }
 
@@ -269,7 +269,7 @@ console.log(
 
 if (plateauHi >= MAX_COMPENSATION_MS) {
   console.log(
-    `\nWARNING: the plateau runs to the end of the sweep -- the true value may be higher than ${MAX_COMPENSATION_MS}ms.`,
+    `\nWARNING: the plateau runs to the end of the sweep, so the true value may be higher than ${MAX_COMPENSATION_MS}ms.`,
   );
 }
 if (plateauHi - plateauLo > 60) {

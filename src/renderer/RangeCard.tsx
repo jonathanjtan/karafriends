@@ -76,7 +76,7 @@ export default function RangeCard(props: {
   }
 
   // The ladder spans the exercise, not the singing, so the notes nobody reached
-  // still take up space -- that is what makes "this is where it got hard"
+  // still take up space, which is what makes "this is where it got hard"
   // legible instead of invisible.
   const measured = result.targets.filter((t) => t.phase !== "settle");
   const ladderLow = Math.min(...measured.map((t) => t.midiNumber));
@@ -95,7 +95,7 @@ export default function RangeCard(props: {
         <div className="rangeCardHeaderText">
           <div className="rangeCardTitle">
             {nicknameBadge(nickname)}
-            <span className="rangeCardTitleTail">— your range today</span>
+            <span className="rangeCardTitleTail">, your range today</span>
           </div>
         </div>
       </div>
@@ -156,15 +156,15 @@ export default function RangeCard(props: {
       </div>
 
       {/* The exercise ran out before the voice did. Offered as "there's more
-          up there", never as a limit -- and it is the one case where the
+          up there", never as a limit. It is the one case where the
           measurement genuinely understates somebody. */}
       {result.hitFloor || result.hitCeiling ? (
         <div className="rangeCardMore">
           {result.hitFloor && result.hitCeiling
-            ? "You went past both ends of the warm-up — there's more range to find."
+            ? "You went past both ends of the warm-up, so there's more range to find."
             : result.hitFloor
-              ? "You reached the bottom of the warm-up — try the lower-voices setting to find the rest."
-              : "You reached the top of the warm-up — try the higher-voices setting to find the rest."}
+              ? "You reached the bottom of the warm-up. Try the lower-voices setting to find the rest."
+              : "You reached the top of the warm-up. Try the higher-voices setting to find the rest."}
         </div>
       ) : null}
     </div>

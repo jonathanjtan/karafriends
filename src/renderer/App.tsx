@@ -112,7 +112,7 @@ function App(props: {
   // Canonical name of the BGM track currently audible, for the intermission
   // screen's "Now Playing" line.
   const [bgmNowPlaying, setBgmNowPlaying] = useState<string | null>(null);
-  // Sidebar width is drag-resizable and persisted locally to each TV — it's a
+  // Sidebar width is drag-resizable and persisted locally to each TV. It's a
   // display-fit preference, not a room-wide synced setting.
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const stored = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
@@ -193,7 +193,7 @@ function App(props: {
   }, [props.audio, guideMelodyVolume]);
 
   // Newly created InputDevices start out with output enabled (the native default), so
-  // this has to re-run when the mic list changes too — otherwise picking a mic
+  // this has to re-run when the mic list changes too. Otherwise picking a mic
   // while muted would put it straight into the speakers.
   useEffect(() => {
     mics.forEach((mic) => mic.setMicOutputEnabled(micOutputEnabled));
@@ -226,7 +226,7 @@ function App(props: {
         !health.joysoundAvailable && "Joysound",
       ].filter((name): name is string => !!name);
       M.toast({
-        html: `<span>⚠️ ${unavailable.join(" & ")} unreachable — try cycling your VPN and relaunching</span>`,
+        html: `<span>⚠️ ${unavailable.join(" & ")} unreachable. Try cycling your VPN and relaunching</span>`,
       });
     },
   });
@@ -391,7 +391,7 @@ function App(props: {
       {/* Persistent rather than a toast: the risk this guards against is a
           party running for three hours with recording off, and a notice that
           disappears is exactly the one nobody sees. Only the off state shows
-          anything -- recording is the normal case and needs no chrome. */}
+          anything, since recording is the normal case and needs no chrome. */}
       {historyRecordingEnabled ? null : (
         <div
           className="appNotRecording"

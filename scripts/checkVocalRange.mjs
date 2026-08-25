@@ -75,7 +75,7 @@ const { signedOctaveFoldedDeviation } = await import(
 const { buildScoringData } = await import(path.join(outDir, "guideMelody.mjs"));
 
 // The fit functions take a duration-weighted pitch histogram, which is what the
-// server caches per song -- so these checks exercise exactly the shape the app
+// server caches per song, so these checks exercise exactly the shape the app
 // asks the questions with.
 function hist(scoringData) {
   return songRangeFromScoringData(scoringData).histogram;
@@ -250,7 +250,7 @@ function song(lowMidi, spread) {
 
 // 6. Octave normalisation. THE real-world case: measured across 56 song/take
 // pairs, the extracted JOYSOUND melody sits an octave above the singer on 33
-// and two octaves above on 20 -- only 3 share the singer's octave. A song
+// and two octaves above on 20. Only 3 share the singer's octave. A song
 // written two octaves up must still read as comfortable, because the singer
 // simply sings it where it suits them.
 {
@@ -278,7 +278,7 @@ function song(lowMidi, spread) {
     songOctaveShiftFor(hist(twoOctavesUp), band),
     -24,
   );
-  // Absolute range is reported raw -- it is an honest reading of the data, and
+  // Absolute range is reported raw. It is an honest reading of the data, and
   // normalisation is a property of the singer, not the song.
   check(
     "raw song range is unnormalised",

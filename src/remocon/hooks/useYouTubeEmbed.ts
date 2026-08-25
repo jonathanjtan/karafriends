@@ -23,7 +23,7 @@ export const UNEMBEDDABLE_REASON_TEXT: Record<UnembeddableReason, string> = {
 
 interface Playability {
   readonly embeddable: boolean;
-  // Null/undefined when the video info didn't say — treated as "no reason to
+  // Null/undefined when the video info didn't say, treated as "no reason to
   // think it's blocked", same as true.
   readonly availableInUs?: boolean | null;
 }
@@ -33,9 +33,9 @@ interface Playability {
  * videos into it, and decides whether an embed can be shown at all.
  *
  * `playability` is what the *host* machine saw when it fetched the video info,
- * which catches most unplayable videos up front. It can't catch all of them —
- * the host fetches over the VPN and the phone doesn't, and a video can be
- * blocked in ways `playability_status` doesn't report — so a video that looks
+ * which catches most unplayable videos up front. It can't catch all of them.
+ * The host fetches over the VPN and the phone doesn't, and a video can be
+ * blocked in ways `playability_status` doesn't report, so a video that looks
  * fine here still shows up as a bare "Video unavailable" (sometimes only after
  * the viewer taps play) on the device. The player's own `error` event is the
  * only signal for those, so it feeds back into `canEmbed` and the caller falls
@@ -104,7 +104,7 @@ export default function useYouTubeEmbed(
   return {
     canEmbed,
     unembeddableReason,
-    // Escape hatch for the embeds that fail silently — the player renders a
+    // Escape hatch for the embeds that fail silently. The player renders a
     // poster frame and only reveals "Video unavailable" once tapped, with no
     // error event to catch.
     showThumbnailsInstead: () => blockVideoId(videoId),

@@ -126,7 +126,7 @@
 
 html.oledFriendly .appSidebar {
   /* !important overrides Materialize's grey.lighten-3 (#eee). The pre-filter
-     color must be pure #ffffff so the post-filter result is pure #000000 —
+     color must be pure #ffffff so the post-filter result is pure #000000, the
      true OLED off-pixels. #eee would only invert to #111. */
   background-color: #ffffff !important;
   filter: invert(1) hue-rotate(180deg);
@@ -178,8 +178,8 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
 
 /* Same story for the switch knob: Materialize parks an off switch at #F1F1F1,
    which inverts to near-black and vanishes into the sidebar. Author it dark so
-   it inverts back to a light knob. The elevation shadow has to go with it —
-   a cast shadow exists to lift a light object off a light surface, so once
+   it inverts back to a light knob. The elevation shadow has to go with it.
+   A cast shadow exists to lift a light object off a light surface, so once
    inverted it's a dark halo around an already-dark knob (black on black). On a
    black surface elevation reads through fill, not shadow. The :checked teal
    survives the filter untouched (invert + hue-rotate(180deg) round-trips a
@@ -187,7 +187,7 @@ html.oledFriendly .appSidebar .input-field input[type="text"] {
    matching on `:not(:checked)` is load-bearing, not decoration. The obvious
    `.switch label .lever:after` spelling ties Materialize's own
    `input:checked + .lever:after` at (0,4,3) and, being later in the cascade,
-   silently wins it — repainting the teal knob dark grey. */
+   silently wins it, repainting the teal knob dark grey. */
 html.oledFriendly
   .appSidebar
   .switch
@@ -278,8 +278,8 @@ html.oledFriendly
 
 /* A settings window dragged out to full width would otherwise stretch every
    slider and segmented button across the whole display. Cap the controls in a
-   centered column (the section headers and the queue still span the window) —
-   the sidebar itself stays the query container, so the wide row layout is
+   centered column (the section headers and the queue still span the window).
+   The sidebar itself stays the query container, so the wide row layout is
    still the one that applies. */
 .appSidebarWindow > .section {
   width: 100%;
@@ -366,14 +366,14 @@ html.oledFriendly
 
 /* For rows that have a value but no control (the service-health readouts).
    A plain .settingLabel leaves the control column empty, and the grid's
-   `dense` flow backfills the *next* row's label into it — which put DAM and
+   `dense` flow backfills the *next* row's label into it, which put DAM and
    Joysound side by side with their icons stacked in the value column. */
 .settingLabelWide {
   grid-column: 1 / 3;
 }
 
 /* Explanations used to be `title=` tooltips, which nobody hovers on a
-   television — the Pitch Gate row in particular is the one most likely to be
+   television. The Pitch Gate row in particular is the one most likely to be
    set wrong. They're a real full-width row now, matching the remocon. */
 .settingHint {
   grid-column: 1 / -1;
@@ -467,7 +467,7 @@ html.oledFriendly
 }
 
 /* Switches span the control+value columns, so ending them puts the lever on
-   the grid's right edge — in line with the slider readouts, the segmented
+   the grid's right edge, in line with the slider readouts, the segmented
    controls, and the service-health icons, instead of floating mid-row. Same
    alignment the narrow layout and the remocon already use. */
 .settingsGrid .switch {
@@ -580,7 +580,7 @@ html.oledFriendly
   }
 
   /* .settingControlWide is `2 / 4` in the wide layout, which in a 2-column
-     grid resolves to an *implicit* third column — the grid then measured ~55px
+     grid resolves to an *implicit* third column. The grid then measured ~55px
      wider than the sidebar and its value column hung off the clipped edge.
      Whatever a row's wide-layout placement was, in here it spans the row. */
   .settingControl,
@@ -617,7 +617,7 @@ html.oledFriendly
   }
 
   /* Long labels ("Scoring (experimental)") have a min-content width wider
-     than the whole 180px grid, and `1fr` is `minmax(auto, 1fr)` — so a
+     than the whole 180px grid, and `1fr` is `minmax(auto, 1fr)`, so a
      nowrap label sets the column and pushes the value column off the clipped
      edge. Wrapping is the graceful degradation; the row just gets taller. */
   .settingLabel {
@@ -628,7 +628,7 @@ html.oledFriendly
 
 /* Shown only while history recording is off (the `run-dev` default). Bottom
    left, out of the way of the sidebar on the right and the score card's
-   "Experimental" tag on the top left, and deliberately drab -- it is a standing
+   "Experimental" tag on the top left, and deliberately drab. It is a standing
    condition, not an alert. Above the score card and intermission (z-index 20)
    so it stays visible while those are up: those are exactly the moments
    somebody would otherwise assume the night is being recorded. */

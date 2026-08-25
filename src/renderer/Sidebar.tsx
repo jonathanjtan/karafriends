@@ -33,7 +33,7 @@ interface Props {
   variant: "docked" | "window";
   // The mics belong to the big screen's renderer process (see
   // settingsPanelBus.ts), so they arrive as props and changes go back out as
-  // callbacks — in the popped-out window those callbacks travel over the bus.
+  // callbacks. In the popped-out window those callbacks travel over the bus.
   // Everything else in here is a synced setting the sidebar reads itself.
   mics: MicSelection[];
   onSelectMic: (index: number, name: string, channel: number) => void;
@@ -51,7 +51,7 @@ interface Props {
   onPopOut?: () => void;
   onDock?: () => void;
   // Open the QR in its own window, to park on a second display. Offered by
-  // both variants — see the button.
+  // both variants. See the button.
   onPopOutQr?: () => void;
   // True while the settings window is open, so the docked sidebar can say so
   // instead of pretending its (hidden) copy is the live one.
@@ -77,7 +77,7 @@ export default function Sidebar(props: Props) {
         if (input === null) return;
         const trimmed = input.trim();
         if (trimmed === "") return;
-        // No nickname on the big screen — the message shows unattributed.
+        // No nickname on the big screen, so the message shows unattributed.
         settings.setBreakMessage(trimmed, null);
       },
     },
@@ -174,7 +174,7 @@ export default function Sidebar(props: Props) {
           />
         </span>
         <span className="settingHint">
-          Live only while a scored song is playing — nothing polls the mics
+          Live only while a scored song is playing. Nothing polls the mics
           between songs.
         </span>
       </>

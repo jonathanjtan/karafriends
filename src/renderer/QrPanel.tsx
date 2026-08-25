@@ -5,8 +5,8 @@ import QRCode from "./QRCode";
 import "./QrPanel.css";
 
 // Root of the popped-out join-QR window (?panel=qr): the QR and the address
-// it encodes, and nothing else. Meant to be dragged onto a second display —
-// a laptop beside the TV — and left there, so people can scan in while the
+// it encodes, and nothing else. Meant to be dragged onto a second display,
+// a laptop beside the TV, and left there, so people can scan in while the
 // big screen stays on the song.
 //
 // It needs no bus to the big screen: hostname is a synced setting, so this

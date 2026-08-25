@@ -20,9 +20,9 @@ const maxMsToWaitForExtraction = 20000;
 // build host's: CI builds both the arm64 and x86_64 macOS releases on the same
 // (arm64) runner, distinguished only by the cargo target in CARGO_ARGS. Prefer
 // that signal; fall back to the host arch for local dev. We source a native
-// arm64 build from eugeneware/ffmpeg-static (GitHub-hosted, versioned,
-// gzipped single binary) — evermeet.cx only ships x86_64, which fails with
-// "bad CPU type" on Apple Silicon without Rosetta.
+// arm64 build from eugeneware/ffmpeg-static (GitHub-hosted, versioned, gzipped
+// single binary), because evermeet.cx only ships x86_64, which fails with "bad
+// CPU type" on Apple Silicon without Rosetta.
 function macTargetArch() {
   const cargoArgs = process.env.CARGO_ARGS || "";
   if (cargoArgs.includes("aarch64-apple-darwin")) return "arm64";

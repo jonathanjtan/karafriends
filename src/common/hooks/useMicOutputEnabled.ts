@@ -33,7 +33,7 @@ const micOutputEnabledSubscription = graphql`
 // Whether mic audio is played through the app's own speakers (the dry
 // signal plus the reverb/echo). Turning it off mutes the mics locally so the
 // room can run through an external mixer instead, while the native input
-// stream keeps feeding the pitch detector — scoring and the piano roll are
+// stream keeps feeding the pitch detector, so scoring and the piano roll are
 // unaffected. Defaults to on (the historical behavior). Like
 // useQueueIntermissionEnabled, this is a discrete toggle, so commits go out
 // immediately (no debounce).

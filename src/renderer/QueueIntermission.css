@@ -10,7 +10,7 @@
      right-hand padding that keeps text clear of them derive from these, so
      resizing the codes can't leave the text reservation behind.
 
-     --qr-size is the whole box (border-box — Materialize sets it globally),
+     --qr-size is the whole box (border-box, which Materialize sets globally),
      and the canvas fills it edge to edge. At 26vh on a 1080p projector that's
      a 281px code, ~7.6px per module, which stays scannable from across a
      room; 16vh gave 4.1px per module and only read from a few feet away. */
@@ -59,8 +59,8 @@
 }
 
 /* QR codes need a quiet zone to scan reliably against the dark overlay. The
-   canvas already renders one — qrcode's default 4-module margin, drawn in the
-   variant's own light colour — so this box deliberately has NO padding: adding
+   canvas already renders one, qrcode's default 4-module margin drawn in the
+   variant's own light colour, so this box deliberately has NO padding. Adding
    any would stack a second quiet zone on top of the first and shrink the
    modules for no benefit (it cost ~8% of the code's size before). The
    background is only a fallback for the frame before the canvas paints.
@@ -93,7 +93,7 @@
   background: black;
 }
 
-/* Same OLED burn-in mitigation as the sidebar QR code (App.css) — reuses its
+/* Same OLED burn-in mitigation as the sidebar QR code (App.css). It reuses its
    oledQrWiggle keyframes, which are global to the document. */
 html.oledFriendly .queueIntermissionQr canvas,
 html.oledFriendly .queueIntermissionQrInverted canvas {
@@ -287,7 +287,7 @@ html.oledFriendly .queueIntermissionQrInverted canvas {
 
 .queueIntermissionUpcomingSong {
   /* Without this a flex item won't shrink below its (nowrap) content width,
-     so a long song name overflows the row instead of eliding — pushing the
+     so a long song name overflows the row instead of eliding, pushing the
      ETA out past the row's bounds instead of just truncating the name. */
   min-width: 0;
   overflow: hidden;

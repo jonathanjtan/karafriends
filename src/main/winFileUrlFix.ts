@@ -9,7 +9,7 @@
 //
 // On Windows only, wrap `url.fileURLToPath` to fall back to the input string
 // with the "file://" prefix stripped when it would otherwise throw the
-// above error — the same path Linux/macOS would have produced. This must be
+// above error, the same path Linux/macOS would have produced. This must be
 // imported before any module that uses fileURLToPath (see main/index.ts).
 
 import * as nodeUrl from "url";

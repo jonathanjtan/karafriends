@@ -18,10 +18,10 @@
 //      rather than just the one you were listening to.
 //
 // Inputs are what the app already leaves lying around:
-//   * PROBE_PITCH logs from `pitchProbeEnabled` --
+//   * PROBE_PITCH logs from `pitchProbeEnabled`, at
 //     <userData>/probe-logs/probe-<date>.log (see the handoff doc for how to
 //     capture them; each line carries its songId, so one log holds a session).
-//   * the cached guide melody per song -- <userData>/melodies/ first, then
+//   * the cached guide melody per song, in <userData>/melodies/ first, then
 //     <temp>/karafriends_tmp/, both named joysound-<songId>-melody.bin. The
 //     temp copy expires (macOS sweeps /var/folders by age, which is what took
 //     the original 29-take corpus out); the userData mirror is the durable one.
@@ -40,8 +40,8 @@ import { fileURLToPath } from "url";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // What the app applied when these logs were captured: micLatencyCalibrationMs
-// plus AudioContext.outputLatency. Not read from config on purpose -- a replay
-// has to be reproducible across machines.
+// plus AudioContext.outputLatency. Not read from config on purpose, since a
+// replay has to be reproducible across machines.
 const DEFAULT_COMPENSATION_MS = 105;
 
 // Below these a take isn't worth scoring: too little reference melody to judge
@@ -177,7 +177,7 @@ function readTakes(logTarget) {
   // Sing the same song twice in one night and the video clock restarts, which
   // is the only marker in the log that one take ended and another began. Without
   // this the two share a key and their samples concatenate into a single
-  // impossible take -- 31k samples covering 26s..246s twice over -- which
+  // impossible take, 31k samples covering 26s..246s twice over, which
   // scores, and scores wrongly, rather than failing.
   const RESTART_GAP_SECS = 5;
   const lastTime = new Map();
@@ -227,8 +227,8 @@ function readTakes(logTarget) {
 // reference note in each; at a 10ms hop a slot holds ~2.5 candidates instead of
 // one, so it is picking the best of several noisy estimates rather than
 // accepting the only one. That is a free lift on the pitch axis that nobody
-// sang for, and the only way to size it is to score one take both ways --
-// identical singing, two densities. Decimation only runs dense -> sparse:
+// sang for, and the only way to size it is to score one take both ways, on
+// identical singing at two densities. Decimation only runs dense -> sparse:
 // readings that were never captured cannot be invented, which is why the
 // pre-existing corpus (median gap 24.4ms) can't answer this on its own.
 //
@@ -238,7 +238,7 @@ function readTakes(logTarget) {
 //   * Snap to a fixed grid, don't chain off the last kept sample. Timestamps
 //     jitter, so a reading 24.8ms after its predecessor fails a `>= 25ms` test
 //     and the next kept one lands at ~50ms. That aliases a 25ms request into a
-//     50ms capture -- which is what dropped a corpus take from 83.7/A to
+//     50ms capture, which is what dropped a corpus take from 83.7/A to
 //     69.7/B on the first version of this function.
 //   * Keep a poll's whole cluster. Every open mic contributes a reading at
 //     essentially the same instant, and the old framing gave each mic its own
@@ -403,7 +403,7 @@ for (const [key, take] of [...takes.entries()].sort()) {
     timing: result.timing === null ? null : round(result.timing),
     // How many onsets that timing reading rests on, and how much of it the
     // headline therefore took. Timing is the axis whose sample size varies
-    // wildly by song -- 1 to 40 across the corpus -- and a reading from a
+    // wildly by song, 1 to 40 across the corpus, and a reading from a
     // handful is biased high, so the count is what tells you whether a timing
     // number means anything.
     timingCount: result.timingCount,

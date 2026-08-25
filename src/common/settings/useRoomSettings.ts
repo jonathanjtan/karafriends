@@ -161,8 +161,8 @@ export default function useRoomSettings(): RoomSettings {
           ).padStart(2, "0")}`
         : `${breakMinutes}:00`,
       // While a break runs, ± move its deadline; while idle, they set how long
-      // the next one will be. Never below "now" — a deadline in the past would
-      // read as a negative countdown.
+      // the next one will be. Never below "now", since a deadline in the past
+      // would read as a negative countdown.
       decrement: () =>
         breakActive
           ? setBreakEndsAt(Math.max(breakEndsAt! - 60 * 1000, Date.now()))

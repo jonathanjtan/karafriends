@@ -18,19 +18,19 @@ pub struct PitchEstimate {
 /// than the window, and hands back every reading since the last call.
 ///
 /// The detector needs a window of a fixed size (its FFT is planned for it), and
-/// that size is bounded below by the lowest pitch worth resolving -- 25ms is
+/// that size is bounded below by the lowest pitch worth resolving: 25ms is
 /// already only two cycles at 80Hz. But the *hop* between windows is free to be
 /// smaller, and it is the hop, not the window, that sets how finely a pitch
 /// **changes** over time can be measured.
 ///
 /// That distinction is the whole point of this type. Reading one window per JS
-/// poll made the hop 25ms and, worse, irregular -- the poll shares a renderer
-/// with a WebGL draw loop and runs late routinely. Vibrato rate came out pinned
-/// at 6.7Hz for every singer on every song, which is 1/(2 x 75ms): three sample
-/// slots per half cycle. The detector was reporting the sampling grid rather
-/// than the voice.
+/// poll made the hop 25ms and, worse, irregular, since the poll shares a
+/// renderer with a WebGL draw loop and runs late routinely. Vibrato rate came
+/// out pinned at 6.7Hz for every singer on every song, which is 1/(2 x 75ms):
+/// three sample slots per half cycle. The detector was reporting the sampling
+/// grid rather than the voice.
 ///
-/// Windows overlap, so consecutive estimates are not independent -- but
+/// Windows overlap, so consecutive estimates are not independent, but
 /// tracking a 5-7Hz modulation does not need independent samples, it needs
 /// samples of the modulation envelope, and a 25ms window spans only about 15%
 /// of a 6Hz cycle. It smooths the depth slightly rather than hiding the shape.
@@ -67,7 +67,7 @@ impl PitchFramer {
         // the audio is no longer worth scoring; dropping the oldest bounds both
         // the work done here and the memory held. This replaces the old
         // "discard everything but the newest window" rule, which threw away
-        // real singing on every late poll -- the threshold is now a stall of
+        // real singing on every late poll. The threshold is now a stall of
         // most of a second rather than a poll running a few ms behind.
         if self.history.len() > self.max_backlog {
             self.history.drain(..self.history.len() - self.max_backlog);
@@ -107,7 +107,7 @@ mod tests {
         (sample_rate as u32).div_ceil(40) as usize
     }
 
-    /// A tone whose pitch is modulated sinusoidally -- vibrato with an exactly
+    /// A tone whose pitch is modulated sinusoidally: vibrato with an exactly
     /// known rate and depth, which is a better ground truth than any sung take.
     fn vibrato_tone(secs: f32, carrier_hz: f32, rate_hz: f32, depth_semis: f32) -> Vec<f32> {
         let count = (SAMPLE_RATE * secs) as usize;
@@ -144,7 +144,7 @@ mod tests {
         let hop = (SAMPLE_RATE as u32).div_ceil(100) as usize; // 10ms
         let mut framer = PitchFramer::new(SAMPLE_RATE, window, hop, SAMPLE_RATE as usize);
 
-        // Fed in small buffers, the way the audio callback delivers it -- a
+        // Fed in small buffers, the way the audio callback delivers it. A
         // 2s tone handed over in one call would exceed the backlog cap and be
         // trimmed to the last second, which is the cap working, not a bug.
         let tone = vibrato_tone(2.0, 220.0, 5.5, 0.5);
@@ -244,7 +244,7 @@ mod tests {
         let hop = (SAMPLE_RATE as u32).div_ceil(100) as usize;
         let mut framer = PitchFramer::new(SAMPLE_RATE, window, hop, SAMPLE_RATE as usize);
 
-        // A tenth of a second arriving at once -- four polls' worth.
+        // A tenth of a second arriving at once, four polls' worth.
         let estimates = framer.analyze(&vibrato_tone(0.1, 220.0, 5.5, 0.2));
         assert!(
             estimates.len() >= 7,

@@ -34,7 +34,7 @@ const hostnameSubscription = graphql`
 // computes the LAN default) so every window that draws a QR agrees without
 // any renderer-to-renderer relay: the sidebar, the intermission screen and
 // the popped-out QR window all just read this. Empty string until the first
-// fetch lands — callers should skip drawing a QR for it rather than encode a
+// fetch lands, so callers should skip drawing a QR for it rather than encode a
 // bogus URL. Like useBgmTrack, a picker changes value at most once per
 // interaction, so commits go out immediately with no debounce.
 export default function useHostname() {

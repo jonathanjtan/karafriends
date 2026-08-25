@@ -5,7 +5,7 @@
 //
 // The reference material (DAM's scoring blob, or the equivalent Joysound
 // melody extraction) contains notes, phrase intervals, chorus regions and a
-// display grid -- but no scoring *rules*: no thresholds, no weights, and a
+// display grid, but no scoring *rules*: no thresholds, no weights, and a
 // per-note flags word that is a constant 100 across every song surveyed.
 // There is therefore nothing to reverse-engineer and no way to agree with a
 // real DAM machine; the formula below is ours, and is meant to be tuned.
@@ -21,9 +21,9 @@ import { ScoringInterval, ScoringNote } from "./scoringData";
 //
 // 1: pitch/longTone/timing on a display curve, fitted to the 54-take corpus.
 // 2: timing onsets located in continuous time rather than on the sliding 25ms
-//    slot grid, and quartiles interpolated. Version 1 timing was a coin toss --
-//    a 1ms change in fitted compensation moved it 12 points and flipped the
-//    band -- so v1 scores are not comparable to these.
+//    slot grid, and quartiles interpolated. Version 1 timing was a coin toss.
+//    A 1ms change in fitted compensation moved it 12 points and flipped the
+//    band, so v1 scores are not comparable to these.
 // 3: timing onset gate widened (150ms -> 80ms of reference rest) and the axis
 //    blended with pitch in proportion to how many onsets the song actually
 //    offered, since a spread from a handful of them is an unreliable reading.
@@ -44,7 +44,7 @@ export const SCORE_BUCKET_COUNT = 24;
 // reading that deserves credit.
 const SOFT_FULL_SEMIS = 0.5;
 const SOFT_ZERO_SEMIS = 1.25;
-// The threshold for the yes/no questions that remain -- whether a slot counts
+// The threshold for the yes/no questions that remain: whether a slot counts
 // towards a sustained run, and whether a note was "landed". Half credit.
 const ON_PITCH_TOLERANCE_SEMIS = (SOFT_FULL_SEMIS + SOFT_ZERO_SEMIS) / 2;
 
@@ -54,7 +54,7 @@ const ON_PITCH_TOLERANCE_SEMIS = (SOFT_FULL_SEMIS + SOFT_ZERO_SEMIS) / 2;
 // and inflates coverage.
 //
 // Exported so vocalRange.ts measures sustain on the same grid rather than
-// picking its own -- two definitions of "how long did they hold it" that could
+// picking its own. Two definitions of "how long did they hold it" that could
 // drift apart is worse than one shared constant.
 export const SAMPLE_SLOT_MS = 25;
 
@@ -77,13 +77,13 @@ const SUSTAIN_FRACTION = 0.5;
 // Deliberately un-processed: the compensation is NOT applied here and the
 // sample is not yet attached to a reference note. Both happen in
 // placeSamples(), which finalize() runs more than once at different
-// compensations to find the one that actually fits the take -- and it can only
+// compensations to find the one that actually fits the take, and it can only
 // do that if the samples are still where the singer put them.
 export interface ScoreSample {
   // Video-clock time the sample was read, in seconds, uncompensated.
   timeSecs: number;
   // The detected pitch as it arrived, unfolded, so a metric can recover what
-  // octave folding would hide -- which register the singer was actually in.
+  // octave folding would hide: which register the singer was actually in.
   midiNumber: number;
   // The pitch shift in force when this sample was read. Per-sample rather than
   // per-take because it is a synced setting somebody can turn mid-song.
@@ -114,8 +114,8 @@ export type Placement = Map<number, Map<number, PlacedSample>>;
 
 // Attach raw samples to reference notes at a given compensation.
 //
-// Exported and pure so the metrics that don't live in finalize() -- long tone,
-// timing, vibrato -- work from exactly the placement the headline scored, and
+// Exported and pure so the metrics that don't live in finalize(), long tone,
+// timing and vibrato, work from exactly the placement the headline scored, and
 // so a recorded take can be re-placed offline at any offset.
 //
 // Samples falling in a gap between phrases are dropped rather than credited to
@@ -207,8 +207,8 @@ function noteCredit(
 // nobody sang counting as zero.
 //
 // Averaging over every note rather than only the attempted ones does two jobs.
-// It folds participation in for free -- sitting out the last chorus costs you
-// those notes -- and, more importantly, it makes this the same quantity the
+// It folds participation in for free, since sitting out the last chorus costs
+// you those notes, and, more importantly, it makes this the same quantity the
 // compensation is fitted on, which is what guarantees fitting can never lower
 // a singer's pitch score. An average over *attempted* notes would let the fit
 // wander to an offset that strands most samples in the rests and then flatter
@@ -229,7 +229,7 @@ export function pitchScore(
 }
 
 // The compensation that best fits this take, searched within FIT_WINDOW_MS of
-// the caller's seed and judged on pitchScore -- the very axis the headline
+// the caller's seed and judged on pitchScore, the very axis the headline
 // leads with, so a fitted take can never score worse on pitch than the seed
 // would have.
 //
@@ -288,7 +288,7 @@ const LONG_TONE_HOLD_FRACTION = 0.7;
 
 // The long-tone axis: over reference notes at least LONG_TONE_MIN_SECS long,
 // how much of each one the singer actually held on pitch. Null when the song
-// has no held notes at all -- a fast song can't be judged on this, and saying
+// has no held notes at all. A fast song can't be judged on this, and saying
 // so is better than scoring it as a failure.
 //
 // This was the widest-spread axis after pitch on the corpus (12-92 against a
@@ -324,13 +324,13 @@ export function longToneScore(
 // Was 150ms, which left the corpus a median of 7 qualifying onsets per take and
 // 18 takes of 55 with too few to score at all. 80ms takes the median to 10 and
 // the unscorable takes to 12. Loosening this is safe in a way that loosening
-// ONSET_SILENT_SLOTS is not -- see there.
+// ONSET_SILENT_SLOTS is not. See there.
 const ONSET_GAP_SECS = 0.08;
 // Slots of quiet required before the note starts, so the tail of the previous
 // phrase can't be mistaken for this note's attack.
 //
 // Do not lower this to buy more onsets. Measured across the corpus by how far
-// each take's median attack error moves from its strict-gate value -- a real
+// each take's median attack error moves from its strict-gate value. A real
 // attack sits at a consistent offset, so a median that wanders means the events
 // being found are not attacks. Relaxing ONSET_GAP_SECS from 150ms to 80ms
 // drifts the median 0.4ms; relaxing this from 4 slots to 2 drifts it 8-17ms at
@@ -345,14 +345,14 @@ const ONSET_MIN_SAMPLES = 6;
 // timing is blended with pitch in proportion (see timingConfidence).
 //
 // An interquartile spread from a handful of points is both noisy and mildly
-// optimistic -- it is easy to keep tight when there is little to be spread.
+// optimistic, since it is easy to keep tight when there is little to spread.
 // Measured *within* the corpus takes, widening the gates raised the median
 // count from 7 to 10 and pulled the median timing score from 80.0 to 77.3, at
 // 0.4ms of median drift (so the extra onsets are real attacks, not junk): the
 // same singing scores lower once there is more of it to judge.
 //
 // Note the effect is small next to song-to-song variation. *Between* takes,
-// timing correlates positively with onset count (r = +0.199) -- takes that
+// timing correlates positively with onset count (r = +0.199): takes that
 // happen to offer few onsets do not score higher, they score slightly lower.
 // So this is shrinkage of an unreliable estimate toward the fallback the null
 // case already uses, not a correction of some large systematic inflation.
@@ -402,7 +402,7 @@ export function timingScore(
   // millisecond: samples near a boundary change slots, notes change their
   // "was it quiet before" answer, and the qualifying set churns. Measured on a
   // real take, a 100 -> 110ms sweep moved the set 25 -> 22 and swung the
-  // interquartile spread from 71.6ms to 45.1ms -- twelve score points and an
+  // interquartile spread from 71.6ms to 45.1ms, twelve score points and an
   // SS/SSS band flip, out of one millisecond of compensation the pitch axis
   // could not even distinguish. Seeking by time means a 1ms nudge admits or
   // drops only what genuinely lies within that millisecond, and it reads
@@ -524,7 +524,7 @@ function longestOnPitchRun(slots: Map<number, PlacedSample>): number {
 //
 // The corpus put the best-fitting compensation between 90 and 312ms against a
 // configured 105 (docs/scoring-scorecard-proposal.md, finding 3). Most of that
-// spread is not miscalibration -- it is singers sitting behind the beat, which
+// spread is not miscalibration. It is singers sitting behind the beat, which
 // the old fixed offset charged to *pitch*. Fitting per take separates the two.
 //
 // The window is deliberately bounded rather than open: an unbounded search on
@@ -541,8 +541,8 @@ const FIT_PLATEAU_TOLERANCE = 0.01;
 
 // Axis weights, chosen by how well each one separated the 29-take corpus
 // rather than by taste: pitch spread 38-87, long tone 12-92, timing 36-251ms.
-// Timing is real but thin -- a median of six locatable attacks per song -- so
-// it carries the least.
+// Timing is real but thin, a median of six locatable attacks per song, so it
+// carries the least.
 const WEIGHT_PITCH = 0.65;
 const WEIGHT_LONG_TONE = 0.2;
 const WEIGHT_TIMING = 0.15;
@@ -551,7 +551,7 @@ const WEIGHT_TIMING = 0.15;
 //
 // This exists so the formula and the scale are separate things. Band
 // thresholds sit on the *displayed* number, so retuning the formula means
-// re-fitting this table rather than moving every band -- which is the treadmill
+// re-fitting this table rather than moving every band, which is the treadmill
 // the old design was on.
 //
 // Fitted by placing each band boundary at a chosen quantile of a real corpus
@@ -561,14 +561,14 @@ const WEIGHT_TIMING = 0.15;
 //   55 (D/C) below every take but the one nobody really attempted
 //   68 (C/B) at the 13th percentile      78 (B/A) at the 37th
 //   87 (A/S) at the 67th                 93 (S/SS) at the 91st
-//   97 (SSS) above the best take in the corpus -- reachable, unearned so far
+//   97 (SSS) above the best take in the corpus: reachable, unearned so far
 //
 // which lands D 1, C 7, B 11, A 18, S 12, SS 5, SSS 0. Slopes fall from 157 to
 // 25 across the range: deliberately compressive at the top, so the last few
 // points cost the most.
 //
-// The earlier version of this table was fitted to 29 takes -- all that survived
-// a temp sweep -- and that subset was biased toward the better half of the
+// The earlier version of this table was fitted to 29 takes, all that survived
+// a temp sweep, and that subset was biased toward the better half of the
 // room, which made the curve read ~4 points generous at the median and pushed a
 // fifth of all takes into C. Re-fit once there is a corpus from more rooms than
 // this one; scripts/replayScoring.mjs prints the distribution.
@@ -611,7 +611,7 @@ const BAND_THRESHOLDS: [ScoreBand, number][] = [
 ];
 
 // One reference note, positioned for drawing. The card's note ribbon replays
-// the whole melody from these, so it needs every note -- including the ones
+// the whole melody from these, so it needs every note, including the ones
 // nobody sang, which are what make a missed phrase visible as a gap.
 export interface ScoredNote {
   // Position and width within the scored window, both 0..1, so a caller can
@@ -632,7 +632,7 @@ export interface ScoreResult {
   // it, not `display`, is the quantity to compare across formula versions.
   overall: number;
   // The axes, each 0..1. longTone and timing are null when the song can't be
-  // judged on them (no held notes; too few locatable attacks) -- the card shows
+  // judged on them (no held notes; too few locatable attacks). The card shows
   // that gap rather than hiding it, because a missing axis leans the headline
   // harder on pitch.
   pitch: number;
@@ -644,7 +644,7 @@ export interface ScoreResult {
   timingCount: number;
   // Interquartile spread of attack error in ms (what timing scores), and its
   // median as a tendency: negative is ahead of the beat, positive behind.
-  // Reported, never scored -- see timingScore.
+  // Reported, never scored. See timingScore.
   timingSpreadMs: number | null;
   timingMedianMs: number | null;
   // 0..1, of the reference note time, how much received any voiced input. No
@@ -654,7 +654,7 @@ export interface ScoreResult {
   coverage: number;
   // Per-bucket note-average credit across the 24 display windows, null where
   // the singer produced nothing at all in that window (an instrumental break,
-  // or a phrase they sat out) -- distinct from 0, which means they sang and
+  // or a phrase they sat out), distinct from 0, which means they sang and
   // missed.
   buckets: (number | null)[];
   // Reference notes that had at least one voiced frame, and the total, so
@@ -664,7 +664,7 @@ export interface ScoreResult {
   // Every reference note, positioned for the ribbon, plus the reference pitch
   // range to scale it against and the window the positions are relative to.
   // The window bounds are here so a caller can place anything else it knows in
-  // absolute seconds -- instrumental breaks, say -- on the same axis.
+  // absolute seconds, an instrumental break say, on the same axis.
   notes: ScoredNote[];
   pitchLo: number;
   pitchHi: number;
@@ -684,8 +684,8 @@ export interface ScoreResult {
 // note, positive over it.
 //
 // **The folding is a product decision, not a shortcut.** Singing a line in your
-// own comfortable octave is normal and correct -- a lower voice taking a high
-// vocal part down an octave is a legitimate performance, not an error -- so it
+// own comfortable octave is normal and correct. A lower voice taking a high
+// vocal part down an octave is a legitimate performance, not an error, so it
 // must not cost points. Don't "fix" this into absolute-pitch comparison.
 //
 // (Measuring a vocal *range* is the one place this is wrong, because an octave
@@ -705,7 +705,7 @@ export function signedOctaveFoldedDeviation(
   return ((((raw + 6) % 12) + 12) % 12) - 6;
 }
 
-// How far off the note a sample landed, direction discarded -- what the
+// How far off the note a sample landed, direction discarded, which is what the
 // pitch-accuracy terms below want. Anything that cares which side of the note
 // the singer was on wants signedOctaveFoldedDeviation instead.
 export function octaveFoldedDeviation(
@@ -716,7 +716,7 @@ export function octaveFoldedDeviation(
 }
 
 // The span DAM's 24 display windows cover: the intersection of the note range
-// and the lyrics range. Verified exact on 96/96 songs surveyed -- the naive
+// and the lyrics range. Verified exact on 96/96 songs surveyed. The naive
 // "first note to last note" is right for most songs but breaks when a song
 // ends on a held note that outlasts the final lyric phrase.
 export function scoreWindowBounds(
@@ -751,7 +751,7 @@ function bandFor(overall: number): ScoreBand {
 
 // Records one song's worth of mic samples, and scores them when it ends.
 //
-// Fed from PianoRoll's poll loop (all mics into one accumulator -- whoever is
+// Fed from PianoRoll's poll loop (all mics into one accumulator, so whoever is
 // singing counts) and read once when the song ends. addSample only records;
 // attaching samples to reference notes is placeSamples' job, run from
 // finalize(), because the placement depends on a compensation that finalize
@@ -761,16 +761,16 @@ export class ScoreAccumulator {
   private windowStart: number;
   private windowEnd: number;
   // The raw take, in arrival order. Placing samples against notes is
-  // finalize()'s job now, not addSample's -- see placeSamples.
+  // finalize()'s job now, not addSample's. See placeSamples.
   private trace: ScoreSample[] = [];
   private compensationMs: number;
 
   // compensationMs shifts every sample back before it is placed against a
   // note, correcting the mic-to-score latency (the singer hears through the
   // output path and is recorded through the input path, so a sung pitch
-  // arrives late). The caller supplies it -- config calibration plus live
-  // output latency in the renderer; the offline sweep leaves it 0 and applies
-  // its own trial offset -- so this class stays pure and dependency-free.
+  // arrives late). The caller supplies it, config calibration plus live output
+  // latency in the renderer, while the offline sweep leaves it 0 and applies
+  // its own trial offset, so this class stays pure and dependency-free.
   constructor(
     notes: readonly ScoringNote[],
     lyricsIntervals: readonly ScoringInterval[],
@@ -788,7 +788,7 @@ export class ScoreAccumulator {
   // here rather than baked into the stored notes: it is a synced setting that
   // can change mid-song, and the accumulator outlives the piano roll's GL
   // effect (which rebuilds on every parent render). rms is the input level, if
-  // the caller has one -- it is scored by nothing today and only recorded on
+  // the caller has one. It is scored by nothing today and only recorded on
   // the trace, since the dynamics metric that wants it can't be validated
   // until real takes carry it.
   addSample(
@@ -895,7 +895,7 @@ export class ScoreAccumulator {
     // An unmeasurable axis is filled with the take's own pitch score, NOT
     // renormalized away. Renormalizing made a song with no held notes
     // systematically easier, because long tone is the axis singers score
-    // lowest on -- the first draft handed 言って。 and Bad Apple!! straight SS
+    // lowest on. The first draft handed 言って。 and Bad Apple!! straight SS
     // for the crime of being fast. Substituting pitch is the neutral choice;
     // that it still leans the headline on pitch is why ScoreResult reports the
     // gap for the card to show.

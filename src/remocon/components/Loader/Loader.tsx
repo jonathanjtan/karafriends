@@ -14,7 +14,7 @@ const Loader = () => (
 // Primitive prop values double as the error boundary's reset keys: when a
 // wrapped component's search term (or similar scalar prop) changes, a stuck
 // error clears and the query is retried. Non-primitive props (functions,
-// objects) are ignored — they'd change identity every render.
+// objects) are ignored, since they'd change identity every render.
 const primitivePropValues = (props: object): unknown[] =>
   Object.values(props).filter(
     (value) =>

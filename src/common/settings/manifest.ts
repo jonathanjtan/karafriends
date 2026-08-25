@@ -9,7 +9,7 @@ import { Control, RoomSettings } from "./useRoomSettings";
 
 // The two places a room setting can be operated: the big screen's sidebar
 // (docked or popped out) and a phone's remocon. Anything not marked otherwise
-// appears on both — that default is the point of the file, and the reason a
+// appears on both. That default is the point of the file, and the reason a
 // setting can no longer be added to one surface and forgotten on the other.
 export type Surface = "tv" | "remocon";
 
@@ -28,7 +28,7 @@ export type SettingSection =
 // "Display Options"; scoring used to be filed under Microphone on the remocon
 // despite not being a mic setting.
 export const SECTIONS: { id: SettingSection; label: string }[] = [
-  // Holds no manifest entries — each surface fills it with its own way of
+  // Holds no manifest entries. Each surface fills it with its own way of
   // answering "what address do people join on": the TV picks which of its
   // interfaces to advertise, the phone offers its own address as a QR.
   { id: "connection", label: "Connection" },
@@ -41,7 +41,7 @@ export const SECTIONS: { id: SettingSection; label: string }[] = [
   { id: "services", label: "Services" },
 ];
 
-// Actions aren't settings — they're one-shot commands that live in the same
+// Actions aren't settings. They're one-shot commands that live in the same
 // list. Each surface supplies a handler for every id (see SettingsActions), so
 // adding an action here is a compile error until both surfaces implement it.
 export type SettingActionId =
@@ -62,8 +62,8 @@ interface CommonDef {
   section: SettingSection;
   label: string;
   // Rendered inline on both surfaces. The TV used to hide these in `title=`
-  // tooltips, which nobody hovers on a television — and Pitch Gate, the
-  // setting most likely to be misconfigured, was one of them.
+  // tooltips, which nobody hovers on a television. Pitch Gate, the setting
+  // most likely to be misconfigured, was one of them.
   hint?: string;
   surfaces?: Surface[];
   // Hides the row unless the predicate passes, e.g. Gate Threshold is
@@ -254,7 +254,7 @@ export const SETTINGS: SettingDef[] = [
     section: "display",
     label: "TV Sidebar",
     hint: "Off gives the playing song the whole screen.",
-    // Same reason as above — the TV has its own edge tab for this.
+    // Same reason as above. The TV has its own edge tab for this.
     surfaces: ["remocon"],
     get: (s) => s.tvSidebarVisible,
   },

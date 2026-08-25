@@ -127,7 +127,7 @@ interface YoutubeDownloadFailure extends Error {
 const YOUTUBE_RETRY_BACKOFF_MS = 5000;
 
 // YouTube answers a rate-limited/bot-walled extraction the same way no matter
-// how many times we ask, so an immediate retry can't succeed - it just spends
+// how many times we ask, so an immediate retry can't succeed. It just spends
 // more of the quota that got us walled in the first place. Detect those and
 // skip the retry.
 function isYoutubeRateLimited(log: string): boolean {
@@ -145,7 +145,7 @@ function deleteTempFiles(prefix: string): void {
     }
 
     if (filename.includes(prefix)) {
-      // readdirSync returns basenames - unlinking those directly would
+      // readdirSync returns basenames, and unlinking those directly would
       // resolve against cwd and throw ENOENT (failing the whole queue
       // mutation) instead of clearing the stale temp files.
       fs.unlinkSync(`${TEMP_FOLDER}/${filename}`);
@@ -370,7 +370,7 @@ function makeJoysoundFFmpegCall(
   if (onExit) {
     ffmpeg.on("exit", onExit);
     // If ffmpeg fails to even launch (e.g. missing binary), Node emits
-    // "error" instead of "exit" - without this, callers relying on onExit
+    // "error" instead of "exit". Without this, callers relying on onExit
     // to reject/clean up would otherwise hang forever.
     ffmpeg.on("error", (err) => {
       console.error(
@@ -383,7 +383,7 @@ function makeJoysoundFFmpegCall(
   if (stdinBuffer) {
     // See decodeToPcm's identical guard: an unhandled stdin stream "error"
     // (e.g. EPIPE if ffmpeg exits early) crashes the process, not just this
-    // call - the onExit/error handlers above already report/reject.
+    // call. The onExit/error handlers above already report/reject.
     ffmpeg.stdin.on("error", () => undefined);
     ffmpeg.stdin.write(stdinBuffer);
     ffmpeg.stdin.end();
@@ -467,7 +467,7 @@ function downloadJoysoundYoutubeVideoPromise(
   return new Promise((resolve, reject) => {
     const ytdlpLogFilename = `${TEMP_FOLDER}/yt-${youtubeVideoId}.log`;
     // Append so a failed first attempt's output survives the retry's run
-    // instead of being truncated away - it's the only record of why the
+    // instead of being truncated away. It's the only record of why the
     // first attempt failed.
     const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename, {
       flags: "a",
@@ -485,7 +485,7 @@ function downloadJoysoundYoutubeVideoPromise(
         // Grab the audio alongside the video in this one extraction. The
         // composite itself uses the JOYSOUND ogg, not this audio, but
         // computeYoutubeIntroSync needs the MV's audio to measure the
-        // offset - and pulling it here means one yt-dlp extraction per song
+        // offset, and pulling it here means one yt-dlp extraction per song
         // instead of two (a video-only "-f bv" fetch plus a separate "-f ba"
         // one), which is what was burning through YouTube's rate limit.
         "-f",
@@ -567,7 +567,7 @@ function downloadJoysoundYoutubeVideoPromise(
 // The estimate runs in three stages:
 //
 // 1. A coarse (100ms-envelope) scan of every lag at every anchor collects
-//    *all* local correlation peaks as candidate offsets - not just each
+//    *all* local correlation peaks as candidate offsets, not merely each
 //    anchor's best match. On repetitive songs a phrase-aliased ghost offset
 //    (one riff repetition away) routinely outscores the true offset at
 //    coarse resolution (the Shintakarajima bug), so no single argmax can be
@@ -576,8 +576,8 @@ function downloadJoysoundYoutubeVideoPromise(
 //    every anchor reports its own best fine offset within a small window
 //    around the candidate (karaoke re-recordings genuinely drift by
 //    hundreds of ms across a song, so demanding one exact offset at every
-//    anchor collapses honest candidates - the Zankoku-na-Tenshi-no-These
-//    regression), the score-weighted median of those per-anchor peaks
+//    anchor collapses honest candidates, as the Zankoku-na-Tenshi-no-These
+//    regression showed), the score-weighted median of those per-anchor peaks
 //    becomes the candidate's refined offset, and its validation score is
 //    the mean of the per-anchor maxima around it.
 // 3. The top refined candidates are ranked by guide-melody salience: does
@@ -601,7 +601,7 @@ function downloadJoysoundYoutubeVideoPromise(
 // After an offset is chosen (by any method), measureVideoDriftAround checks
 // whether the two tracks even run at the same tempo: some MV uploads are
 // speed-shifted (e.g. +1.19% on Romeo-to-Cinderella 9HrOqmiEsN8, a smooth
-// 3.3s of drift over the song - no constant offset can sync that). Anchors
+// 3.3s of drift over the song, which no constant offset can sync). Anchors
 // across the whole track each report their local best offset, a weighted
 // linear fit recovers the rate difference, and the compose pipeline slows
 // or speeds the video's timestamps to match (stretchJoysoundVideoPromise,
@@ -652,14 +652,14 @@ const INTRO_SYNC_MELODY_MIN_MARGIN = 0.3;
 // melody 1 semitone off the on-pitch probes and between the +-1.5/+-2.5
 // off-pitch ones: every candidate scored 0.17-0.78, the whole ranking fell
 // under MIN_SCORE, melody abstained, and the far cruder onset fallback picked
-// an offset 1.3s out. Probing a few semitones either way recovers it - the
+// an offset 1.3s out. Probing a few semitones either way recovers it. The
 // same candidates score 1.04-1.26 at +1. One transposition is chosen for the
 // whole ranking rather than per candidate, so the margin test stays
 // apples-to-apples and the wider search can't inflate a single candidate; ties
 // prefer the untransposed reading.
 const INTRO_SYNC_MELODY_TRANSPOSE_SEMIS = [0, 1, -1, 2, -2, 3, -3];
 // Onset-alignment fallback (used when the interior-window cross-correlation
-// can't reach a confident consensus - which is the common case, because a
+// can't reach a confident consensus, which is the common case, because a
 // JOYSOUND karaoke re-recording rarely envelope-correlates with the original
 // master). We detect where the music actually starts in each track and align
 // those points. ONSET_HEAD_SEC bounds the region used to establish the loud
@@ -672,10 +672,10 @@ const INTRO_SYNC_ONSET_SMOOTH_MS = 300;
 // windows than refinement (a 20s window smears ~240ms internally at ~1.2%
 // drift, flattening the very peaks being measured), and a much lower peak
 // floor: drift-smeared honest peaks legitimately score only 0.13-0.28, and
-// it's the robust line fit - not the floor - that rejects garbage
+// it's the robust line fit, not the floor, that rejects garbage
 // (unrelated peaks don't fall on a line). Collection windows are centered
 // on the caller's offset and widen with anchor position: they must absorb
-// the seed's own error (up to SEED_TOLERANCE - a seed chosen assuming
+// the seed's own error (up to SEED_TOLERANCE, since a seed chosen assuming
 // constant offset sits mid-drift, over a second off the head alignment)
 // plus drift accumulated at up to RATE_SCAN_BOUND. Line selection is
 // RANSAC-style because no single per-anchor argmax can be trusted (same
@@ -686,7 +686,7 @@ const INTRO_SYNC_ONSET_SMOOTH_MS = 300;
 // resolves to a sub-MIN_RATE slope and no stretch. Fit gates: enough
 // voters over a long enough baseline for the rate to be trustworthy,
 // residuals small enough that the drift is actually linear, and rate
-// bounds - below MIN_RATE a constant offset is within normal karaoke
+// bounds. Below MIN_RATE a constant offset is within normal karaoke
 // wander (~0.1%) so don't touch the video, above MAX_RATE it's not a
 // speed-shift, it's a different arrangement.
 const INTRO_SYNC_DRIFT_REFERENCE_SEC = 8;
@@ -709,7 +709,7 @@ const INTRO_SYNC_DRIFT_MAX_RATE = 0.05;
 // traces -1800 -> -1050 -> -2750ms, a lambda no rate fits, and stretching to
 // the line it found lands the last chorus ~3.7s out. So before stretching,
 // re-score the proposed drift against the best constant offset using the
-// guide melody - the same arbiter that picks the offset in the first place -
+// guide melody, the same arbiter that picks the offset in the first place,
 // and keep the constant when it wins clearly. This also caught a live
 // regression: on Zankoku na Tenshi no Teeze the drift fit was overwriting the
 // melody's (correct, previously hand-validated) -11900ms with -10799ms plus a
@@ -764,7 +764,7 @@ function decodeToPcm(
 
     // If ffmpeg exits (or never starts reading) while we're still writing a
     // large buffer to its stdin, Node emits an "error" (e.g. EPIPE) on the
-    // stdin stream itself, not on the ChildProcess - left unhandled, that's
+    // stdin stream itself, not on the ChildProcess. Left unhandled, that's
     // an uncaught exception that crashes the whole process rather than just
     // rejecting this promise. The process-level "error"/"exit" handlers
     // above already report/reject appropriately.
@@ -863,7 +863,7 @@ function anchorPositionsMs(karaokeEnvelope: number[]): number[] {
 // Per-anchor best fine-envelope match near a candidate offset: each anchor
 // reports the offset (within DRIFT_TOLERANCE of the candidate) where it
 // correlates best, and how well. This is what makes refinement
-// drift-tolerant - anchors vote on where the alignment is instead of being
+// drift-tolerant. Anchors vote on where the alignment is instead of being
 // scored against one exact offset. Do NOT score a candidate by taking a
 // window-max around an arbitrary center instead: that makes the score flat
 // across the whole window and even rewards centers that straddle two alias
@@ -914,7 +914,7 @@ function anchorFinePeaksAround(
   return peaks;
 }
 
-// Median of the anchors' peak offsets, weighted by their correlation - the
+// Median of the anchors' peak offsets, weighted by their correlation. The
 // consensus alignment among anchors that actually matched something.
 function weightedMedianOffsetMs(peaks: OffsetCandidate[]): number {
   const sorted = [...peaks].sort((a, b) => a.offsetMs - b.offsetMs);
@@ -946,7 +946,7 @@ function estimateVideoOffsetCandidates(
   const anchorsMs = anchorPositionsMs(karaokeEnvelope);
 
   // Stage 1: coarse scan. Keep every local correlation peak as a candidate,
-  // not just each anchor's best - on repetitive songs the true offset often
+  // not merely each anchor's best. On repetitive songs the true offset often
   // sits *behind* a phrase-aliased ghost at coarse resolution.
   const candidates: OffsetCandidate[] = [];
   for (const anchorMs of anchorsMs) {
@@ -1089,7 +1089,7 @@ function goertzelPower(
 // the video's audio. On-pitch probes the note's fundamental and the octave
 // above (the sung melody sits at one or the other relative to the guide
 // synth's register) with +-25-cent slack for vibrato/tuning; off-pitch
-// probes +-1.5/+-2.5 semitones - close enough to share the local spectral
+// probes +-1.5/+-2.5 semitones, close enough to share the local spectral
 // tilt, but never part of the same sung note. Null when the mapped span is
 // too short to resolve or the probes would exceed Nyquist.
 function noteSalienceAt(
@@ -1195,7 +1195,7 @@ interface MelodyRanking {
 // Stage 3 + final decision (see the block comment above the constants):
 // melody-salience ranking with confidence gates, falling back to the
 // envelope ranking with its own gates. Null means nothing was confident
-// enough - the caller falls through to onset alignment.
+// enough, and the caller falls through to onset alignment.
 function chooseVideoOffset(
   candidates: OffsetCandidate[],
   videoPcm: Float64Array,
@@ -1257,7 +1257,7 @@ function chooseVideoOffset(
 
       // Corroboration. The margin gate exists to reject phrase aliases, and an
       // alias is by definition a *different* offset that scores nearly as
-      // well - so when the melody's own pick is also the envelope ranking's
+      // well, so when the melody's own pick is also the envelope ranking's
       // winner, two independent signals have agreed and the runner-up's
       // closeness says nothing about that agreement. (The aliasing cases the
       // gate was built for are exactly the ones where the two disagree: on
@@ -1298,7 +1298,7 @@ function chooseVideoOffset(
 }
 
 // First window whose trailing smoothed RMS crosses a fraction of the
-// head-region peak - i.e. where the music actually starts. Null if the track
+// head-region peak, i.e. where the music actually starts. Null if the track
 // never rises above the floor (effectively silent). Robust across differing
 // arrangements/mixes because it keys off "sound started", not waveform shape.
 function detectMusicOnsetWindows(envelope: number[]): number | null {
@@ -1392,13 +1392,13 @@ function fitOffsetLine(
 
 // Measures linear tempo drift between the karaoke track and the video
 // around an already-chosen offset. Anchors step through the WHOLE karaoke
-// track (unlike candidate refinement's first-120s anchors - a rate needs a
+// track (unlike candidate refinement's first-120s anchors, since a rate needs a
 // long baseline). Three phases:
 //
 // 1. Collection (coarse envelope): each anchor keeps its top few separated
 //    local correlation peaks inside a window around the seed offset that
 //    widens with anchor position (drift accumulates; the seed itself may be
-//    over a second off). ALL peaks are kept, not each anchor's argmax - an
+//    over a second off). ALL peaks are kept, not each anchor's argmax, since an
 //    alias can outscore the honest peak at any single anchor.
 // 2. Robust line selection: every pair of peaks with a long enough baseline
 //    proposes a line; the line with the most inlier weight wins. Aliased
@@ -1627,7 +1627,7 @@ function constantOffsetBeatingDrift(
     return null;
   }
 
-  // Same key search as melody selection - the seed may have come from onset
+  // Same key search as melody selection. The seed may have come from onset
   // alignment, which never established a transposition.
   let semitoneShift = 0;
   let seedSalience: number | null = null;
@@ -1665,8 +1665,8 @@ function constantOffsetBeatingDrift(
 
   // The decision itself runs on every note, not the sample. A constant
   // offset's error is the same everywhere, but a wrong rate's grows through
-  // the song, so the drift model's score depends on which notes get looked at
-  // - sampling swung it by 0.2 on Piano Man (1.11 over all 253 notes, 1.31
+  // the song, so the drift model's score depends on which notes get looked at.
+  // Sampling swung it by 0.2 on Piano Man (1.11 over all 253 notes, 1.31
   // over 64 of them), enough to flip the verdict. Refining the offset on the
   // sample is fine; comparing the two models is not.
   const constantSalience = melodySalienceAt(
@@ -1715,7 +1715,7 @@ function constantOffsetBeatingDrift(
 // second "-f ba" extraction, which doubled our request volume per song and
 // helped earn us HTTP 429s.
 //
-// guideMelodyNotes (when available - i.e. the song has a usable guide
+// guideMelodyNotes (when available, i.e. the song has a usable guide
 // melody channel) powers the melody-salience candidate selection; without
 // it, selection falls back to envelope correlation alone.
 export async function computeYoutubeIntroSync(
@@ -1782,7 +1782,7 @@ export async function computeYoutubeIntroSync(
     }
 
     // Whatever picked the offset, check whether the video's tempo even
-    // matches the karaoke's before trusting it as a constant - a
+    // matches the karaoke's before trusting it as a constant. A
     // speed-shifted upload drifts steadily and the drift fit both proves it
     // and corrects the head offset for the stretch that will cancel it.
     let measurement: IntroSyncMeasurement | null = null;
@@ -1830,7 +1830,7 @@ export async function computeYoutubeIntroSync(
 }
 
 // Rescales the downloaded MV's video timestamps by stretchFactor (>1 slows
-// it down) so its tempo matches the karaoke track - a copy-codec -itsscale
+// it down) so its tempo matches the karaoke track, a copy-codec -itsscale
 // remux, no re-encode. Runs before compose, so the usual trim/pad logic
 // then operates on an already-tempo-matched video. The MV's own audio
 // track is dropped here: intro-sync (the only consumer) has already read
@@ -1897,7 +1897,7 @@ function composeJoysoundVideoPromise(
   ffmpegLogFilename: string,
   // Signed video-vs-karaoke offset (only meaningful when tempFilename is a
   // downloaded YouTube video). Positive: the video has that much extra head
-  // material - trim it off here with -ss so the visuals aren't out of sync
+  // material, so trim it off here with -ss and the visuals aren't out of sync
   // with the karaoke audio track. Negative: the karaoke track has extra head
   // material instead; the caller delays the video afterwards via
   // padJoysoundVideoPromise, so here we just play from the top. Null: no
@@ -1908,7 +1908,7 @@ function composeJoysoundVideoPromise(
     let videoPlaytime = 0;
 
     // The video comes from the MV (input 0) and the audio from the JOYSOUND
-    // ogg on stdin (input 1) - always map both explicitly. The MV now carries
+    // ogg on stdin (input 1), so always map both explicitly. The MV now carries
     // its own audio track (the "-f bv+ba/b" fetch that intro-sync reads), so
     // ffmpeg's default stream selection would have two audio streams to
     // choose between; it happens to prefer the ogg for having more channels
@@ -1917,8 +1917,8 @@ function composeJoysoundVideoPromise(
     const streamMapArgs = ["-map", "0:v:0", "-map", "1:a:0"];
 
     // With a measured offset we align the heads and play the video through
-    // exactly once, capped at the song length: the MV runs its full course -
-    // including its outro - and the player holds the last frame for whatever
+    // exactly once, capped at the song length: the MV runs its full course,
+    // including its outro, and the player holds the last frame for whatever
     // karaoke tail it doesn't cover. Looping instead would jarringly restart
     // the MV over the final seconds. Without a measurement we can't trust the
     // head alignment, so we keep the legacy loop-to-fill (a possibly-short
@@ -2202,7 +2202,7 @@ function padJoysoundVideoPromise(
           "-c",
           "copy",
           // With a measured pad the video usually doesn't span the whole
-          // song - cap at the song length instead of truncating the audio
+          // song, so cap at the song length instead of truncating the audio
           // to the video (-shortest); the player holds the last frame for
           // whatever the video doesn't cover.
           ...(overridePadMs !== null
@@ -2284,7 +2284,7 @@ export function downloadJoysoundData(
   const tempFilename = `${videoFilename}.tmp`;
 
   // A pipeline for this exact song+video is already in flight (its
-  // download-queue entry lives until the song is pushed to the queue) - it
+  // download-queue entry lives until the song is pushed to the queue). It
   // will land the song itself, so a repeat press is a no-op. This must be
   // checked before the composite-cache check below: during the late pipeline
   // stages (compose/pad) the composite file already exists on disk in a
@@ -2356,7 +2356,7 @@ export function downloadJoysoundData(
     // retry rescues most of those before the catch below gives up and
     // silently falls back to the song's default video. But a rate-limit /
     // bot-wall answers the same way however often we ask, so retrying it
-    // can't succeed - it just spends more of the quota that got us walled.
+    // can't succeed. It just spends more of the quota that got us walled.
     // Back off briefly first: the old retry fired instantly, which hammered
     // YouTube hardest exactly when it was already pushing back.
     videoDataPromise = downloadJoysoundYoutubeVideoPromise(
@@ -2409,7 +2409,7 @@ export function downloadJoysoundData(
   // when no confident estimate (see computeYoutubeIntroSync). Captured for
   // the stretch step and the post-compose pad decision. Chained after the
   // video download because it reads the MV's audio straight out of the file
-  // that download produced - no second trip to YouTube.
+  // that download produced, with no second trip to YouTube.
   let measuredIntroSync: IntroSyncMeasurement | null = null;
 
   const introSyncPromise: Promise<IntroSyncMeasurement | null> =
@@ -2504,7 +2504,7 @@ export function downloadJoysoundData(
       // The download-queue entry lives until the song actually lands in the
       // queue: it's what hasMaxSongsInQueue and the in-flight guard at the
       // top of this function consult, and removing it when the raw download
-      // finished - with 30-60s of intro-sync + compositing still to go -
+      // finished, with 30-60s of intro-sync + compositing still to go,
       // opened a window where a second press of the queue button wiped the
       // in-flight pipeline's temp files and double-queued the song.
       removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
@@ -2522,7 +2522,7 @@ export function downloadJoysoundData(
         fs.unlinkSync(tempFilename);
       }
 
-      // A custom YouTube background video is a nice-to-have - if fetching
+      // A custom YouTube background video is a nice-to-have. If fetching
       // or compositing it fails for any reason, don't leave the queue
       // request hanging forever. Fall back to the song's default video
       // instead of failing the whole queue attempt.
@@ -2705,8 +2705,8 @@ export function downloadNicoVideo(
   const ytdlpLogStream = fs.createWriteStream(ytdlpLogFilename);
 
   const env = { ...process.env };
-  // Don't need a proxy to download from Niconico. Strip it from the *copy* --
-  // deleting from the live process.env instead both left this spawn proxied
+  // Don't need a proxy to download from Niconico. Strip it from the *copy*.
+  // Deleting from the live process.env instead both left this spawn proxied
   // (env was cloned first) and permanently un-proxied every later spawn, so a
   // single Niconico song would silently break DAM downloads for the session.
   delete env.http_proxy;
