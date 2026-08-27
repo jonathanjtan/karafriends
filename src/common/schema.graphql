@@ -9,6 +9,13 @@ type Query {
     first: Int
     after: String
   ): JoysoundArtistConnection!
+  # The song's full lyrics, one entry per displayed line, read out of the
+  # telop blob. sound-cafe's song detail page only carries a single truncated
+  # opening line (JoysoundSong.lyricsPreview), so this is the only way to show
+  # more. It is deliberately a separate query rather than a JoysoundSong
+  # field: on a cache miss it costs the same getFME call queueing the song
+  # makes, so the song page asks for it only when someone opts in.
+  joysoundLyrics(songId: String!): JoysoundLyricsResult!
   joysoundSongDetail(id: String): JoysoundSong!
   joysoundSongsByArtist(
     artistId: String
@@ -1106,6 +1113,16 @@ type SuggestedYoutubeVideoError {
 union SuggestedYoutubeVideosResult =
   | SuggestedYoutubeVideos
   | SuggestedYoutubeVideoError
+
+type JoysoundLyrics {
+  lines: [String!]!
+}
+
+type JoysoundLyricsError {
+  reason: String!
+}
+
+union JoysoundLyricsResult = JoysoundLyrics | JoysoundLyricsError
 
 type NicoVideoInfo implements VideoInfo {
   author: String!

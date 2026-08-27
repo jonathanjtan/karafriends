@@ -44,6 +44,7 @@ import { buildScoringData } from "../common/guideMelody";
 import ipAddresses from "../common/ipAddresses";
 import {
   decodeJoysoundBase64Field,
+  getJoysoundLyricsLines,
   getSongDuration,
 } from "../common/joysoundParser";
 import { SCORING_FORMULA_VERSION } from "../common/scoring";
@@ -384,6 +385,41 @@ function getJoysoundArtistSongCount(
 
   joysoundArtistSongCountInFlight.set(artistId, promise);
   return promise;
+}
+
+// The telop blob (lyrics + timing) for a JOYSOUND song, from disk when a
+// previous download or preview already landed it, otherwise from getFME.
+//
+// Worth the disk check: getFME's payload carries the ogg alongside the telop,
+// so it is multi-megabyte, and it is the same call queueing the song makes.
+// Callers that only want the lyrics or the duration shouldn't re-pay for it,
+// and writing the result to the path videoDownloader reads means a later
+// queue of the same song doesn't either.
+function getJoysoundTelopBuffer(
+  songId: string,
+  joysound: JoysoundAPI,
+): Promise<Uint8Array> {
+  const telopFilename = path.resolve(TEMP_FOLDER, `joysound-${songId}.joy_02`);
+
+  if (fs.existsSync(telopFilename)) {
+    return fs.promises.readFile(telopFilename);
+  }
+
+  return joysound.getSongRawData(songId).then((rawData) => {
+    const telopBuffer = decodeJoysoundBase64Field(rawData.telop);
+
+    // Best-effort: a failed cache write costs a re-fetch, not the request.
+    try {
+      if (!fs.existsSync(TEMP_FOLDER)) fs.mkdirSync(TEMP_FOLDER);
+      if (!fs.existsSync(telopFilename)) {
+        fs.writeFileSync(telopFilename, telopBuffer);
+      }
+    } catch (e) {
+      console.warn(`[joysound] failed to cache telop for ${songId}: ${e}`);
+    }
+
+    return telopBuffer;
+  });
 }
 
 // DAM's dkwebsys search returns human-curated katakana readings inline
@@ -1504,6 +1540,18 @@ interface SuggestedYoutubeVideoError {
 type SuggestedYoutubeVideosResult =
   | SuggestedYoutubeVideos
   | SuggestedYoutubeVideoError;
+
+interface JoysoundLyrics {
+  readonly __typename: "JoysoundLyrics";
+  readonly lines: string[];
+}
+
+interface JoysoundLyricsError {
+  readonly __typename: "JoysoundLyricsError";
+  readonly reason: string;
+}
+
+type JoysoundLyricsResult = JoysoundLyrics | JoysoundLyricsError;
 
 interface NicoVideoInfo extends VideoInfo {
   readonly __typename: "NicoVideoInfo";
@@ -3510,28 +3558,59 @@ const resolvers = {
         };
       }
     },
+    joysoundLyrics: async (
+      _: any,
+      args: { songId: string },
+      { dataSources }: IDataSources,
+    ): Promise<JoysoundLyricsResult> => {
+      try {
+        const telopBuffer = await getJoysoundTelopBuffer(
+          args.songId,
+          dataSources.joysound,
+        );
+
+        const lines = getJoysoundLyricsLines(
+          telopBuffer.buffer.slice(
+            telopBuffer.byteOffset,
+            telopBuffer.byteOffset + telopBuffer.byteLength,
+          ) as ArrayBuffer,
+        );
+
+        if (lines.length === 0) {
+          return {
+            __typename: "JoysoundLyricsError",
+            reason: "This song's lyrics data is empty",
+          };
+        }
+
+        return { __typename: "JoysoundLyrics", lines };
+      } catch (e) {
+        console.error(`[joysound] failed to read lyrics for ${args.songId}`, e);
+
+        return {
+          __typename: "JoysoundLyricsError",
+          reason: "Couldn't load the lyrics for this song",
+        };
+      }
+    },
     suggestedYoutubeVideos: async (
       _: any,
       args: { songId: string },
       { dataSources }: IDataSources,
     ): Promise<SuggestedYoutubeVideosResult> => {
       // The telop is only needed for expectedDurationSec, not for the search
-      // query itself. A previous download of this song already left it on
-      // disk, and reading that beats re-fetching the multi-megabyte getFME
-      // payload (telop + ogg) just to compute a duration. When it's missing,
-      // kick the raw-data fetch off alongside the YouTube search rather than
-      // waiting for it before even starting the search.
-      const cachedTelopFilename = path.resolve(
-        TEMP_FOLDER,
-        `joysound-${args.songId}.joy_02`,
+      // query itself, so kick its fetch off alongside the YouTube search
+      // rather than waiting for it before even starting the search.
+      const telopBufferPromise = getJoysoundTelopBuffer(
+        args.songId,
+        dataSources.joysound,
       );
-      const telopBufferPromise: Promise<Uint8Array> = fs.existsSync(
-        cachedTelopFilename,
-      )
-        ? fs.promises.readFile(cachedTelopFilename)
-        : dataSources.joysound
-            .getSongRawData(args.songId)
-            .then((rawData) => decodeJoysoundBase64Field(rawData.telop));
+      // getSongDetail is awaited before this promise is, so a rejection there
+      // leaves the telop fetch orphaned, and an unhandled rejection in main
+      // exits the whole app. Marking it handled here doesn't swallow it: the
+      // Promise.all below still sees the failure.
+      telopBufferPromise.catch(() => undefined);
+
       const songDetail = await dataSources.joysound.getSongDetail(args.songId);
 
       const query = `${songDetail.artistName} ${songDetail.name}`;

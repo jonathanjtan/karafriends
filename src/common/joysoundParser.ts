@@ -1159,4 +1159,101 @@ export function getSongDuration(data: ArrayBuffer): number {
   return metadataView.getUint16(18, true);
 }
 
+// Kanji, kana and CJK punctuation, minus the ideographic space (U+3000),
+// which is whitespace rather than a character.
+const CJK_CHAR_RE =
+  /[\u3001-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9d]/;
+
+// Telop blocks pad furigana-bearing kanji with spaces so the reading has room
+// above it, so "少年よ" arrives as " 少 年よ". Those are layout, not text, and
+// a space between two CJK characters is always one of them: real spaces in a
+// mixed-script lyric ("Baby 愛してる") have a Latin character on one side.
+function stripFuriganaPadding(text: string): string {
+  return text.replace(
+    new RegExp(`(${CJK_CHAR_RE.source})\\s+(?=${CJK_CHAR_RE.source})`, "g"),
+    "$1",
+  );
+}
+
+// The plain text of the lyrics, one entry per displayed line, for surfaces
+// that want to read the lyrics rather than draw them (the song page preview).
+//
+// This walks the same blocks parseJoy02LyricsData does, but skips furigana
+// mapping, the romaji pipeline, and the timeline, so it needs no kuroshiro and
+// stays synchronous (parseJoysoundData is async only because kuroshiro is).
+//
+// A block is not a line: the telop splits a line into separately positioned
+// runs (per word in a Latin lyric, per phrase in a Japanese one) and lays them
+// out along a shared yPos, alternating yPos between successive lines so one
+// can fade in while the previous is still up. So a line is a run of
+// consecutive blocks sharing a yPos, and the gaps between those blocks are
+// what separate the words.
+export function getJoysoundLyricsLines(data: ArrayBuffer): string[] {
+  const offsetView = new DataView(data, 6, 3 * 4);
+  const lyricsOffset = offsetView.getUint32(1 * 4, true);
+  const timingOffset = offsetView.getUint32(2 * 4, true);
+
+  const size = timingOffset - lyricsOffset;
+  const lyricsView = new DataView(data, lyricsOffset, size);
+
+  const lines: string[] = [];
+
+  let currentLineParts: string[] = [];
+  let currentLineYPos = -1;
+
+  const flushLine = () => {
+    const line = currentLineParts.join(" ").replace(/\s+/g, " ").trim();
+
+    if (line) {
+      lines.push(line);
+    }
+
+    currentLineParts = [];
+  };
+
+  // The 15-entry color palette precedes the blocks.
+  let currOffset = 15 * 2;
+
+  while (currOffset < size) {
+    const blockSize = lyricsView.getUint16(currOffset, true);
+
+    // A zero-length block would spin forever. Telops in the wild don't have
+    // one, but this parses bytes straight off the network.
+    if (blockSize === 0) {
+      break;
+    }
+
+    const flags = lyricsView.getUint16(currOffset + 2, true);
+    const yPos = lyricsView.getUint16(currOffset + 6, true);
+    const charCount = lyricsView.getUint16(currOffset + 12, true);
+
+    let charOffset = currOffset + 14;
+    let blockText = "";
+
+    for (let i = 0; i < charCount; i++) {
+      const charFont = lyricsView.getUint8(charOffset);
+      const charCode = lyricsView.getUint16(charOffset + 1, true);
+
+      // flags matters: it is what tells the card-suit glyphs apart from the
+      // Shift-JIS characters sharing their code points.
+      blockText += decodeJoysoundText(charCode, charFont, flags);
+
+      charOffset += 5;
+    }
+
+    if (yPos !== currentLineYPos) {
+      flushLine();
+      currentLineYPos = yPos;
+    }
+
+    currentLineParts.push(stripFuriganaPadding(blockText.trim()));
+
+    currOffset += blockSize;
+  }
+
+  flushLine();
+
+  return lines;
+}
+
 export default parseJoysoundData;
