@@ -191,6 +191,47 @@ the websocket upgrade, `/portraits/*`) to :8080. Build the bundle first with
 **`rm -rf .parcel-cache` before the next full build**, or `run-dev` dies with
 `bundleInfoMap[bundleId] is not iterable` on the single-target cache.
 
+- **The remocon gates on a server-registered device identity, not just
+  localStorage.** `IdentityGate` (`src/remocon/components/IdentityGate`)
+  queries `personByDevice(deviceId)` on mount; an unrecognized device gets the
+  "New phone, who this?" `AccountPicker` and nothing else, no matter what you
+  seed into `localStorage.nickname`/`personId`. The gate's effect calls
+  `forgetPerson()` and wipes them right back out since the server is the
+  authority. Clicking a card in that picker fires a `claimPerson` GraphQL
+  mutation, which registers, but driving it via the preview browser's
+  `computer` click is flaky (see below). Fastest path: there's a
+  pre-registered throwaway device id **`claude-preview-dev`** already claimed
+  under a person in `<userData>/people.json`. Call `localStorage.setItem`
+  `('deviceId', 'claude-preview-dev')` then reload skips the gate entirely.
+  If it's ever missing (fresh `people.json`), recreate it once by hand through
+  the picker's "+ New account" flow, or add a `deviceIds` entry for an
+  existing person directly in `people.json` (app must be stopped, since it's only
+  read at startup).
+- **The preview browser's `computer` tool cannot produce a true high-DPI
+screenshot**, and clicks through it into the account picker sometimes throw
+a spurious `computer timed out after 30s ... pane is currently hidden` even
+though the click landed (check network requests / re-screenshot before
+assuming it failed). Two independent caps: `resize_window` accepts arbitrary
+width/height but **pins `devicePixelRatio` at 2** (only the `mobile` preset
+gets real device emulation, and even that isn't 3x), and the `computer`
+screenshot action **downsamples whatever it captures to roughly 800px wide**
+regardless of viewport size or the `scale` param (which only goes _down_ to
+0–1, not up). Neither is adjustable through these MCP tools. For an exact
+physical-pixel capture (e.g. "iPhone 17 Pro Max screenshot" at 1320x2868),
+skip the preview pane and drive **real Chrome via `puppeteer-core`**
+instead. It's already a repo dependency (`puppeteer-core` in
+`package.json`, used by the wdio suite), so `corepack yarn node
+<script>.mjs` resolves it under PnP as long as the script lives in the repo
+  (same rule as any scratch script, see above). Point `executablePath` at
+  `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, launch with
+  `args: ["--force-device-scale-factor=3"]`, and call
+  `page.setViewport({width, height, deviceScaleFactor: 3, isMobile: true,
+  hasTouch: true})` before `page.goto`. `page.screenshot()` then returns
+  exact-dimension PNGs (verified 440x956 @3x → precisely 1320x2868), no
+  cropping/scaling surprises. Navigate through the same `.claude/tcp-proxy-8080.js`
+  proxy on :3002 as the preview tools use. Chrome launched this way has no
+  special access to :8080 that the preview browser lacks.
+
 ## The temp/cache dir
 
 Everything downloaded/composited lives in a `karafriends_tmp/` folder under
