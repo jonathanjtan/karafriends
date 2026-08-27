@@ -10,8 +10,8 @@ import JoysoundYouTubeInfo from "../components/JoysoundYouTubeInfo";
 import { List, ListItem } from "../components/List";
 import { withLoader } from "../components/Loader";
 import SearchFormWrapper from "../components/SearchFormWrapper";
+import SongLyrics from "../components/SongLyrics";
 import WeebText from "../components/WeebText";
-import { JoysoundSongPageLyricsQuery } from "./__generated__/JoysoundSongPageLyricsQuery.graphql";
 import { JoysoundSongPageQuery } from "./__generated__/JoysoundSongPageQuery.graphql";
 import { JoysoundSongPageSuggestedYoutubeVideosQuery } from "./__generated__/JoysoundSongPageSuggestedYoutubeVideosQuery.graphql";
 
@@ -29,21 +29,6 @@ const joysoundSongPageQuery = graphql`
       tieUp
       lastYoutubeVideoId
       lastYoutubeVideoSyncEnabled
-    }
-  }
-`;
-
-const joysoundSongPageLyricsQuery = graphql`
-  query JoysoundSongPageLyricsQuery($songId: String!) {
-    joysoundLyrics(songId: $songId) {
-      ... on JoysoundLyrics {
-        __typename
-        lines
-      }
-      ... on JoysoundLyricsError {
-        __typename
-        reason
-      }
     }
   }
 `;
@@ -72,10 +57,6 @@ const joysoundSongPageSuggestedYoutubeVideosQuery = graphql`
 // The server returns up to 6 ranked candidates; show the top few by default
 // with the rest behind a "show more" button.
 const INITIAL_LUCKY_CANDIDATES_SHOWN = 3;
-
-// Enough of the lyrics to recognize the song and know what you're in for,
-// without turning the song page into a scroll. The rest is one tap away.
-const INITIAL_LYRICS_LINES_SHOWN = 12;
 
 interface LuckyCandidate {
   videoId: string;
@@ -118,40 +99,6 @@ const JoysoundSongPage = () => {
   const [luckyError, setLuckyError] = useState<string | null>(null);
   const [showAllLuckyCandidates, setShowAllLuckyCandidates] =
     useState<boolean>(false);
-  const [lyricsLoading, setLyricsLoading] = useState<boolean>(false);
-  const [lyricsLines, setLyricsLines] = useState<readonly string[] | null>(
-    null,
-  );
-  const [lyricsError, setLyricsError] = useState<string | null>(null);
-  const [showAllLyrics, setShowAllLyrics] = useState<boolean>(false);
-
-  const onClickShowLyrics = () => {
-    setLyricsLoading(true);
-    setLyricsError(null);
-
-    fetchQuery<JoysoundSongPageLyricsQuery>(
-      environment,
-      joysoundSongPageLyricsQuery,
-      { songId: song.id },
-    ).subscribe({
-      next: (queryData) => {
-        setLyricsLoading(false);
-
-        const result = queryData.joysoundLyrics;
-
-        if (result.__typename === "JoysoundLyrics") {
-          setLyricsLines(result.lines);
-        } else if (result.__typename === "JoysoundLyricsError") {
-          setLyricsError(result.reason);
-        }
-      },
-      error: (e: Error) => {
-        setLyricsLoading(false);
-        setLyricsError(e.message);
-      },
-    });
-  };
-
   const clearLuckyState = () => {
     setLuckyLoading(false);
     setLuckyCandidates(null);
@@ -245,14 +192,6 @@ const JoysoundSongPage = () => {
     ? luckyCandidates.length - (visibleLuckyCandidates?.length ?? 0)
     : 0;
 
-  const visibleLyricsLines =
-    lyricsLines && !showAllLyrics
-      ? lyricsLines.slice(0, INITIAL_LYRICS_LINES_SHOWN)
-      : lyricsLines;
-  const hiddenLyricsLineCount = lyricsLines
-    ? lyricsLines.length - (visibleLyricsLines?.length ?? 0)
-    : 0;
-
   return (
     <div>
       <h2 data-subject>
@@ -262,50 +201,11 @@ const JoysoundSongPage = () => {
         <WeebText text={song.artistName} yomi={song.artistNameYomi} />
       </Link>
       {!!song.tieUp && <span> • {song.tieUp}</span>}
-      {visibleLyricsLines ? (
-        <blockquote
-          // Fully expanded, a long lyric is taller than the phone, which
-          // would leave the queue buttons a 50-line scroll below the fold.
-          // Cap it and let the lyrics scroll inside instead.
-          style={
-            showAllLyrics ? { maxHeight: "50vh", overflowY: "auto" } : undefined
-          }
-        >
-          {visibleLyricsLines.map((line, i) => (
-            <React.Fragment key={i}>
-              {line}
-              <br />
-            </React.Fragment>
-          ))}
-          {hiddenLyricsLineCount > 0 && "..."}
-        </blockquote>
-      ) : (
-        !!song.lyricsPreview && (
-          <blockquote>{song.lyricsPreview} ...</blockquote>
-        )
-      )}
-      {lyricsError && <p>{lyricsError}</p>}
-      {hiddenLyricsLineCount > 0 ? (
-        <Button
-          full
-          style={{ marginBottom: 8 }}
-          onClick={() => setShowAllLyrics(true)}
-        >
-          Show {hiddenLyricsLineCount} more line
-          {hiddenLyricsLineCount === 1 ? "" : "s"}
-        </Button>
-      ) : (
-        !lyricsLines && (
-          <Button
-            full
-            style={{ marginBottom: 8 }}
-            disabled={lyricsLoading}
-            onClick={onClickShowLyrics}
-          >
-            {lyricsLoading ? "Loading lyrics..." : "Show more lyrics"}
-          </Button>
-        )
-      )}
+      <SongLyrics
+        source="JOYSOUND"
+        songId={song.id}
+        lyricsPreview={song.lyricsPreview}
+      />
       {youtubeVideoId ? (
         <>
           <Button full onClick={() => detachVideo()}>

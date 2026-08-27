@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router";
 
 import DamQueueButtons from "../components/DamQueueButtons";
 import { withLoader } from "../components/Loader";
+import SongLyrics from "../components/SongLyrics";
 import { SongPageQuery } from "./__generated__/SongPageQuery.graphql";
 
 const songPageQuery = graphql`
@@ -38,9 +39,11 @@ const SongPage = () => {
       <h2 data-subject>{song.name}</h2>
       <Link to={`/search/artist/${song.artistName}`}>{song.artistName}</Link>
       {!!song.tieUp && <span> • {song.tieUp}</span>}
-      {!!song.lyricsPreview && (
-        <blockquote>{song.lyricsPreview} ...</blockquote>
-      )}
+      <SongLyrics
+        source="DAM"
+        songId={song.id}
+        lyricsPreview={song.lyricsPreview}
+      />
       <DamQueueButtons song={song} />
     </div>
   );

@@ -422,6 +422,89 @@ function getJoysoundTelopBuffer(
   });
 }
 
+// Catalog titles carry decoration the other catalog doesn't: DAM appends a
+// katakana transliteration or an edition in brackets ("Brain Stew
+// [ブレイン・シチュー]", "ばかみたい[Taxi Driver Edition]") and annotates voice
+// actors in parens, and the two punctuate the same artist differently (DAM's
+// "涼宮ハルヒ(CV.平野綾)" against JOYSOUND's "涼宮ハルヒ(C.V.平野綾)"). Strip all
+// of it before comparing. This is deliberately more aggressive than
+// normalizeForYomiMatch, which keys a reading cache and must not conflate two
+// genuinely different names.
+function normalizeForCatalogMatch(text: string): string {
+  return text
+    .normalize("NFKC")
+    .replace(/[[［][^\]］]*[\]］]/g, "")
+    .replace(/[(（][^)）]*[)）]/g, "")
+    .replace(/[.・·,，、'’`~\-–—!?"“”\s]/g, "")
+    .toLowerCase();
+}
+
+// The keyword to search the other catalog with: the bracketed/parenthesized
+// decoration would find nothing, but stripping it can leave an empty string
+// (a title that is nothing but an edition tag), so fall back to the raw title.
+function catalogSearchKeyword(title: string): string {
+  const stripped = title
+    .replace(/[[［][^\]］]*[\]］]/g, "")
+    .replace(/[(（][^)）]*[)）]/g, "")
+    .trim();
+
+  return stripped || title;
+}
+
+interface JoysoundCounterpart {
+  readonly songId: string;
+  readonly name: string;
+  readonly artistName: string;
+}
+
+const joysoundCounterpartCache = new Map<
+  string,
+  Promise<JoysoundCounterpart | null>
+>();
+
+// DAM publishes no lyrics text, so a DAM song's lyrics have to come from the
+// same song on JOYSOUND. Both title and artist must match: a popular song has
+// a dozen JOYSOUND rows under other artists (残酷な天使のテーゼ has ten), and
+// matching on title alone would serve a cover's lyrics for the original.
+function findJoysoundCounterpart(
+  damSongId: string,
+  title: string,
+  artistName: string,
+  joysound: JoysoundAPI,
+): Promise<JoysoundCounterpart | null> {
+  const cached = joysoundCounterpartCache.get(damSongId);
+  if (cached) return cached;
+
+  const normalizedTitle = normalizeForCatalogMatch(title);
+  const normalizedArtist = normalizeForCatalogMatch(artistName);
+
+  const promise = joysound
+    .getSongListByKeyword(catalogSearchKeyword(title), 1, 30)
+    .then((rows) => {
+      const match = rows.find(
+        (row) =>
+          normalizeForCatalogMatch(row.songName) === normalizedTitle &&
+          normalizeForCatalogMatch(row.artistName) === normalizedArtist,
+      );
+
+      if (!match) return null;
+
+      return {
+        songId: match.selSongNo,
+        name: match.songName,
+        artistName: match.artistName,
+      };
+    })
+    .catch((e) => {
+      // A failed search shouldn't stick; the next press retries.
+      joysoundCounterpartCache.delete(damSongId);
+      throw e;
+    });
+
+  joysoundCounterpartCache.set(damSongId, promise);
+  return promise;
+}
+
 // DAM's dkwebsys search returns human-curated katakana readings inline
 // (titleYomi/artistYomi), including correct proper-noun readings that
 // kuromoji's IPADIC dictionary simply doesn't carry (e.g. 涼宮→スズミヤ,
@@ -1541,17 +1624,21 @@ type SuggestedYoutubeVideosResult =
   | SuggestedYoutubeVideos
   | SuggestedYoutubeVideoError;
 
-interface JoysoundLyrics {
-  readonly __typename: "JoysoundLyrics";
+interface SongLyrics {
+  readonly __typename: "SongLyrics";
   readonly lines: string[];
+  readonly source: "DAM" | "JOYSOUND";
+  readonly matchedSongId: string | null;
+  readonly matchedName: string | null;
+  readonly matchedArtistName: string | null;
 }
 
-interface JoysoundLyricsError {
-  readonly __typename: "JoysoundLyricsError";
+interface SongLyricsError {
+  readonly __typename: "SongLyricsError";
   readonly reason: string;
 }
 
-type JoysoundLyricsResult = JoysoundLyrics | JoysoundLyricsError;
+type SongLyricsResult = SongLyrics | SongLyricsError;
 
 interface NicoVideoInfo extends VideoInfo {
   readonly __typename: "NicoVideoInfo";
@@ -3558,14 +3645,40 @@ const resolvers = {
         };
       }
     },
-    joysoundLyrics: async (
+    songLyrics: async (
       _: any,
-      args: { songId: string },
+      args: { source: "DAM" | "JOYSOUND"; songId: string },
       { dataSources }: IDataSources,
-    ): Promise<JoysoundLyricsResult> => {
+    ): Promise<SongLyricsResult> => {
       try {
+        let counterpart: JoysoundCounterpart | null = null;
+
+        if (args.source === "DAM") {
+          const detail = await dataSources.dkwebsys.getMusicDetailsInfo(
+            args.songId,
+          );
+
+          counterpart = await findJoysoundCounterpart(
+            args.songId,
+            detail.data.title,
+            detail.data.artist,
+            dataSources.joysound,
+          );
+
+          if (counterpart === null) {
+            return {
+              __typename: "SongLyricsError",
+              reason:
+                "DAM doesn't publish lyrics, and this song isn't on JOYSOUND to read them from",
+            };
+          }
+        }
+
+        const telopSongId =
+          counterpart === null ? args.songId : counterpart.songId;
+
         const telopBuffer = await getJoysoundTelopBuffer(
-          args.songId,
+          telopSongId,
           dataSources.joysound,
         );
 
@@ -3578,17 +3691,28 @@ const resolvers = {
 
         if (lines.length === 0) {
           return {
-            __typename: "JoysoundLyricsError",
+            __typename: "SongLyricsError",
             reason: "This song's lyrics data is empty",
           };
         }
 
-        return { __typename: "JoysoundLyrics", lines };
+        return {
+          __typename: "SongLyrics",
+          lines,
+          source: "JOYSOUND",
+          matchedSongId: counterpart === null ? null : counterpart.songId,
+          matchedName: counterpart === null ? null : counterpart.name,
+          matchedArtistName:
+            counterpart === null ? null : counterpart.artistName,
+        };
       } catch (e) {
-        console.error(`[joysound] failed to read lyrics for ${args.songId}`, e);
+        console.error(
+          `[lyrics] failed to read lyrics for ${args.source} ${args.songId}`,
+          e,
+        );
 
         return {
-          __typename: "JoysoundLyricsError",
+          __typename: "SongLyricsError",
           reason: "Couldn't load the lyrics for this song",
         };
       }

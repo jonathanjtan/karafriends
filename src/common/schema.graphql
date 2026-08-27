@@ -9,13 +9,6 @@ type Query {
     first: Int
     after: String
   ): JoysoundArtistConnection!
-  # The song's full lyrics, one entry per displayed line, read out of the
-  # telop blob. sound-cafe's song detail page only carries a single truncated
-  # opening line (JoysoundSong.lyricsPreview), so this is the only way to show
-  # more. It is deliberately a separate query rather than a JoysoundSong
-  # field: on a cache miss it costs the same getFME call queueing the song
-  # makes, so the song page asks for it only when someone opts in.
-  joysoundLyrics(songId: String!): JoysoundLyricsResult!
   joysoundSongDetail(id: String): JoysoundSong!
   joysoundSongsByArtist(
     artistId: String
@@ -201,6 +194,20 @@ type Query {
   # decided here rather than on the phone because it needs the song's
   # duration-weighted pitch distribution, which is far more data than the
   # answer is worth shipping.
+  # The song's full lyrics, one entry per displayed line, read out of a
+  # JOYSOUND telop blob. Both catalogs cap their song-page preview at one
+  # line: DAM's GetMusicDetailInfoApi returns a single truncated firstLine and
+  # publishes no lyrics text at any modelTypeCode, and sound-cafe's song page
+  # truncates its 歌い出し at about 30 characters. The telop is the only full
+  # text either service exposes.
+  #
+  # A DAM song therefore has its lyrics read from the matching JOYSOUND song,
+  # which is why the result reports which catalog they actually came from.
+  #
+  # Deliberately a separate query rather than a field on Song/JoysoundSong: on
+  # a cache miss it costs the same getFME call that queueing the song makes,
+  # so a song page asks for it only when someone opts in.
+  songLyrics(source: SongSource!, songId: String!): SongLyricsResult!
   songVocalRange(
     source: SongSource!
     songId: String!
@@ -1114,15 +1121,22 @@ union SuggestedYoutubeVideosResult =
   | SuggestedYoutubeVideos
   | SuggestedYoutubeVideoError
 
-type JoysoundLyrics {
+type SongLyrics {
   lines: [String!]!
+  # Which catalog the lines were actually read from. For a DAM song this comes
+  # back JOYSOUND, and the matched* fields name the song they were read from so
+  # the page can say so rather than quietly attributing them to DAM.
+  source: SongSource!
+  matchedSongId: String
+  matchedName: String
+  matchedArtistName: String
 }
 
-type JoysoundLyricsError {
+type SongLyricsError {
   reason: String!
 }
 
-union JoysoundLyricsResult = JoysoundLyrics | JoysoundLyricsError
+union SongLyricsResult = SongLyrics | SongLyricsError
 
 type NicoVideoInfo implements VideoInfo {
   author: String!
