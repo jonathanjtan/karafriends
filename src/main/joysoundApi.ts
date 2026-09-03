@@ -6,7 +6,15 @@ import invariant from "ts-invariant";
 
 import proxyAgent from "./proxyAgent";
 
-const COOKIE_IDS: string[] = ["AWSALB", "AWSALBCORS", "JSESSIONID"];
+// XSRF-TOKEN must be in here: sound-cafe now uses Spring's
+// CookieCsrfTokenRepository, which compares the CSRF request header against
+// this cookie, so failing to send it back is a 403.
+const COOKIE_IDS: string[] = [
+  "AWSALB",
+  "AWSALBCORS",
+  "JSESSIONID",
+  "XSRF-TOKEN",
+];
 
 export type JoysoundCredentialsProvider = () => Promise<{
   cookies: JoysoundCookies;
@@ -17,6 +25,7 @@ interface JoysoundCookies {
   AWSALB: string;
   AWSALBCORS: string;
   JSESSIONID: string;
+  "XSRF-TOKEN": string;
 }
 
 interface JoysoundArtistListItem {
@@ -63,19 +72,32 @@ interface ServiceTypeData {
 }
 
 function generateCookieString(cookies: JoysoundCookies) {
-  return COOKIE_IDS.map(
-    (cookieId) => cookieId + "=" + cookies[cookieId as keyof JoysoundCookies],
-  ).join("; ");
+  // Skip the ones we haven't been handed yet -- sending `JSESSIONID=` with an
+  // empty value is not the same as not sending it.
+  return COOKIE_IDS.filter(
+    (cookieId) => cookies[cookieId as keyof JoysoundCookies],
+  )
+    .map(
+      (cookieId) => cookieId + "=" + cookies[cookieId as keyof JoysoundCookies],
+    )
+    .join("; ");
 }
 
+// Accumulates whatever cookies this particular response carried, leaving the
+// rest of `target` alone. It used to `invariant` that EVERY id was present in
+// every response, which stopped being true around Aug 2026: sound-cafe now
+// withholds JSESSIONID until you actually authenticate (ordinary session-
+// fixation hygiene), so the very first GET /login threw and login never ran.
+// Note a missing cookie and a geo-block look identical at this layer -- a
+// blocked exit returns 403 with no Set-Cookie at all -- so callers that need
+// to tell those apart must check the status, not this function.
 function parseCookies(setCookie: string, target: JoysoundCookies) {
   for (const cookieId of COOKIE_IDS) {
-    const re = new RegExp(cookieId + "=([^;]+);");
+    const matchData = setCookie.match(new RegExp(cookieId + "=([^;]+);"));
 
-    const matchData = setCookie.match(re);
-    invariant(matchData);
-
-    target[cookieId as keyof JoysoundCookies] = matchData[1];
+    if (matchData) {
+      target[cookieId as keyof JoysoundCookies] = matchData[1];
+    }
   }
 }
 
@@ -151,7 +173,7 @@ export class JoysoundAPI extends RESTDataSource {
         this.baseURL
       }${url} -d "${body}" -H "Content-Type: application/x-www-form-urlencoded; charset=UTF-8" -H "Cookie: ${generateCookieString(
         creds.cookies,
-      )}" -H "X-CSRF-TOKEN: ${creds.csrfToken}"`,
+      )}" -H "X-CSRF-TOKEN: ${creds.csrfToken}" -H "X-XSRF-TOKEN: ${creds.csrfToken}"`,
     );
 
     return super.post(url, {
@@ -162,7 +184,12 @@ export class JoysoundAPI extends RESTDataSource {
         Referer: "https://www.sound-cafe.jp/player",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
+        // Both spellings on purpose. sound-cafe moved to Spring's
+        // CookieCsrfTokenRepository around Aug 2026, whose default header is
+        // X-XSRF-TOKEN; X-CSRF-TOKEN alone now 403s every API call. Sending
+        // the pair is verified to work and keeps us compatible either way.
         "X-CSRF-TOKEN": creds.csrfToken,
+        "X-XSRF-TOKEN": creds.csrfToken,
       },
     });
   }
@@ -281,6 +308,7 @@ export class JoysoundAPI extends RESTDataSource {
       AWSALB: "",
       AWSALBCORS: "",
       JSESSIONID: "",
+      "XSRF-TOKEN": "",
     };
 
     const csrfToken = await nodeFetch("https://www.sound-cafe.jp/login", {
@@ -319,6 +347,7 @@ export class JoysoundAPI extends RESTDataSource {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
         "X-CSRF-TOKEN": csrfToken,
+        "X-XSRF-TOKEN": csrfToken,
         "X-Requested-With": "XMLHttpRequest",
       },
     })
