@@ -76,6 +76,17 @@ Platform notes:
   `dist/` (+ `.zip`): `karafriends-win32-x64/` (`.exe`) on Windows,
   `karafriends-darwin-<arch>/karafriends.app` on macOS, `karafriends-linux-x64/`
   on Linux. Pass `PACKAGER_ARCH` (e.g. `arm64`) to cross-target.
+  - **It does NOT compile. Run `build-prod` first, every time.**
+    `package-prod` is only `node ./packager.js`; it packages whatever already
+    sits in `build/prod/`, and it does so silently, with no warning, however
+    stale that is. On 2026-09-03 it happily shipped a `dist/` built from a
+    five-week-old `build/prod`, which cost an hour: the bundle predated a
+    proxy fix, so DAM login escaped the proxy and 403'd, and both services
+    read unavailable in the packaged app while the identical source read
+    available under `run-dev`. Nothing about the symptom points at the build.
+    When a packaged app misbehaves in a way `run-dev` does not, check
+    `build/prod/main_/index.js`'s timestamp before you debug anything else,
+    and grep both bundles for a string you know you just added.
   - **macOS signing/notarization is opt-in**: `packager.js` only code-signs +
     notarizes when `NOTARIZATION_KEY_PATH` is set (the release CI sets it).
     Without it you get an **unsigned `.app` that runs locally**, exactly what
