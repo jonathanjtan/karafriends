@@ -39,7 +39,7 @@ const KaraokeChannelSearchResults = ({ query }: Props) => {
   const data = useLazyLoadQuery<KaraokeChannelSearchResultsQuery>(
     karaokeChannelSearchResultsQuery,
     { keyword: query },
-    // Re-running the whole nine-channel fan-out because the user came back to
+    // Re-running the whole channel fan-out because the user came back to
     // the tab is a lot of requests for a list that hasn't changed; the server
     // caches each channel's answer briefly anyway.
     {
