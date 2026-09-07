@@ -21,6 +21,7 @@ import { MicGate } from "../common/micGate";
 import { ScoreAccumulator } from "../common/scoring";
 import { parseScoringData } from "../common/scoringData";
 import { RangeAccumulator } from "../common/vocalRange";
+import MediaClock from "./mediaClock";
 import { InputDevice } from "./nativeAudio";
 import "./PianoRoll.css";
 import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl";
@@ -38,7 +39,7 @@ const STROKE_WIDTH = 0.03;
 const PIANO_ROLL_DUCK_FACTOR = 0.15;
 
 function loadShader(
-  gl: WebGLRenderingContext,
+  gl: WebGL2RenderingContext,
   type:
     | WebGLRenderingContextBase["VERTEX_SHADER"]
     | WebGLRenderingContextBase["FRAGMENT_SHADER"],
@@ -92,7 +93,11 @@ function quadToTriangles(x0: number, y0: number, x1: number, y1: number) {
 
 function median(nums: number[]) {
   const numsSorted = [...nums];
-  numsSorted.sort();
+  // Numeric, not the default lexicographic sort: MIDI numbers happen to all be
+  // two digits for real songs, which is the only reason the bare sort() this
+  // replaces gave the right answer. A single value at 100 or above (or below
+  // 10) would have silently mis-centred the whole roll.
+  numsSorted.sort((a, b) => a - b);
   const middleIndex = Math.floor(nums.length / 2);
   if (nums.length % 2 === 0) {
     return (numsSorted[middleIndex - 1] + numsSorted[middleIndex]) / 2;
@@ -102,20 +107,36 @@ function median(nums: number[]) {
 }
 
 abstract class ShaderProgram<T extends unknown[]> {
-  readonly gl: WebGLRenderingContext;
+  readonly gl: WebGL2RenderingContext;
   readonly program: WebGLProgram;
   readonly attributeLocations: { [name: string]: number };
   readonly uniformLocations: { [name: string]: WebGLUniformLocation };
   readonly buffers: { [name: string]: WebGLBuffer };
+  // Vertex attribute state is global in GL, not per-program. All four programs
+  // here bind their vec2 stream to attribute index 0, so whichever drew last
+  // leaves that attribute pointing at its own buffer, and every draw has to
+  // re-point it. A VAO records the wiring once and restores it in a single
+  // bind.
+  //
+  // This is what the `if (gl.CURRENT_PROGRAM !== this.program)` guard that used
+  // to wrap every draw was reaching for, and it never worked:
+  // `gl.CURRENT_PROGRAM` is the enum constant 0x8B8D, never a WebGLProgram, so
+  // the condition was always true and the setup ran every frame regardless.
+  // Worth knowing before "fixing" it somewhere else: reading it properly (via
+  // getParameter) would have made it *wrong* rather than merely redundant,
+  // because of the global attribute state above.
+  private readonly vertexArray: WebGLVertexArrayObject;
+  private readonly shaders: WebGLShader[];
 
   constructor(
-    gl: WebGLRenderingContext,
+    gl: WebGL2RenderingContext,
     shaders: WebGLShader[],
     attributeNames: string[],
     uniformNames: string[],
     bufferNames: string[],
   ) {
     this.gl = gl;
+    this.shaders = shaders;
     this.program = gl.createProgram()!;
     shaders.forEach((shader) => gl.attachShader(this.program, shader));
     gl.linkProgram(this.program);
@@ -134,6 +155,44 @@ abstract class ShaderProgram<T extends unknown[]> {
     this.buffers = Object.fromEntries(
       bufferNames.map((name) => [name, gl.createBuffer()!]),
     );
+
+    // Every program here draws one vec2 stream ("position") out of one buffer
+    // ("positions"), so the wiring is identical for all of them.
+    this.vertexArray = gl.createVertexArray()!;
+    gl.bindVertexArray(this.vertexArray);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
+    gl.vertexAttribPointer(
+      this.attributeLocations.position,
+      2,
+      gl.FLOAT,
+      false,
+      0,
+      0,
+    );
+    gl.enableVertexAttribArray(this.attributeLocations.position);
+    gl.bindVertexArray(null);
+  }
+
+  // Select this program and its attribute wiring. Uniforms that never change
+  // are set once in each subclass's constructor instead of here: uniform state
+  // belongs to the program object, so it survives from one draw to the next.
+  protected use() {
+    this.gl.useProgram(this.program);
+    this.gl.bindVertexArray(this.vertexArray);
+  }
+
+  // The effect that owns these rebuilds per song, and again on every
+  // pitch-shift change, on a canvas (and so a GL context) that outlives it.
+  // Chromium does eventually collect unreferenced GL objects, but on its own
+  // schedule; releasing them here makes it deterministic instead of leaving a
+  // song's whole pipeline resident into the next one.
+  dispose() {
+    this.gl.deleteVertexArray(this.vertexArray);
+    this.gl.deleteProgram(this.program);
+    this.shaders.forEach((shader) => this.gl.deleteShader(shader));
+    Object.values(this.buffers).forEach((buffer) =>
+      this.gl.deleteBuffer(buffer),
+    );
   }
 
   abstract draw(...args: T): void;
@@ -142,7 +201,7 @@ abstract class ShaderProgram<T extends unknown[]> {
 class NoteProgram extends ShaderProgram<[number, number]> {
   readonly triangleCount: number;
 
-  constructor(gl: WebGLRenderingContext, positions: number[]) {
+  constructor(gl: WebGL2RenderingContext, positions: number[]) {
     super(
       gl,
       [
@@ -156,24 +215,14 @@ class NoteProgram extends ShaderProgram<[number, number]> {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
     this.triangleCount = positions.length / 2;
+
+    gl.useProgram(this.program);
+    gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
+    gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
   }
 
   draw(time: number, canvasWidth: number) {
-    if (this.gl.CURRENT_PROGRAM !== this.program) {
-      this.gl.useProgram(this.program);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-      this.gl.vertexAttribPointer(
-        this.attributeLocations.position,
-        2,
-        this.gl.FLOAT,
-        false,
-        0,
-        0,
-      );
-      this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-      this.gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
-    }
+    this.use();
 
     this.gl.uniform1f(this.uniformLocations.time, time);
     this.gl.uniform1f(this.uniformLocations.canvasWidth, canvasWidth);
@@ -185,7 +234,7 @@ class NoteProgram extends ShaderProgram<[number, number]> {
 class SeekProgram extends ShaderProgram<[]> {
   readonly triangleCount: number;
 
-  constructor(gl: WebGLRenderingContext) {
+  constructor(gl: WebGL2RenderingContext) {
     super(
       gl,
       [
@@ -200,24 +249,14 @@ class SeekProgram extends ShaderProgram<[]> {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
     this.triangleCount = positions.length / 2;
+
+    gl.useProgram(this.program);
+    gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
+    gl.uniform4fv(this.uniformLocations.color, [0.9, 0.9, 0.9, 1.0]);
   }
 
   draw() {
-    if (this.gl.CURRENT_PROGRAM !== this.program) {
-      this.gl.useProgram(this.program);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-      this.gl.vertexAttribPointer(
-        this.attributeLocations.position,
-        2,
-        this.gl.FLOAT,
-        false,
-        0,
-        0,
-      );
-      this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
-      this.gl.uniform4fv(this.uniformLocations.color, [0.9, 0.9, 0.9, 1.0]);
-    }
+    this.use();
 
     this.gl.drawArrays(this.gl.TRIANGLES, 0, this.triangleCount);
   }
@@ -225,8 +264,15 @@ class SeekProgram extends ShaderProgram<[]> {
 
 class PitchProgram extends ShaderProgram<[number, number, number[]]> {
   readonly color: [number, number, number];
+  // The sung-pitch trace is the one stream that changes every frame, so it is
+  // the one worth not re-allocating. `new Float32Array(positions)` on a plain
+  // number array converts element by element and throws away ~67KB per mic per
+  // frame; the trace tops out at a fixed length (PitchDetectionBuffer caps at
+  // 200 samples), so a scratch array that grows a handful of times at the start
+  // of a take and never again does the same job with no per-frame garbage.
+  private scratch = new Float32Array(0);
 
-  constructor(gl: WebGLRenderingContext, color: [number, number, number]) {
+  constructor(gl: WebGL2RenderingContext, color: [number, number, number]) {
     super(
       gl,
       [
@@ -238,33 +284,39 @@ class PitchProgram extends ShaderProgram<[number, number, number[]]> {
       ["positions"],
     );
     this.color = color;
+
+    gl.useProgram(this.program);
+    gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
+    gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
+    gl.uniform4f(this.uniformLocations.color, ...this.color, 1.0);
   }
 
   draw(time: number, canvasWidth: number, positions: number[]) {
-    if (this.gl.CURRENT_PROGRAM !== this.program) {
-      this.gl.useProgram(this.program);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-      this.gl.vertexAttribPointer(
-        this.attributeLocations.position,
-        2,
-        this.gl.FLOAT,
-        false,
-        0,
-        0,
-      );
-      this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-      this.gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
-      this.gl.uniform4f(this.uniformLocations.color, ...this.color, 1.0);
-    }
+    this.use();
 
     this.gl.uniform1f(this.uniformLocations.time, time);
-    this.gl.uniform1f(this.uniformLocations.canvasWidth, canvasWidth);
 
-    this.gl.bufferData(
+    // The ARRAY_BUFFER binding is global state, not part of the VAO: the VAO
+    // records which buffer the attribute *reads*, but an upload still has to
+    // name its target. Binding here rather than relying on some earlier call
+    // having left the right buffer bound is what keeps each mic's trace out of
+    // its neighbour's buffer.
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
+    if (this.scratch.length < positions.length) {
+      this.scratch = new Float32Array(Math.max(positions.length * 2, 4096));
+      this.gl.bufferData(
+        this.gl.ARRAY_BUFFER,
+        this.scratch.byteLength,
+        this.gl.DYNAMIC_DRAW,
+      );
+    }
+    this.scratch.set(positions);
+    this.gl.bufferSubData(
       this.gl.ARRAY_BUFFER,
-      new Float32Array(positions),
-      this.gl.DYNAMIC_DRAW,
+      0,
+      this.scratch,
+      0,
+      positions.length,
     );
     this.gl.drawArrays(this.gl.TRIANGLES, 0, positions.length / 2);
   }
@@ -273,7 +325,7 @@ class PitchProgram extends ShaderProgram<[number, number, number[]]> {
 class FreeTimeProgram extends ShaderProgram<[number, number]> {
   readonly triangleCount: number;
 
-  constructor(gl: WebGLRenderingContext, positions: number[]) {
+  constructor(gl: WebGL2RenderingContext, positions: number[]) {
     super(
       gl,
       [
@@ -287,25 +339,15 @@ class FreeTimeProgram extends ShaderProgram<[number, number]> {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
     this.triangleCount = positions.length / 2;
+
+    gl.useProgram(this.program);
+    gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
+    gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
+    gl.uniform4fv(this.uniformLocations.color, [0, 0, 0, 0.5]);
   }
 
   draw(time: number, canvasWidth: number) {
-    if (this.gl.CURRENT_PROGRAM !== this.program) {
-      this.gl.useProgram(this.program);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-      this.gl.vertexAttribPointer(
-        this.attributeLocations.position,
-        2,
-        this.gl.FLOAT,
-        false,
-        0,
-        0,
-      );
-      this.gl.enableVertexAttribArray(this.attributeLocations.position);
-      this.gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-      this.gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
-      this.gl.uniform4fv(this.uniformLocations.color, [0, 0, 0, 0.5]);
-    }
+    this.use();
 
     this.gl.uniform1f(this.uniformLocations.time, time);
     this.gl.uniform1f(this.uniformLocations.canvasWidth, canvasWidth);
@@ -866,38 +908,62 @@ export default function PianoRoll(props: {
     const seekProgram = new SeekProgram(gl);
     const freeTimeProgram = new FreeTimeProgram(gl, freeTimePositions);
 
+    // Driven from the draw loop below and nowhere else: the filter is paced by
+    // how often it is asked, so the 25ms pitch poll keeps reading the raw clock
+    // rather than sharing this.
+    const mediaClock = new MediaClock();
+
     gl.clearColor(0.0, 0.0, 0.0, 0.0);
 
+    // The loop now reschedules unconditionally (see below), so it needs an
+    // explicit stop rather than relying on a missing ref to brake it: a frame
+    // that slipped past cancelAnimationFrame would otherwise run forever
+    // against a pipeline the cleanup has already disposed.
+    let cancelled = false;
+
     const draw = () => {
-      if (!canvasRef.current || !props.videoRef.current) return;
+      if (cancelled) return;
 
-      const time = props.videoRef.current.currentTime;
-      const canvasWidth = canvasRef.current.width;
+      const canvas = canvasRef.current;
+      const video = props.videoRef.current;
 
-      gl.clear(gl.COLOR_BUFFER_BIT);
+      // A frame where either ref is momentarily missing is skipped, not fatal.
+      // Returning early *without* rescheduling (which is what this used to do)
+      // would freeze the roll for the rest of the song with nothing left to
+      // restart it; tearing the loop down is the cleanup's job, not a
+      // transient null's.
+      if (canvas && video) {
+        // Smoothed, not `video.currentTime` raw: see mediaClock.ts for what the
+        // raw clock's jitter does to a continuous scroll.
+        const time = mediaClock.now(video);
+        const canvasWidth = canvas.width;
 
-      if (freeTimePositions.length > 0) {
-        freeTimeProgram.draw(time, canvasWidth);
-      }
+        gl.clear(gl.COLOR_BUFFER_BIT);
 
-      if (positions.length > 0) {
-        noteProgram.draw(time, canvasWidth);
-      }
-
-      pitchPollers.forEach(([buffer, shader, _]) => {
-        if (buffer.positions.length > 0) {
-          shader.draw(time, canvasWidth, buffer.positions);
+        if (freeTimePositions.length > 0) {
+          freeTimeProgram.draw(time, canvasWidth);
         }
-      });
 
-      seekProgram.draw();
+        if (positions.length > 0) {
+          noteProgram.draw(time, canvasWidth);
+        }
 
-      canvasRef.current.classList.toggle(
-        "pianoRollPog",
-        pogIntervals.some(
-          ({ startTime, endTime }) => time >= startTime - 1 && time <= endTime,
-        ),
-      );
+        pitchPollers.forEach(([buffer, shader, _]) => {
+          if (buffer.positions.length > 0) {
+            shader.draw(time, canvasWidth, buffer.positions);
+          }
+        });
+
+        seekProgram.draw();
+
+        canvas.classList.toggle(
+          "pianoRollPog",
+          pogIntervals.some(
+            ({ startTime, endTime }) =>
+              time >= startTime - 1 && time <= endTime,
+          ),
+        );
+      }
 
       animationFrameRequestRef.current = window.requestAnimationFrame(draw);
     };
@@ -922,6 +988,9 @@ export default function PianoRoll(props: {
     function clearPitchDetectionBuffers() {
       currentNoteIndex = 0;
       pitchPollers.forEach(([buffer, _1, _2]) => buffer.clear());
+      // Re-anchor rather than waiting for the smoothing filter to notice the
+      // jump on its own.
+      mediaClock.reset();
       // The audio after a seek isn't continuous with the audio before it, so a
       // gate left open across the jump would pass whatever it lands on.
       micGates.forEach((gate) => gate.reset());
@@ -942,7 +1011,16 @@ export default function PianoRoll(props: {
       // Nothing polls the mics between songs, so leaving the last values in
       // place would freeze the meters at whatever the final note read.
       props.micLevelsRef?.current.fill(0);
+      cancelled = true;
       cancelAnimationFrame(animationFrameRequestRef.current);
+      // The canvas (and so the GL context) outlives this effect whenever one
+      // scored song follows another, since PianoRoll stays mounted across the
+      // transition. Without this, every song leaves a full set of programs,
+      // shaders, buffers and VAOs behind on that context.
+      pitchPollers.forEach(([_1, program, _2]) => program.dispose());
+      noteProgram.dispose();
+      seekProgram.dispose();
+      freeTimeProgram.dispose();
       resizeObserver.disconnect();
       if (props.videoRef.current) {
         props.videoRef.current.removeEventListener(
