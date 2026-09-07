@@ -27,7 +27,12 @@ import { ScoringInterval, ScoringNote } from "./scoringData";
 // 3: timing onset gate widened (150ms -> 80ms of reference rest) and the axis
 //    blended with pitch in proportion to how many onsets the song actually
 //    offered, since a spread from a handful of them is an unreliable reading.
-export const SCORING_FORMULA_VERSION = 3;
+// 4: the sustain rescue in noteCredit no longer grades on a looser tolerance
+//    than the frames it overrides, and no longer buys a whole note with half of
+//    one; and the top of DISPLAY_CURVE is anchored above the corpus instead of
+//    at a percentile of it. A v3 S is roughly a v4 A. Nothing about the
+//    singing changed, so do not read a drop across this boundary as one.
+export const SCORING_FORMULA_VERSION = 4;
 
 // DAM divides the sung span into exactly 24 windows for its end-of-song
 // graph. Verified on 96 songs: always 24, never song-length dependent.
@@ -45,8 +50,16 @@ export const SCORE_BUCKET_COUNT = 24;
 const SOFT_FULL_SEMIS = 0.5;
 const SOFT_ZERO_SEMIS = 1.25;
 // The threshold for the yes/no questions that remain: whether a slot counts
-// towards a sustained run, and whether a note was "landed". Half credit.
-const ON_PITCH_TOLERANCE_SEMIS = (SOFT_FULL_SEMIS + SOFT_ZERO_SEMIS) / 2;
+// towards a sustained run, and whether a note was "landed".
+//
+// The same tolerance that earns full graded credit, deliberately. This was the
+// midpoint of the ramp (0.875 semitones), which made the two halves of
+// noteCredit disagree about what "on pitch" means: a frame 0.875 off earns 0.5
+// on the graded path and counted as flawless on the sustain path, so holding
+// half a note nearly a semitone flat scored the same 1.000 as singing it. That
+// single incoherence fired on 50-62% of every note in the corpus and pushed a
+// third of them to full credit, at every note length.
+const ON_PITCH_TOLERANCE_SEMIS = SOFT_FULL_SEMIS;
 
 // Pitch is polled on this cadence (PianoRoll's setInterval), so it also
 // defines a "frame slot": at most one sample per note per slot counts. With
@@ -70,7 +83,13 @@ const MIN_SCOREABLE_NOTES = 24;
 // "Sustained" means holding on-pitch across at least this fraction of the
 // note's slots for full credit; a shorter run scales down proportionally, so a
 // single lucky frame earns little.
-const SUSTAIN_FRACTION = 0.5;
+//
+// Was 0.5, which is to say half the note bought the whole note. Paired with the
+// old midpoint tolerance above, the rescue stopped being a correction for the
+// detector's boundary frames and became the way most notes were scored. 0.7
+// leaves the attack and release uncredited, which is all the blur it was
+// written to forgive.
+const SUSTAIN_FRACTION = 0.7;
 
 // One accepted mic sample, exactly as the poll loop read it.
 //
@@ -554,32 +573,45 @@ const WEIGHT_TIMING = 0.15;
 // re-fitting this table rather than moving every band, which is the treadmill
 // the old design was on.
 //
-// Fitted by placing each band boundary at a chosen quantile of a real corpus
-// (54 takes, two nights, six singers) rather than by taste, so the bands mean
-// something about how a room actually sings:
+// Fitted against a real corpus (62 takes, four nights, six singers) rather than
+// by taste, so the bands mean something about how a room actually sings:
 //
 //   55 (D/C) below every take but the one nobody really attempted
-//   68 (C/B) at the 13th percentile      78 (B/A) at the 37th
-//   87 (A/S) at the 67th                 93 (S/SS) at the 91st
+//   68 (C/B) at the 18th percentile      78 (B/A) at the 58th
+//   87 (A/S) at the 92nd                 93 (S/SS) at the 97th
 //   97 (SSS) above the best take in the corpus: reachable, unearned so far
 //
-// which lands D 1, C 7, B 11, A 18, S 12, SS 5, SSS 0. Slopes fall from 157 to
-// 25 across the range: deliberately compressive at the top, so the last few
+// which lands D 1, C 10, B 25, A 21, S 3, SS 2, SSS 0. Slopes fall from 183 to
+// 20 across the range: deliberately compressive at the top, so the last few
 // points cost the most.
 //
-// The earlier version of this table was fitted to 29 takes, all that survived
-// a temp sweep, and that subset was biased toward the better half of the
-// room, which made the curve read ~4 points generous at the median and pushed a
-// fifth of all takes into C. Re-fit once there is a corpus from more rooms than
-// this one; scripts/replayScoring.mjs prints the distribution.
+// That count is a snapshot at the v4 fit. The corpus is every probe log with a
+// cached melody beside it, so it grows whenever somebody sings, and
+// replayScoring.mjs will report a larger n and a distribution a take or two off
+// this one. Compare shapes, not counts.
+//
+// **The top boundaries are NOT set at a quantile, and that is the point.**
+// Every earlier version of this table placed all four boundaries at chosen
+// percentiles, which made a band a ranking rather than a standard: S was
+// definitionally the top third of takes and SS the top ninth, whoever sang and
+// however well. That is also why tightening the formula never changed anybody's
+// grade. Re-fitting the curve to the same quantiles afterwards handed the
+// points straight back, byte for byte, and the treadmill this table was
+// introduced to end was in the table itself. So the low boundaries still track
+// the corpus (a guest gamely attempting a song they don't know should read B,
+// not D) while A/S and S/SS sit above nearly all of it: S has to be sung for.
+//
+// Re-fit the LOW end once there is a corpus from more rooms than this one;
+// scripts/replayScoring.mjs prints the distribution. Leave the top alone unless
+// you mean to change what S means.
 const DISPLAY_CURVE: [number, number][] = [
   [0.0, 0],
-  [0.35, 55],
-  [0.475, 68],
-  [0.587, 78],
+  [0.3, 55],
+  [0.42, 68],
+  [0.58, 78],
   [0.7, 87],
-  [0.775, 93],
-  [0.88, 97],
+  [0.78, 93],
+  [0.85, 97],
   [1.0, 100],
 ];
 

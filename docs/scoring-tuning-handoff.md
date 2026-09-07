@@ -37,18 +37,30 @@ rules; the formula is entirely ours (`src/common/scoring.ts`).
   old rate) puts it at **+3.9 raw points of pitch** and ~+1.4 of long tone. That
   is ~0.027 of raw overall, worth ~1 display point at the top of the curve where
   it is compressed and **~2 points in the A/B/S range** where most singing lands.
-  So `DISPLAY_CURVE` reads about two points generous. It has not been re-fitted:
-  doing that properly needs a 10ms corpus on the current formula, and there are
-  three such takes.
+  So `DISPLAY_CURVE` reads about two points generous. v4 re-fitted its **low**
+  end (against the same mixed-density corpus, so that ~2 points is still in
+  there); the top is no longer a corpus fit at all, so the density bias cannot
+  reach it. Re-doing the low end properly still needs a 10ms corpus on the
+  current formula, and there are three such takes.
 
 - **Formula**: `overall = 0.65·pitch + 0.20·longTone + 0.15·timing`, then a
   display curve. Each axis is 0..1.
-  - **pitch**: per note, `max(graded frame average, best sustained on-pitch
-stretch)`, averaged over **every** reference note (an unsung note counts
+  - **pitch**: per note, `max(graded frame average, best sustained on-pitch stretch)`,
+    averaged over **every** reference note (an unsung note counts
     zero). Note-averaged, not frame-pooled, so one held note can't outweigh a
     verse, and so the headline and the 24-window graph are the same measurement.
     Credit is **graded**, full inside 50 cents and ramping to zero at 125, which
     removed the boundary jitter the old hard 1.0-semitone step caused.
+    - **The sustained-stretch half is a rescue for the detector, not a scoring
+      path, and through v3 it was neither.** It graded on `ON_PITCH_TOLERANCE`,
+      then the _midpoint_ of the ramp at 0.875 semitones, so a frame worth 0.5
+      on the graded path counted as flawless on the sustain path; and
+      `SUSTAIN_FRACTION` was 0.5, so half a note bought all of it. Together
+      those two constants fired on **50–62% of every note in the corpus** and
+      pushed ~33–39% of notes to a full 1.000, including 39% of notes over 2s,
+      where the boundary-frame blur it was written to forgive does not exist.
+      v4 grades the run at `SOFT_FULL_SEMIS` and asks for 0.7 of the note.
+      Worth ~5.5 raw points of pitch at the corpus median.
   - **longTone**: over reference notes ≥1s, how much of each the singer held on
     pitch. `null` when the song has no held notes.
   - **timing**: consistency (interquartile spread) of note attacks, only for
@@ -105,6 +117,19 @@ stretch)`, averaged over **every** reference note (an unsung note counts
 - **Bands** (`BAND_THRESHOLDS`) sit on the **displayed** number, not the raw
   composite, so retuning the formula means re-fitting `DISPLAY_CURVE` and
   leaves the ladder alone: SSS ≥97, SS ≥93, S ≥87, A ≥78, B ≥68, C ≥55, else D.
+
+  **But do not re-fit the top of the curve to a quantile.** Through v3 all four
+  boundaries were placed at chosen percentiles of the corpus, which made a band
+  a ranking rather than a standard, and made every formula change a no-op on the
+  thing anybody actually sees. Measured: tightening the pitch axis until the
+  corpus went `SS:2 S:3 A:20 B:18 C:15 D:4`, then re-fitting the curve to the
+  same quantiles the way this section used to advise, reproduced the original
+  distribution **exactly** (`SS:6 S:15 A:18 B:15 C:7 D:1`) and put the two
+  sample takes back in the band they started in. The curve handed back every
+  point the formula took. Since v4 the low boundaries still track the corpus (a
+  guest attempting an unfamiliar song should read B, not D) while A/S and S/SS
+  sit above nearly all of it. Re-fit the low end against a better corpus freely;
+  moving the top is a decision about what S _means_, not a calibration.
 
 ## The data-collection loop
 
@@ -219,11 +244,14 @@ of one song at the same formula version, and the version has moved twice.
 
 Ordered by what unblocks the most.
 
-1. **Rewrite `DISPLAY_CURVE` against a current corpus.** It is fitted to
-   25ms-hop traces scored under **v1**, and is stale on both counts: the denser
-   sampling is worth ~2 display points (measured, see above) and the timing axis
-   is a different measurement now. This is the largest known inaccuracy in the
-   score. It needs singing, a night's worth rather than a take.
+1. **Re-fit the low end of `DISPLAY_CURVE` against a 10ms corpus.** v4 re-fitted
+   D/C, C/B and B/A against 62 takes on the current formula, which retires the
+   v1 fit, but that corpus is still mostly 25ms-hop traces and the denser
+   sampling is worth ~2 display points (measured, see above). So the low
+   boundaries read about two points generous for anyone singing on a current
+   build. Needs singing, a night's worth rather than a take. The A/S and S/SS
+   boundaries are deliberately **not** corpus-fitted; see the Bands note above
+   before touching them.
 2. **Surface scores on the remocon.** The data is there (`scores.json`,
    `scoreHistory`) and nothing reads it. The phone is where people actually
    re-read a result; the TV card is gone in nine seconds. No new data needed,
