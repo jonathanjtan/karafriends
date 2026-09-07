@@ -628,6 +628,15 @@ export default function PianoRoll(props: {
     // micLatencyCalibrationMs the capture is used to set.
     const pitchProbeEnabled =
       window.karafriends.karafriendsConfig().pitchProbeEnabled === true;
+    // The gate capture is the same idea one layer earlier: every frame the
+    // detector produced, with the level it was judged on and the verdict, so a
+    // candidate gate can be replayed offline against a real night instead of
+    // being argued about. Separate flag rather than riding on pitchProbeEnabled
+    // because it logs every frame from every mic rather than the accepted ones,
+    // which is several times the volume, and the two captures are wanted at
+    // different times.
+    const micGateProbeEnabled =
+      window.karafriends.karafriendsConfig().micGateProbeEnabled === true;
     // Captured here (not read per sample): this effect rebuilds per song, in
     // lockstep with scoringData, so props.songId is constant for its lifetime.
     const probeSongId = props.songId;
@@ -643,12 +652,22 @@ export default function PianoRoll(props: {
         window.karafriends.appendProbeLog(probeBuffer.splice(0));
       }
     };
-    if (pitchProbeEnabled) {
+    if (pitchProbeEnabled || micGateProbeEnabled) {
       // Startup breadcrumb so anyone calibrating can confirm the flag took
-      // effect before singing a whole song for nothing.
-      console.log(
-        `PROBE_PITCH capture enabled (config.pitchProbeEnabled), song ${probeSongId}`,
-      );
+      // effect before singing a whole song for nothing. One line per capture,
+      // each naming the record type it writes: they are enabled separately,
+      // and docs/scoring-tuning-handoff.md tells the reader to look for the
+      // PROBE_PITCH one by name.
+      if (pitchProbeEnabled) {
+        console.log(
+          `PROBE_PITCH capture enabled (config.pitchProbeEnabled), song ${probeSongId}`,
+        );
+      }
+      if (micGateProbeEnabled) {
+        console.log(
+          `PROBE_FRAME capture enabled (config.micGateProbeEnabled), song ${probeSongId}`,
+        );
+      }
       probeFlushInterval = setInterval(flushProbeBuffer, 2000);
     }
 
@@ -752,6 +771,21 @@ export default function PianoRoll(props: {
             rms,
             sampleTime,
             micRmsGateThresholdRef.current,
+          );
+        }
+
+        // Every frame the detector produced, gated or not, with what the gate
+        // judged it on. Off unless config.micGateProbeEnabled is set; see
+        // pitchProbeEnabled's note for why this goes to the probe log rather
+        // than the console. One line per frame per mic:
+        //   PROBE_FRAME <songId> <mic> <time> <midi> <confidence> <rms> <0|1>
+        // rms is linear full-scale, or "nan" from an addon predating the
+        // field; the trailing flag is the *level gate's* verdict alone, so
+        // that the confidence and midi filters below stay reconstructible
+        // offline rather than being baked into the capture.
+        if (micGateProbeEnabled) {
+          probeBuffer.push(
+            `PROBE_FRAME ${probeSongId} ${micIndex} ${sampleTime.toFixed(4)} ${midiNumber.toFixed(3)} ${confidence.toFixed(3)} ${typeof rms === "number" ? rms.toFixed(6) : "nan"} ${gateOpen ? 1 : 0}`,
           );
         }
 

@@ -57,6 +57,14 @@ export interface KarafriendsConfig {
   // Off in normal use (a line per sample is ~40/s of log spam). Turn it on
   // here, run the app capturing stdout, sing a song, then turn it back off.
   pitchProbeEnabled: boolean;
+  // Log one PROBE_FRAME line per *detected* frame per mic during scoring, with
+  // the level the mic gate judged it on and its verdict, for tuning the gate
+  // offline against a real room instead of by ear mid-party. Includes the
+  // frames the gate rejected, which is the half no other capture records and
+  // the half a gate change has to be judged on. Heavier than pitchProbeEnabled
+  // (every frame from every mic, ~100/s each, a few MB a song), so leave it off
+  // unless you are collecting a night to replay.
+  micGateProbeEnabled: boolean;
 }
 
 const DEFAULT_CONFIG: KarafriendsConfig = {
@@ -82,6 +90,7 @@ const DEFAULT_CONFIG: KarafriendsConfig = {
   // only skews scoring, never playback.
   micLatencyCalibrationMs: 80,
   pitchProbeEnabled: false,
+  micGateProbeEnabled: false,
 };
 
 function applyEnvironmentOverrides(config: KarafriendsConfig) {
