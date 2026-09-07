@@ -17,6 +17,7 @@ import useMicRmsGateEnabled from "../common/hooks/useMicRmsGateEnabled";
 import useMicRmsGateThreshold from "../common/hooks/useMicRmsGateThreshold";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
+import { MicGate } from "../common/micGate";
 import { ScoreAccumulator } from "../common/scoring";
 import { parseScoringData } from "../common/scoringData";
 import { RangeAccumulator } from "../common/vocalRange";
@@ -697,6 +698,12 @@ export default function PianoRoll(props: {
       )
       .flat();
 
+    // One gate per mic, since each channel has its own level and its own
+    // reason to be open. Held here rather than in a ref because the state is
+    // only meaningful for a continuous run of audio, and this effect's
+    // lifetime is exactly one song.
+    const micGates = props.mics.map(() => new MicGate());
+
     function pollPitch(
       mic: InputDevice | null,
       buffer: PitchDetectionBuffer,
@@ -722,22 +729,34 @@ export default function PianoRoll(props: {
       if (props.videoRef.current.paused) return;
 
       for (const { ageMs, midiNumber, confidence, rms } of estimates) {
-        // Confidence can't catch quiet-but-periodic bleed (YIN normalizes
-        // amplitude away), so the gate is an absolute level floor instead.
-        // rms is undefined when the addon behind us predates it (Parcel can
-        // reuse a cached index.node); the gate is then inert rather than
-        // gating everything.
-        if (
-          micRmsGateEnabledRef.current &&
-          typeof rms === "number" &&
-          rms < micRmsGateThresholdRef.current
-        ) {
-          continue;
-        }
-        if (confidence < 0.8 || midiNumber === 0) continue;
-
         // Where this reading actually happened, not where the poll landed.
+        // Read before the gate rather than after it, because the gate's hold
+        // is measured in audio time and the probe below records rejections,
+        // which have no other timestamp.
         const sampleTime = videoTime - ageMs / 1000;
+
+        // Confidence can't catch quiet-but-periodic bleed (YIN normalizes
+        // amplitude away), so the gate is a level test instead, with
+        // hysteresis and a hold so that a dip inside a phrase doesn't punch a
+        // hole through the middle of a note (see MicGate). rms is undefined
+        // when the addon behind us predates it (Parcel can reuse a cached
+        // index.node); the gate is then inert rather than gating everything.
+        let gateOpen: boolean;
+        if (!micRmsGateEnabledRef.current || typeof rms !== "number") {
+          // Reset rather than merely skip, so that switching the gate off and
+          // back on mid-song doesn't resume from a stale "open".
+          micGates[micIndex].reset();
+          gateOpen = true;
+        } else {
+          gateOpen = micGates[micIndex].accepts(
+            rms,
+            sampleTime,
+            micRmsGateThresholdRef.current,
+          );
+        }
+
+        if (!gateOpen) continue;
+        if (confidence < 0.8 || midiNumber === 0) continue;
 
         while (
           notes[currentNoteIndex].endTime < sampleTime &&
@@ -869,6 +888,9 @@ export default function PianoRoll(props: {
     function clearPitchDetectionBuffers() {
       currentNoteIndex = 0;
       pitchPollers.forEach(([buffer, _1, _2]) => buffer.clear());
+      // The audio after a seek isn't continuous with the audio before it, so a
+      // gate left open across the jump would pass whatever it lands on.
+      micGates.forEach((gate) => gate.reset());
       // A seek invalidates the accumulator's forward-only note cursor, and a
       // performance that skipped part of the song can't be scored honestly
       // against the whole melody anyway, so start the tally over.
