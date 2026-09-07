@@ -21,6 +21,7 @@ import {
 import useJoysoundRomajiWordSegmentation from "../common/hooks/useJoysoundRomajiWordSegmentation";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { InstrumentalBreak } from "../common/scoringData";
+import MediaClock from "./mediaClock";
 
 // XXX: These should be in their own file
 
@@ -973,6 +974,15 @@ export default function JoysoundRenderer(props: {
     // zombie, still firing onBreakActiveChange with a stale song's breaks.
     let cancelled = false;
     let animationFrameRequest = 0;
+    // Set once refresh() has built this song's GL resources, so the cleanup can
+    // release them. They are locals in there, and the canvas (and so the GL
+    // context) outlives this effect whenever one JOYSOUND song follows another:
+    // `shouldShowJoysound` stays true and `joysoundTelop` is never reset to
+    // null across that transition, so the component is not remounted and only
+    // the effect re-runs. A song's lyrics textures come to 100-125MB at 1080p
+    // and 400-500MB at 4K, which is a lot to leave to whenever the collector
+    // next feels like it.
+    let releaseGlResources: (() => void) | null = null;
 
     const refresh = async () => {
       updateSize();
@@ -1085,6 +1095,9 @@ export default function JoysoundRenderer(props: {
 
       const program = createProgram(gl, vertexShader, fragmentShader);
 
+      // Driven from the draw loop below, once per frame. See mediaClock.ts.
+      const mediaClock = new MediaClock();
+
       const positionAttributeLocation = gl.getAttribLocation(
         program,
         "a_position",
@@ -1114,6 +1127,19 @@ export default function JoysoundRenderer(props: {
         scrollType: scrollTypeBuffer,
       };
 
+      releaseGlResources = () => {
+        gl.deleteTexture(titleTexture);
+        lyricsBlockTextures.forEach(({ preTexture, postTexture }) => {
+          gl.deleteTexture(preTexture);
+          gl.deleteTexture(postTexture);
+        });
+        breakTextures.forEach((texture) => gl.deleteTexture(texture));
+        gl.deleteProgram(program);
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
+        Object.values(glBuffers).forEach((buffer) => gl.deleteBuffer(buffer));
+      };
+
       function draw(now: number) {
         if (cancelled) {
           return;
@@ -1121,8 +1147,11 @@ export default function JoysoundRenderer(props: {
         invariant(gl);
         invariant(props.videoRef.current);
 
+        // Smoothed rather than raw: the lyric wipe scrolls off this clock the
+        // same way the piano roll does, so it inherits the same judder from
+        // sampling `currentTime` directly. See mediaClock.ts.
         const refreshTime =
-          props.videoRef.current.currentTime * 1000 + TIMING_OFFSET;
+          mediaClock.now(props.videoRef.current) * 1000 + TIMING_OFFSET;
         invariant(refreshTime);
 
         gl.clearColor(0.0, 0.0, 0.0, 0.2);
@@ -1251,6 +1280,7 @@ export default function JoysoundRenderer(props: {
       cancelled = true;
       window.removeEventListener("resize", updateSize);
       window.cancelAnimationFrame(animationFrameRequest);
+      releaseGlResources?.();
     };
   }, [props.telop, props.isRomaji, joysoundRomajiWordSegmentation]);
 
