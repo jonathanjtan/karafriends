@@ -278,6 +278,18 @@ function getJoysoundOggPlaytime(oggBuffer: Buffer): number {
   return parseInt(playtimeString, 10);
 }
 
+// Predownloads already in flight, keyed exactly like the output file. The
+// `existsSync` guard below only knows about *finished* downloads, so queueing
+// one song twice (a duplicate request, or the same song from two phones) used
+// to start a second ffmpeg writing the same `.tmp` as the first. The two
+// interleaved their writes and the survivor was a structurally broken mp4
+// whose moov carried the other run's box lengths: no trak boxes, no streams,
+// unplayable. Worse, whichever one lost the race then hit `renameSync` or
+// `unlinkSync` on a path the winner had already moved, and an ENOENT thrown
+// from this `exit` handler is an uncaughtException, which `main/index.ts`
+// turns into `process.exit(1)` for the entire app.
+const damDownloadsInFlight = new Set<string>();
+
 export function downloadDamVideo(
   m3u8Url: string,
   songId: string,
@@ -294,6 +306,13 @@ export function downloadDamVideo(
     console.info(`${filename} already exists, not redownloading`);
     return;
   }
+
+  if (damDownloadsInFlight.has(filename)) {
+    console.info(`${filename} is already downloading, not starting a second`);
+    return;
+  }
+
+  damDownloadsInFlight.add(filename);
 
   console.info(`Downloading DAM video to ${filename}`);
 
@@ -325,16 +344,34 @@ export function downloadDamVideo(
   ffmpeg.stderr.pipe(ffmpegLogStream);
 
   ffmpeg.on("exit", (code, signal) => {
-    if (code === 0) {
-      fs.renameSync(tempFilename, filename);
-    } else {
-      console.error(
-        `Error downloading DAM video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-      );
-      if (fs.existsSync(tempFilename)) {
-        fs.unlinkSync(tempFilename);
+    damDownloadsInFlight.delete(filename);
+
+    // Nothing in here may throw. This runs on an event-emitter callback, so a
+    // throw is an uncaughtException, and `main` answers those by killing the
+    // whole app: the GraphQL server, the queue and the renderer, over one
+    // failed predownload of one song.
+    try {
+      if (code === 0) {
+        fs.renameSync(tempFilename, filename);
+      } else {
+        console.error(
+          `Error downloading DAM video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
+        );
+        if (fs.existsSync(tempFilename)) {
+          fs.unlinkSync(tempFilename);
+        }
       }
+    } catch (e) {
+      console.error(
+        `Failed cleaning up DAM download of ${songId} (code=${code}, signal=${signal}), leaving it to be redownloaded`,
+        e,
+      );
     }
+  });
+
+  ffmpeg.on("error", (e) => {
+    damDownloadsInFlight.delete(filename);
+    console.error(`Failed spawning ffmpeg for DAM video ${songId}`, e);
   });
 }
 
