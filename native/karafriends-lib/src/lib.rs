@@ -42,6 +42,37 @@ const PITCH_HOP_DIVISOR: u32 = 100;
 // memory the framer holds.
 const PITCH_MAX_BACKLOG_SECS: f32 = 1.0;
 
+/// Rounds a window length up to the next size the FFT is fast at: even, and
+/// with no prime factor above 5.
+///
+/// The window doubles as the detector's FFT length (see PitchDetector, which
+/// plans both transforms for it), and that length's factorisation decides
+/// whether rustfft gets to use its mixed-radix butterflies or has to fall back
+/// on Bluestein's. `sample_rate / 40` lands on a good size by luck, not by
+/// design: 48000 gives 1200 (2^4 * 3 * 5^2), but **44100 gives 1103, which is
+/// prime**. Measured on an M-series Mac, the three transforms one detect() runs
+/// cost 31.6us at 1103 against 5.9us at 1200 and 4.3us at 1152 -- a 5-7x tax
+/// paid by anyone whose mic happens to open at 44.1kHz, on the renderer's main
+/// thread, 100 times a second per mic.
+///
+/// Rounding up rather than down keeps the window from dropping below the 25ms
+/// floor the divisor above exists to hold. At 44.1kHz it moves 1103 -> 1152,
+/// so the window grows by about 1ms.
+fn fft_friendly_window(samples: usize) -> usize {
+    fn is_smooth(mut n: usize) -> bool {
+        for factor in [2, 3, 5] {
+            while n.is_multiple_of(factor) {
+                n /= factor;
+            }
+        }
+        n == 1
+    }
+    // Even, because a real-input FFT of odd length has no radix-2 step at all.
+    (samples..)
+        .find(|&n| n.is_multiple_of(2) && is_smooth(n))
+        .unwrap()
+}
+
 #[cfg(feature = "asio")]
 static CPAL_ASIO_HOST: LazyLock<std::result::Result<cpal::Host, cpal::HostUnavailable>> =
     LazyLock::new(|| cpal::host_from_id(cpal::HostId::Asio));
@@ -150,7 +181,8 @@ impl InputDevice {
             best_supported_output_config.sample_format(),
         );
 
-        let pitch_sample_count = input_config.sample_rate.div_ceil(PITCH_WINDOW_DIVISOR) as usize;
+        let pitch_sample_count =
+            fft_friendly_window(input_config.sample_rate.div_ceil(PITCH_WINDOW_DIVISOR) as usize);
         // Deep enough to hold a stall. The consumer is a JS setInterval sharing
         // a renderer with a WebGL draw loop, so it runs late routinely, and
         // push_slice writes only what fits and drops the rest, so a shallow
@@ -726,6 +758,34 @@ mod tests {
     use super::*;
     use pitch_detector::{freq2midi, PitchDetector};
     use wavegen::{sine, wf};
+
+    #[test]
+    fn fft_friendly_window_rounds_up_to_a_fast_size() {
+        // 44.1kHz is the case that motivated this: 1103 is prime.
+        assert_eq!(fft_friendly_window(1103), 1152); // 2^7 * 3^2
+                                                     // 48kHz already lands on a good size, so it must not move.
+        assert_eq!(fft_friendly_window(1200), 1200); // 2^4 * 3 * 5^2
+        assert_eq!(fft_friendly_window(2400), 2400);
+        // 88.2kHz: 2205 is odd and carries a factor of 7.
+        assert_eq!(fft_friendly_window(2205), 2250); // 2 * 3^2 * 5^3
+
+        // Never shrinks below the 25ms floor, and never returns something the
+        // FFT would be slow at.
+        for sample_rate in [
+            8000u32, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 192000,
+        ] {
+            let requested = sample_rate.div_ceil(PITCH_WINDOW_DIVISOR) as usize;
+            let mut got = fft_friendly_window(requested);
+            assert!(got >= requested, "{} shrank the window", sample_rate);
+            assert_eq!(got % 2, 0, "{} gave an odd window", sample_rate);
+            for factor in [2, 3, 5] {
+                while got % factor == 0 {
+                    got /= factor;
+                }
+            }
+            assert_eq!(got, 1, "{} left a prime factor above 5", sample_rate);
+        }
+    }
 
     #[test]
     #[ignore] // TODO: handle reverb
