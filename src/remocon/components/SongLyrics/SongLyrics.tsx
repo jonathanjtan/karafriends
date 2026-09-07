@@ -28,6 +28,10 @@ const songLyricsQuery = graphql`
 // without turning the song page into a scroll. The rest is one tap away.
 const INITIAL_LINES_SHOWN = 12;
 
+// Clears the lyric quote above and the queue buttons below, both of which
+// sit flush against it otherwise.
+const buttonStyle: React.CSSProperties = { margin: "8px 0" };
+
 interface Match {
   songId: string | null;
   name: string | null;
@@ -115,19 +119,19 @@ const SongLyrics = ({ source, songId, lyricsPreview }: Props) => {
         </p>
       )}
       {error && <p>{error}</p>}
+      {/* Sized to its label rather than `full`. This is a secondary "reveal
+          the rest of the text" action sitting directly above the queue
+          buttons, which are content-sized; stretched to 100% it outweighed
+          them, and on anything wider than a phone it became a page-wide bar
+          for the least important control on the screen. */}
       {hiddenLineCount > 0 ? (
-        <Button
-          full
-          style={{ marginBottom: 8 }}
-          onClick={() => setShowAll(true)}
-        >
+        <Button style={buttonStyle} onClick={() => setShowAll(true)}>
           Show {hiddenLineCount} more line{hiddenLineCount === 1 ? "" : "s"}
         </Button>
       ) : (
         !lines && (
           <Button
-            full
-            style={{ marginBottom: 8 }}
+            style={buttonStyle}
             disabled={loading}
             onClick={onClickShowLyrics}
           >
