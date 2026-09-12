@@ -1,0 +1,23 @@
+// Sits on the control bar, so it takes the chrome palette: plain icon when
+// off, and the same raised pill as the emote/controls toggle when on.
+.lyricsToggle {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 18px;
+  color: var(--on-chrome);
+  background-color: transparent;
+  font-size: 22px;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.on {
+  color: var(--on-chrome-raised);
+  background-color: var(--chrome-raised);
+}

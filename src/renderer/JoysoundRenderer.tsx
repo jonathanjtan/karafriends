@@ -5,22 +5,38 @@ import invariant from "ts-invariant";
 import "./JoysoundRenderer.css";
 
 import parseJoysoundData, {
-  decodeJoysoundText,
-  JoysoundLyricsBlock,
-  JoysoundMetadata,
   JoysoundTelopData,
   KuroshiroSingleton,
+  toTelopLayout,
 } from "../common/joysoundParser";
 
 import {
   PIANO_ROLL_LOOKAHEAD_SECS,
   PIANO_ROLL_TOP_FRACTION,
-  RUBY_FONT_SIZE,
-  RUBY_FONT_STROKE,
 } from "../common/constants";
 import useJoysoundRomajiWordSegmentation from "../common/hooks/useJoysoundRomajiWordSegmentation";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { InstrumentalBreak } from "../common/scoringData";
+import {
+  BREAK_FONT_SIZE,
+  BREAK_FONT_STROKE,
+  BREAK_Y_FRACTION,
+  drawBreakNotice,
+  drawLyricsBlockImage,
+  drawTitleCard,
+  getActiveBreakNoticeIndex,
+  getLyricsBlockRect,
+  getScrollXPos,
+  LYRICS_BLOCK_ASCENT,
+  LYRICS_BLOCK_DESCENT,
+  TelopBlock,
+  TelopLayout,
+  TelopRaster,
+  TELOP_SCREEN_HEIGHT,
+  TELOP_SCREEN_WIDTH,
+  TELOP_TEXT_PADDING,
+  TELOP_TIMING_OFFSET_MS,
+} from "../common/telopLayout";
 import MediaClock from "./mediaClock";
 
 // XXX: These should be in their own file
@@ -75,59 +91,24 @@ const fsSource = `#version 300 es
   }
 `;
 
-// XXX: Move these to some setting somewhere?
-// XXX: RUBY_FONT_SIZE and RUBY_FONT_STROKE live in src/common/constants.ts for *reasons*
+const SCREEN_WIDTH = TELOP_SCREEN_WIDTH;
+const SCREEN_HEIGHT = TELOP_SCREEN_HEIGHT;
+const TEXT_PADDING = TELOP_TEXT_PADDING;
 
-const TITLE_FONT_SIZE = 48;
-const TITLE_FONT_STROKE = 4;
-
-const ARTIST_FONT_SIZE = 32;
-const ARTIST_FONT_STROKE = 4;
-
-const METADATA_FONT_SIZE = 24;
-const METADATA_FONT_STROKE = 3;
-
-const MAIN_FONT_SIZE = 44;
-const MAIN_FONT_STROKE = 4;
-
-const ROMAJI_FONT_SIZE = 20;
-const ROMAJI_FONT_STROKE = 2;
-
-const BREAK_FONT_SIZE = 32;
-const BREAK_FONT_STROKE = 3;
-// Where the "（間奏　約N秒）" notice goes when the piano roll is hidden:
-// JOYSOUND's own bottom-of-screen subtitle position. With the roll visible
-// the notice is instead centered in the (ducked) roll's band, the one region
-// remapLyricsYPos guarantees lyrics never occupy. Backing vocals can keep
-// singing through a guide-melody gap, and the bottom position collided with
-// their telop.
-const BREAK_Y_FRACTION = 0.82;
-// The notice pops in a beat after the break starts and doesn't need to
-// stay up for the whole break; the piano roll stays ducked regardless.
-const BREAK_TEXT_DELAY_MS = 500;
-const BREAK_TEXT_DURATION_MS = 5000;
-
-const SCREEN_WIDTH = 720;
-const SCREEN_HEIGHT = 480;
-const TEXT_PADDING = 16;
-
-let EXPAND_RATE = 1.0;
-let EXPAND_RATE_X = 1.0;
-let EXPAND_RATE_Y = 1.0;
-
-const TIMING_OFFSET = -200;
-
-const JP_FONT_FACE = "notoSerifJP";
-const KR_FONT_FACE = "notoSerifKR";
+// XXX: A global, but it works. Resized with the canvas in updateSize. The
+// textures a song's effect already built keep the raster they were drawn at,
+// and a resize only rescales the quads they're drawn onto.
+const raster: TelopRaster = {
+  rate: 1.0,
+  x: 1.0,
+  y: 1.0,
+  jpFont: "notoSerifJP",
+  krFont: "notoSerifKR",
+};
 
 interface LyricsBlockTextures {
   preTexture: WebGLTexture;
   postTexture: WebGLTexture;
-}
-
-interface JoysoundTitleRow {
-  text: string;
-  width: number;
 }
 
 interface JoysoundDisplayBuffers {
@@ -135,19 +116,6 @@ interface JoysoundDisplayBuffers {
   texCoord: WebGLBuffer;
   scroll: WebGLBuffer;
   scrollType: WebGLBuffer;
-}
-
-function getFontFace(fontCode: number): string {
-  switch (fontCode) {
-    case 0:
-      return JP_FONT_FACE;
-      break;
-    case 1:
-      return KR_FONT_FACE;
-      break;
-    default:
-      return JP_FONT_FACE;
-  }
 }
 
 function createShader(
@@ -212,221 +180,14 @@ function createTextureFromImage(
   return texture;
 }
 
-function getLyricsBlockWidth(lyricsBlock: JoysoundLyricsBlock): number {
-  const mainBlockWidth = lyricsBlock.chars.reduce(
-    (acc, curr) => acc + curr.width,
-    0,
-  );
-
-  const rightmostFuriganaBlock =
-    lyricsBlock.furigana[lyricsBlock.furigana.length - 1];
-  const furiganaBlockWidth = rightmostFuriganaBlock
-    ? rightmostFuriganaBlock.xPos +
-      (RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2) *
-        rightmostFuriganaBlock.chars.length
-    : 0;
-
-  return (
-    MAIN_FONT_STROKE * 2 +
-    Math.max(mainBlockWidth, furiganaBlockWidth) +
-    TEXT_PADDING * 2
-  );
-}
-
-function getLyricsBlockHeight(lyricsBlock: JoysoundLyricsBlock): number {
-  return (
-    MAIN_FONT_SIZE +
-    MAIN_FONT_STROKE * 2 +
-    RUBY_FONT_SIZE +
-    RUBY_FONT_STROKE * 2 +
-    TEXT_PADDING * 2
-  );
-}
-
-function setupTextCanvas(
-  textCtx: CanvasRenderingContext2D,
-  lyricsBlock: JoysoundLyricsBlock,
-  fillColor: number[],
-  strokeColor: number[],
-): void {
-  textCtx.canvas.width = getLyricsBlockWidth(lyricsBlock) * EXPAND_RATE_X;
-  textCtx.canvas.height = getLyricsBlockHeight(lyricsBlock) * EXPAND_RATE_Y;
-  textCtx.clearRect(0, 0, textCtx.canvas.width, textCtx.canvas.height);
-
-  textCtx.textBaseline = "top";
-  textCtx.lineJoin = "round";
-  textCtx.fillStyle = `rgb(${fillColor.join(", ")})`;
-  textCtx.strokeStyle = `rgb(${strokeColor.join(", ")})`;
-}
-
-function setupTitleCanvas(textCtx: CanvasRenderingContext2D): void {
-  textCtx.canvas.width = SCREEN_WIDTH * EXPAND_RATE_X;
-  textCtx.canvas.height = SCREEN_HEIGHT * EXPAND_RATE_Y;
-  textCtx.clearRect(0, 0, textCtx.canvas.width, textCtx.canvas.height);
-
-  textCtx.textBaseline = "top";
-  textCtx.lineJoin = "round";
-  textCtx.fillStyle = `rgb(255, 255, 255)`;
-  textCtx.strokeStyle = `rgb(8, 8, 8)`;
-}
-
-function createTitleRows(
-  textCtx: CanvasRenderingContext2D,
-  fontStroke: number,
-  title: string,
-): JoysoundTitleRow[] {
-  const titleRows = [];
-
-  let currTitleText = "";
-  let currTitleWidth = 0;
-
-  for (const nextChar of title) {
-    const nextTitleWidth = textCtx.measureText(currTitleText + nextChar).width;
-
-    if (
-      nextTitleWidth >=
-      (SCREEN_WIDTH - (TEXT_PADDING + fontStroke + 16) * 2) * EXPAND_RATE_X
-    ) {
-      titleRows.push({ text: currTitleText, width: currTitleWidth });
-
-      currTitleText = nextChar;
-      currTitleWidth = textCtx.measureText(nextChar).width;
-    } else {
-      currTitleText += nextChar;
-      currTitleWidth = nextTitleWidth;
-    }
-  }
-
-  titleRows.push({ text: currTitleText, width: currTitleWidth });
-
-  return titleRows;
-}
-
-function drawTitleRowsToCanvas(
-  textCtx: CanvasRenderingContext2D,
-  titleRows: JoysoundTitleRow[],
-  fontSize: number,
-  fontStroke: number,
-  yPos: number,
-) {
-  for (const titleRow of titleRows) {
-    const titleRowPaddedWidth =
-      titleRow.width + (TEXT_PADDING + fontStroke) * EXPAND_RATE_X * 2;
-
-    const xPos = Math.max(
-      0,
-      (SCREEN_WIDTH * EXPAND_RATE_X - titleRowPaddedWidth) / 2 / EXPAND_RATE_X,
-    );
-
-    drawTextToCanvas(textCtx, fontSize, fontStroke, xPos, yPos, titleRow.text);
-
-    yPos += fontSize + fontStroke * 2;
-  }
-}
-
 function createTitleTexture(
   gl: WebGL2RenderingContext,
-  metadata: JoysoundMetadata,
-  isRomaji: boolean,
+  layout: TelopLayout,
 ): WebGLTexture {
   const textCtx = document.createElement("canvas").getContext("2d");
   invariant(textCtx);
 
-  setupTitleCanvas(textCtx);
-
-  const titleFontSize =
-    metadata.musicName.length < 48 ? TITLE_FONT_SIZE : ARTIST_FONT_SIZE;
-  const titleFontStroke =
-    metadata.musicName.length < 48 ? TITLE_FONT_STROKE : ARTIST_FONT_STROKE;
-  textCtx.font = `${titleFontSize * EXPAND_RATE}px ${JP_FONT_FACE}`;
-
-  const titleRows = createTitleRows(
-    textCtx,
-    titleFontStroke,
-    metadata.musicName,
-  );
-  const titleHeight =
-    (titleFontSize + TITLE_FONT_STROKE * 2) * titleRows.length * EXPAND_RATE_Y;
-
-  const artistFontSize =
-    metadata.artistName.length < 64 ? ARTIST_FONT_SIZE : METADATA_FONT_SIZE;
-  const artistFontStroke =
-    metadata.artistName.length < 64 ? ARTIST_FONT_STROKE : METADATA_FONT_STROKE;
-
-  textCtx.font = `${artistFontSize * EXPAND_RATE}px ${JP_FONT_FACE}`;
-
-  const artistRows = createTitleRows(
-    textCtx,
-    artistFontStroke,
-    "♪ " + metadata.artistName,
-  );
-  const artistHeight =
-    (artistFontSize + ARTIST_FONT_STROKE * 2) *
-    artistRows.length *
-    EXPAND_RATE_Y;
-
-  textCtx.font = `${METADATA_FONT_SIZE * EXPAND_RATE}px ${JP_FONT_FACE}`;
-
-  const lyricistText =
-    (isRomaji ? "Lyrics: " : "作詞 ") + metadata.lyricistName;
-  const lyricistMeasure = textCtx.measureText(lyricistText);
-  const lyricistHeight =
-    lyricistMeasure.actualBoundingBoxAscent +
-    lyricistMeasure.actualBoundingBoxDescent;
-
-  const composerText =
-    (isRomaji ? "Composer: " : "作曲 ") + metadata.composerName;
-  const composerMeasure = textCtx.measureText(composerText);
-  const composerHeight =
-    composerMeasure.actualBoundingBoxAscent +
-    composerMeasure.actualBoundingBoxDescent;
-
-  const totalHeight =
-    titleHeight +
-    artistHeight +
-    lyricistHeight +
-    composerHeight +
-    144 * EXPAND_RATE_Y;
-
-  const titleYPos =
-    (SCREEN_HEIGHT * EXPAND_RATE_Y - totalHeight) / 2 / EXPAND_RATE_Y -
-    TEXT_PADDING;
-  const artistYPos = titleYPos + titleHeight / EXPAND_RATE_Y + 64;
-  const lyricistYPos = artistYPos + artistHeight / EXPAND_RATE_Y + 64;
-  const composerYPos = lyricistYPos + lyricistHeight / EXPAND_RATE_Y + 16;
-
-  drawTitleRowsToCanvas(
-    textCtx,
-    titleRows,
-    titleFontSize,
-    TITLE_FONT_STROKE,
-    titleYPos,
-  );
-  drawTitleRowsToCanvas(
-    textCtx,
-    artistRows,
-    artistFontSize,
-    ARTIST_FONT_STROKE,
-    artistYPos,
-  );
-
-  drawTextToCanvas(
-    textCtx,
-    METADATA_FONT_SIZE,
-    METADATA_FONT_STROKE,
-    48 - TEXT_PADDING,
-    lyricistYPos,
-    lyricistText,
-  );
-
-  drawTextToCanvas(
-    textCtx,
-    METADATA_FONT_SIZE,
-    METADATA_FONT_STROKE,
-    48 - TEXT_PADDING,
-    composerYPos,
-    composerText,
-  );
+  drawTitleCard(textCtx, raster, layout.title, layout.isRomaji);
 
   const result = createTextureFromImage(gl, textCtx.canvas);
 
@@ -442,23 +203,10 @@ function createBreakTexture(
   const textCtx = document.createElement("canvas").getContext("2d");
   invariant(textCtx);
 
-  setupTitleCanvas(textCtx);
-
-  const text = `（間奏　約${approxDurationSecs}秒）`;
-  textCtx.font = `${BREAK_FONT_SIZE * EXPAND_RATE}px ${JP_FONT_FACE}`;
-  const measure = textCtx.measureText(text);
-
-  const xPos =
-    Math.max(0, SCREEN_WIDTH * EXPAND_RATE_X - measure.width) /
-      2 /
-      EXPAND_RATE_X -
-    BREAK_FONT_STROKE -
-    TEXT_PADDING;
-
   // Baked at yPos 0; the draw call shifts the quad to the live vertical
   // position (the piano roll band's center, which tracks the synced
   // pianoRollSize mid-song, or the bottom fallback).
-  drawTextToCanvas(textCtx, BREAK_FONT_SIZE, BREAK_FONT_STROKE, xPos, 0, text);
+  drawBreakNotice(textCtx, raster, approxDurationSecs);
 
   const result = createTextureFromImage(gl, textCtx.canvas);
 
@@ -467,231 +215,35 @@ function createBreakTexture(
   return result;
 }
 
-function createLyricsBlockTexture(
-  gl: WebGL2RenderingContext,
-  textCtx: CanvasRenderingContext2D,
-  lyricsBlock: JoysoundLyricsBlock,
-  fillColor: number[],
-  strokeColor: number[],
-  isRomaji: boolean,
-): WebGLTexture {
-  setupTextCanvas(textCtx, lyricsBlock, fillColor, strokeColor);
-
-  drawMainTextToCanvas(textCtx, lyricsBlock);
-
-  if (isRomaji) {
-    drawRomajiTextToCanvas(textCtx, lyricsBlock);
-  } else {
-    drawFuriganaTextToCanvas(textCtx, lyricsBlock);
-  }
-
-  return createTextureFromImage(gl, textCtx.canvas);
-}
-
-function getTextOffset(
-  textCtx: CanvasRenderingContext2D,
-  text: string,
-  charWidth: number,
-): number {
-  const measure = textCtx.measureText(text);
-
-  if (charWidth >= measure.width) {
-    return 0;
-  }
-
-  if (
-    measure.actualBoundingBoxLeft === 0 ||
-    measure.actualBoundingBoxRight === 0
-  ) {
-    return (charWidth - measure.width) / 2;
-  }
-
-  const boundingBoxWidth =
-    measure.actualBoundingBoxLeft + measure.actualBoundingBoxRight;
-  const widthDiff = measure.width - charWidth;
-  const halfDiff = widthDiff / 2;
-
-  let leftOverflow = -1 * measure.actualBoundingBoxLeft;
-  let rightOverflow = measure.width - measure.actualBoundingBoxRight;
-
-  let isLeftOverflow = false;
-
-  if (leftOverflow >= halfDiff) {
-    leftOverflow -= halfDiff;
-    isLeftOverflow = true;
-  }
-
-  let isRightOverflow = false;
-
-  if (rightOverflow >= halfDiff) {
-    rightOverflow -= halfDiff;
-    isRightOverflow = true;
-  }
-
-  if (isLeftOverflow) {
-    if (isRightOverflow) {
-      return leftOverflow + measure.actualBoundingBoxLeft;
-    } else if (leftOverflow >= halfDiff - rightOverflow) {
-      return (
-        leftOverflow -
-        (halfDiff - rightOverflow) +
-        measure.actualBoundingBoxLeft
-      );
-    }
-  } else if (isRightOverflow && rightOverflow >= widthDiff - leftOverflow) {
-    return measure.actualBoundingBoxLeft;
-  }
-
-  return (charWidth - boundingBoxWidth) / 2 + measure.actualBoundingBoxLeft;
-}
-
-function getRomajiTextOffset(
-  textCtx: CanvasRenderingContext2D,
-  text: string,
-  sourceWidth: number,
-): number {
-  const measure = textCtx.measureText(text);
-
-  return (sourceWidth - measure.width) / 2;
-}
-
-function drawTextToCanvas(
-  textCtx: CanvasRenderingContext2D,
-  fontSize: number,
-  fontStroke: number,
-  xPos: number,
-  yPos: number,
-  text: string,
-  fontCode: number = 0,
-): void {
-  textCtx.font = `${fontSize * EXPAND_RATE}px ${getFontFace(fontCode)}`;
-  textCtx.lineWidth = fontStroke * 2 * EXPAND_RATE;
-
-  textCtx.strokeText(
-    text,
-    (xPos + fontStroke + TEXT_PADDING) * EXPAND_RATE_X,
-    (yPos + fontStroke + TEXT_PADDING) * EXPAND_RATE_Y,
-  );
-
-  textCtx.fillText(
-    text,
-    (xPos + fontStroke + TEXT_PADDING) * EXPAND_RATE_X,
-    (yPos + fontStroke + TEXT_PADDING) * EXPAND_RATE_Y,
-  );
-}
-
-function drawMainTextToCanvas(
-  textCtx: CanvasRenderingContext2D,
-  lyricsBlock: JoysoundLyricsBlock,
-): void {
-  let currX = 0;
-
-  for (const glyphChar of lyricsBlock.chars) {
-    const text = decodeJoysoundText(
-      glyphChar.charCode,
-      glyphChar.font,
-      lyricsBlock.flags,
-    );
-
-    textCtx.font = `${MAIN_FONT_SIZE}px ${getFontFace(glyphChar.font)}`;
-    textCtx.lineWidth = MAIN_FONT_STROKE * 2;
-
-    const xPos = currX + getTextOffset(textCtx, text, glyphChar.width);
-
-    drawTextToCanvas(
-      textCtx,
-      MAIN_FONT_SIZE,
-      MAIN_FONT_STROKE,
-      xPos,
-      RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2,
-      text,
-      glyphChar.font,
-    );
-
-    currX += glyphChar.width;
-  }
-}
-
-function drawFuriganaTextToCanvas(
-  textCtx: CanvasRenderingContext2D,
-  lyricsBlock: JoysoundLyricsBlock,
-): void {
-  for (const furiganaBlock of lyricsBlock.furigana) {
-    let currX = furiganaBlock.xPos;
-
-    for (const charCode of furiganaBlock.chars) {
-      const unicodeChar = decodeJoysoundText(charCode);
-
-      drawTextToCanvas(
-        textCtx,
-        RUBY_FONT_SIZE,
-        RUBY_FONT_STROKE,
-        currX,
-        0,
-        unicodeChar,
-      );
-
-      currX += RUBY_FONT_SIZE + RUBY_FONT_STROKE;
-    }
-  }
-}
-
-function drawRomajiTextToCanvas(
-  textCtx: CanvasRenderingContext2D,
-  lyricsBlock: JoysoundLyricsBlock,
-): void {
-  const sortedRomaji = lyricsBlock.romaji.sort((a, b) => a.xPos - b.xPos);
-
-  for (const romajiBlock of sortedRomaji) {
-    textCtx.font = `${ROMAJI_FONT_SIZE}px ${getFontFace(0)}`;
-    textCtx.lineWidth = ROMAJI_FONT_STROKE * 2;
-
-    const xPos = romajiBlock.xPos;
-    const xOff = getRomajiTextOffset(
-      textCtx,
-      romajiBlock.phrase,
-      romajiBlock.sourceWidth,
-    );
-
-    drawTextToCanvas(
-      textCtx,
-      ROMAJI_FONT_SIZE,
-      ROMAJI_FONT_STROKE,
-      xPos + xOff,
-      0,
-      romajiBlock.phrase,
-    );
-  }
-}
-
 function createLyricsBlockTextures(
   gl: WebGL2RenderingContext,
-  lyricsData: JoysoundLyricsBlock[],
-  isRomaji: boolean,
+  layout: TelopLayout,
 ): LyricsBlockTextures[] {
   const textCtx = document.createElement("canvas").getContext("2d");
   invariant(textCtx);
 
   const lyricsBlockTextures = [];
 
-  for (const lyricsBlock of lyricsData) {
-    const preTexture = createLyricsBlockTexture(
-      gl,
+  for (const lyricsBlock of layout.blocks) {
+    drawLyricsBlockImage(
       textCtx,
+      raster,
       lyricsBlock,
-      lyricsBlock.preFill.rgb,
-      lyricsBlock.preBorder.rgb,
-      isRomaji,
+      lyricsBlock.preFill,
+      lyricsBlock.preBorder,
+      layout.isRomaji,
     );
+    const preTexture = createTextureFromImage(gl, textCtx.canvas);
 
-    const postTexture = createLyricsBlockTexture(
-      gl,
+    drawLyricsBlockImage(
       textCtx,
+      raster,
       lyricsBlock,
-      lyricsBlock.postFill.rgb,
-      lyricsBlock.postBorder.rgb,
-      isRomaji,
+      lyricsBlock.postFill,
+      lyricsBlock.postBorder,
+      layout.isRomaji,
     );
+    const postTexture = createTextureFromImage(gl, textCtx.canvas);
 
     lyricsBlockTextures.push({ preTexture, postTexture });
   }
@@ -699,47 +251,6 @@ function createLyricsBlockTextures(
   textCtx.canvas.remove();
 
   return lyricsBlockTextures;
-}
-
-function getScrollXPos(
-  lyricsBlock: JoysoundLyricsBlock,
-  refreshTime: number,
-): number {
-  let xOff = 0;
-
-  // XXX: This is a hack to handle edge cases where romaji text is off frame.
-  if (
-    lyricsBlock.scrollEvents[0] &&
-    refreshTime < lyricsBlock.scrollEvents[0].time
-  ) {
-    return 0;
-  }
-
-  for (let i = 0; i < lyricsBlock.scrollEvents.length; i++) {
-    const currScrollEvent = lyricsBlock.scrollEvents[i];
-
-    if (refreshTime < currScrollEvent.time) {
-      break;
-    }
-
-    let nextScrollEvent = null;
-
-    if (i < lyricsBlock.scrollEvents.length - 1) {
-      nextScrollEvent = lyricsBlock.scrollEvents[i + 1];
-    }
-
-    if (!nextScrollEvent || refreshTime < nextScrollEvent.time) {
-      xOff +=
-        (currScrollEvent.speed * (refreshTime - currScrollEvent.time)) / 1000;
-    } else {
-      xOff +=
-        (currScrollEvent.speed *
-          (nextScrollEvent.time - currScrollEvent.time)) /
-        1000;
-    }
-  }
-
-  return lyricsBlock.xPos + xOff;
 }
 
 // yOffset (in canvas pixels) shifts the whole texture down, letting content
@@ -755,8 +266,8 @@ function drawTitle(
   const positions = quadToTriangles(
     0,
     yOffset,
-    SCREEN_WIDTH * EXPAND_RATE_X,
-    SCREEN_HEIGHT * EXPAND_RATE_Y + yOffset,
+    SCREEN_WIDTH * raster.x,
+    SCREEN_HEIGHT * raster.y + yOffset,
   );
 
   drawLyricsTexture(gl, glBuffers, titleTexture, positions, scrollArray, false);
@@ -792,18 +303,6 @@ function drawLyricsTexture(
 
   gl.drawArrays(gl.TRIANGLES, 0, positions.length / 2);
 }
-
-// A lyrics block's quad extends above its yPos by the furigana row and below
-// it by the main text row; see drawLyricsBlock and getLyricsBlockHeight.
-const LYRICS_BLOCK_ASCENT =
-  RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2 + 8 + TEXT_PADDING;
-const LYRICS_BLOCK_DESCENT =
-  MAIN_FONT_SIZE +
-  MAIN_FONT_STROKE * 2 +
-  RUBY_FONT_SIZE +
-  RUBY_FONT_STROKE * 2 +
-  TEXT_PADDING * 2 -
-  LYRICS_BLOCK_ASCENT;
 
 // Keeps lyrics rows from hiding behind the piano roll: while the roll is on
 // screen, the whole set of rows is centered vertically in the space between
@@ -847,7 +346,7 @@ function remapLyricsYPos(
 function drawLyricsBlock(
   gl: WebGL2RenderingContext,
   glBuffers: JoysoundDisplayBuffers,
-  lyricsBlock: JoysoundLyricsBlock,
+  lyricsBlock: TelopBlock,
   lyricsBlockTextures: LyricsBlockTextures[],
   index: number,
   refreshTime: number,
@@ -857,26 +356,23 @@ function drawLyricsBlock(
   const scrollXPos = Math.floor(getScrollXPos(lyricsBlock, refreshTime));
 
   const currX = lyricsBlock.xPos;
-  const currY = yPos - (RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2) - 8;
-
-  const rectWidth = getLyricsBlockWidth(lyricsBlock);
-  const rectHeight = getLyricsBlockHeight(lyricsBlock);
+  const rect = getLyricsBlockRect(lyricsBlock, yPos);
+  const rectWidth = rect.width;
 
   // Shrink the block around its own center-x / yPos when remapLyricsYPos
   // compressed the rows, keeping the wipe boundary (scroll) in the same
   // transformed space as the quad so highlight timing stays glyph-accurate.
   const anchorX = currX + rectWidth / 2 - TEXT_PADDING;
-  const toScreenX = (x: number) =>
-    (anchorX + (x - anchorX) * scale) * EXPAND_RATE_X;
-  const toScreenY = (y: number) => (yPos + (y - yPos) * scale) * EXPAND_RATE_Y;
+  const toScreenX = (x: number) => (anchorX + (x - anchorX) * scale) * raster.x;
+  const toScreenY = (y: number) => (yPos + (y - yPos) * scale) * raster.y;
 
   const scrollArray = new Float32Array(Array(6).fill(toScreenX(scrollXPos)));
 
   const positions = quadToTriangles(
-    toScreenX(currX - TEXT_PADDING),
-    toScreenY(currY - TEXT_PADDING),
-    toScreenX(currX + rectWidth - TEXT_PADDING),
-    toScreenY(currY + rectHeight - TEXT_PADDING),
+    toScreenX(rect.left),
+    toScreenY(rect.top),
+    toScreenX(rect.left + rect.width),
+    toScreenY(rect.top + rect.height),
   );
 
   if (scrollXPos <= currX + rectWidth) {
@@ -911,6 +407,14 @@ export default function JoysoundRenderer(props: {
   onTitleFadeout?: () => void;
   breaks: InstrumentalBreak[];
   onBreakActiveChange?: (active: boolean) => void;
+  // The queue entry this telop belongs to (queueItemKey), handed back with
+  // the layout so a caller can't pair one song's lyrics with the next song.
+  songKey: string;
+  // Called with exactly what this canvas draws, once per parse (a new song, a
+  // romaji mode, or a word-segmentation toggle), or with null when no parse
+  // succeeded and the canvas shows no lyrics at all. It's what the remocon's
+  // lyrics panel mirrors.
+  onLayout?: (songKey: string, layout: TelopLayout | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -947,14 +451,13 @@ export default function JoysoundRenderer(props: {
     canvasElement.width = canvasElement.clientWidth * window.devicePixelRatio;
     canvasElement.height = canvasElement.clientHeight * window.devicePixelRatio;
 
-    // XXX: Global variables but it works
-    EXPAND_RATE = Math.min(
+    raster.rate = Math.min(
       canvasElement.width / SCREEN_WIDTH,
       canvasElement.height / SCREEN_HEIGHT,
     );
 
-    EXPAND_RATE_X = canvasElement.width / SCREEN_WIDTH;
-    EXPAND_RATE_Y = canvasElement.height / SCREEN_HEIGHT;
+    raster.x = canvasElement.width / SCREEN_WIDTH;
+    raster.y = canvasElement.height / SCREEN_HEIGHT;
 
     const gl = canvasElement.getContext("webgl2", {
       antialias: false,
@@ -1053,12 +556,14 @@ export default function JoysoundRenderer(props: {
           staleGl.clear(staleGl.COLOR_BUFFER_BIT);
         }
         props.onTitleFadeout?.();
+        props.onLayout?.(props.songKey, null);
         return;
       }
 
-      const metadata = joysoundData.metadata;
-      const lyricsData = joysoundData.lyrics;
-      const timeline = joysoundData.timeline;
+      const layout = toTelopLayout(joysoundData, props.isRomaji, props.breaks);
+      const lyricsData = layout.blocks;
+
+      props.onLayout?.(props.songKey, layout);
 
       const lyricYPositions = lyricsData.map((block) => block.yPos);
       const minLyricYPos = Math.min(...lyricYPositions);
@@ -1080,13 +585,9 @@ export default function JoysoundRenderer(props: {
       // instance left it ducked.
       let isPianoRollDucked: boolean | null = null;
 
-      const titleTexture = createTitleTexture(gl, metadata, props.isRomaji);
-      const lyricsBlockTextures = createLyricsBlockTextures(
-        gl,
-        lyricsData,
-        props.isRomaji,
-      );
-      const breakTextures = props.breaks.map((b) =>
+      const titleTexture = createTitleTexture(gl, layout);
+      const lyricsBlockTextures = createLyricsBlockTextures(gl, layout);
+      const breakTextures = layout.breaks.map((b) =>
         createBreakTexture(gl, b.approxDurationSecs),
       );
 
@@ -1151,7 +652,8 @@ export default function JoysoundRenderer(props: {
         // same way the piano roll does, so it inherits the same judder from
         // sampling `currentTime` directly. See mediaClock.ts.
         const refreshTime =
-          mediaClock.now(props.videoRef.current) * 1000 + TIMING_OFFSET;
+          mediaClock.now(props.videoRef.current) * 1000 +
+          TELOP_TIMING_OFFSET_MS;
         invariant(refreshTime);
 
         gl.clearColor(0.0, 0.0, 0.0, 0.2);
@@ -1196,7 +698,7 @@ export default function JoysoundRenderer(props: {
           gl.canvas.height,
         );
 
-        if (refreshTime < metadata.fadeoutTime) {
+        if (refreshTime < layout.title.fadeoutTime) {
           drawTitle(gl, glBuffers, titleTexture);
         } else if (!titleFadedOutReported) {
           titleFadedOutReported = true;
@@ -1230,34 +732,25 @@ export default function JoysoundRenderer(props: {
           }
         }
 
-        const activeBreakIndex = props.breaks.findIndex(
-          (b) =>
-            refreshTime >= b.startTime * 1000 && refreshTime < b.endTime * 1000,
+        const breakNoticeIndex = getActiveBreakNoticeIndex(
+          layout.breaks,
+          refreshTime,
         );
 
-        if (activeBreakIndex >= 0) {
-          const noticeStart =
-            props.breaks[activeBreakIndex].startTime * 1000 +
-            BREAK_TEXT_DELAY_MS;
-
-          if (
-            refreshTime >= noticeStart &&
-            refreshTime < noticeStart + BREAK_TEXT_DURATION_MS
-          ) {
-            drawTitle(
-              gl,
-              glBuffers,
-              breakTextures[activeBreakIndex],
-              breakNoticeYPosRef.current * EXPAND_RATE_Y,
-            );
-          }
+        if (breakNoticeIndex >= 0) {
+          drawTitle(
+            gl,
+            glBuffers,
+            breakTextures[breakNoticeIndex],
+            breakNoticeYPosRef.current * raster.y,
+          );
         }
 
         // Un-duck before the break's literal end: notes for the next phrase
         // start scrolling into the piano roll's visible window
         // PIANO_ROLL_LOOKAHEAD_SECS ahead of when they're actually due, so
         // the roll should already be back by then, not still fading in.
-        const duckedBreakIndex = props.breaks.findIndex(
+        const duckedBreakIndex = layout.breaks.findIndex(
           (b) =>
             refreshTime >= b.startTime * 1000 &&
             refreshTime < b.endTime * 1000 - PIANO_ROLL_LOOKAHEAD_SECS * 1000,
@@ -1282,7 +775,12 @@ export default function JoysoundRenderer(props: {
       window.cancelAnimationFrame(animationFrameRequest);
       releaseGlResources?.();
     };
-  }, [props.telop, props.isRomaji, joysoundRomajiWordSegmentation]);
+  }, [
+    props.telop,
+    props.isRomaji,
+    props.songKey,
+    joysoundRomajiWordSegmentation,
+  ]);
 
   return <canvas ref={canvasRef} className="joysoundDisplay"></canvas>;
 }

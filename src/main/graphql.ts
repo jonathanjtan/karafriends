@@ -49,6 +49,7 @@ import {
 } from "../common/joysoundParser";
 import { SCORING_FORMULA_VERSION } from "../common/scoring";
 import { parseScoringData } from "../common/scoringData";
+import { queueItemKey } from "../common/telopLayout";
 import {
   buildTuningExercise,
   DEFAULT_PRESET_ID,
@@ -1892,6 +1893,7 @@ enum SubscriptionEvent {
   BreakMessageChanged = "BreakMessageChanged",
   CurrentSongAdhocLyricsChanged = "CurrentSongAdhocLyricsChanged",
   CurrentSongChanged = "CurrentSongChanged",
+  CurrentSongTelopChanged = "CurrentSongTelopChanged",
   Emote = "Emote",
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
   HistoryRecordingEnabledChanged = "HistoryRecordingEnabledChanged",
@@ -1906,6 +1908,7 @@ enum SubscriptionEvent {
   PianoRollSizeChanged = "PianoRollSizeChanged",
   PitchShiftSemisChanged = "PitchShiftSemisChanged",
   PlaybackStateChanged = "PlaybackStateChanged",
+  PlaybackClockChanged = "PlaybackClockChanged",
   QueueIntermissionEnabledChanged = "QueueIntermissionEnabledChanged",
   SettingsCollapsedChanged = "SettingsCollapsedChanged",
   SidebarCollapsedChanged = "SidebarCollapsedChanged",
@@ -1972,6 +1975,61 @@ let db: NotARealDb = {
   lastKnownGoodDamSongId: null,
   joysoundYoutubeVideos: {},
 };
+
+// What the remocon's lyrics panel mirrors: the TV's layout of the current
+// song's lyrics, and where the TV's player is in the song. Both come from the
+// renderer, both are about the current song only, and neither is worth
+// persisting (a restart restarts the renderer that reports them), so they
+// live out here rather than in the `...db`-spread NotARealDb.
+type SongTelopState = {
+  songKey: string;
+  // TelopLayout JSON, or null when the TV couldn't lay the lyrics out.
+  layout: string | null;
+};
+
+type PlaybackClockState = {
+  songKey: string;
+  positionMs: number;
+  capturedAt: number;
+  playing: boolean;
+  rate: number;
+};
+
+let currentSongTelop: SongTelopState | null = null;
+let playbackClock: PlaybackClockState | null = null;
+
+function currentSongKey(): string | null {
+  return db.currentSong ? queueItemKey(db.currentSong) : null;
+}
+
+// Called whenever the current song changes. A new song starts at 0, stopped,
+// until the renderer's first report; its lyrics aren't laid out yet.
+function resetCurrentSongPlaybackState() {
+  const songKey = currentSongKey();
+
+  if (currentSongTelop?.songKey !== songKey) {
+    currentSongTelop = null;
+    pubsub.publish(SubscriptionEvent.CurrentSongTelopChanged, {
+      currentSongTelopChanged: null,
+    });
+  }
+
+  if (playbackClock?.songKey !== songKey) {
+    playbackClock =
+      songKey === null
+        ? null
+        : {
+            songKey,
+            positionMs: 0,
+            capturedAt: Date.now(),
+            playing: false,
+            rate: 1,
+          };
+    pubsub.publish(SubscriptionEvent.PlaybackClockChanged, {
+      playbackClockChanged: playbackClock,
+    });
+  }
+}
 
 // The address a phone on the same WiFi can actually reach, with the remocon
 // port, so the QR codes are scannable out of the box. Prefer a private LAN
@@ -3309,6 +3367,11 @@ const resolvers = {
     currentSong: () => {
       return db.currentSong;
     },
+    currentSongTelop: (): SongTelopState | null =>
+      currentSongTelop?.songKey === currentSongKey() ? currentSongTelop : null,
+    playbackClock: (): PlaybackClockState | null =>
+      playbackClock?.songKey === currentSongKey() ? playbackClock : null,
+    serverNow: (): number => Date.now(),
     people: (): Person[] => listPeople(),
     personByDevice: (_: any, args: { deviceId: string }): Person | null =>
       personByDevice(args.deviceId),
@@ -4080,6 +4143,38 @@ const resolvers = {
         eta: db.songQueue.reduce((acc, cur) => acc + (cur.playtime || 0), 0),
       };
     },
+    publishSongTelop: (
+      _: any,
+      args: { input: { songKey: string; layout?: string | null } },
+    ): boolean => {
+      // A parse that finished after its song was skipped would otherwise
+      // hand the next song the previous one's lyrics.
+      if (args.input.songKey !== currentSongKey()) return false;
+
+      currentSongTelop = {
+        songKey: args.input.songKey,
+        layout: args.input.layout ?? null,
+      };
+      pubsub.publish(SubscriptionEvent.CurrentSongTelopChanged, {
+        currentSongTelopChanged: currentSongTelop,
+      });
+      return true;
+    },
+    reportPlaybackClock: (
+      _: any,
+      args: { input: PlaybackClockState },
+    ): boolean => {
+      if (args.input.songKey !== currentSongKey()) return false;
+
+      const { songKey, positionMs, capturedAt, playing, rate } = args.input;
+      if (![positionMs, capturedAt, rate].every(Number.isFinite)) return false;
+
+      playbackClock = { songKey, positionMs, capturedAt, playing, rate };
+      pubsub.publish(SubscriptionEvent.PlaybackClockChanged, {
+        playbackClockChanged: playbackClock,
+      });
+      return true;
+    },
     pushAdhocLyrics: (
       _: any,
       args: { input: PushAdhocLyricsInput },
@@ -4115,6 +4210,7 @@ const resolvers = {
       pubsub.publish(SubscriptionEvent.CurrentSongChanged, {
         currentSongChanged: db.currentSong,
       });
+      resetCurrentSongPlaybackState();
 
       pubsub.publish(SubscriptionEvent.QueueChanged, {
         queueChanged: {
@@ -4718,6 +4814,16 @@ const resolvers = {
           SubscriptionEvent.CurrentSongAdhocLyricsChanged,
         ]),
     },
+    currentSongTelopChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.CurrentSongTelopChanged,
+        ]),
+    },
+    playbackClockChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([SubscriptionEvent.PlaybackClockChanged]),
+    },
     currentSongChanged: {
       subscribe: () =>
         pubsub.asyncIterableIterator([SubscriptionEvent.CurrentSongChanged]),
@@ -5078,7 +5184,10 @@ export function applyGraphQLMiddleware(app: Application) {
   server.start().then(() => {
     app.use(
       "/graphql",
-      express.json(),
+      // Past express's 100kb default: the renderer posts each JOYSOUND song's
+      // telop layout (publishSongTelop), which runs 60-80kb of JSON for a
+      // typical song and more for a long one.
+      express.json({ limit: "4mb" }),
       expressMiddleware(server, {
         context: async () => {
           return {

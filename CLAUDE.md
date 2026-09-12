@@ -401,6 +401,27 @@ These stay here. The first two are whole-app contracts, the third spans
   literal keyword re-runs the search that found nothing: a full first page
   followed by an empty second one. The fallback reports its
   `effectiveKeyword` and the cursor carries it.
+- **Remocon lyrics mirror** (`common/telopLayout.ts`, `renderer/lyricsMirror.ts`,
+  `remocon/components/NowPlayingLyrics`): the lyrics button in the control
+  bar's now-playing row (JOYSOUND songs only; DAM burns its lyrics into the
+  video) opens a panel that draws the TV's telop on the phone, in sync.
+  The TV stays the source of truth: JoysoundRenderer turns its parse into a
+  serializable `TelopLayout` (glyphs, furigana, romaji exactly as segmented,
+  colors, scroll events) and draws _from that_. It also posts the layout to
+  main (`publishSongTelop`, keyed by `queueItemKey` so a late parse can't land
+  on the next song). The phone draws the same layout with the same functions,
+  so it gets the romaji without shipping kuromoji. **Change how the TV draws
+  telop only inside `telopLayout.ts`**, or the phone quietly stops matching.
+  The extraction was verified pixel-identical against the pre-refactor
+  renderer with a Chrome harness (`.claude/telop-harness/compare.mjs`).
+  Sync: Player reports `video.currentTime` stamped with `Date.now()` on every
+  media event plus a 2s heartbeat (`reportPlaybackClock`); the phone maps its
+  clock onto main's NTP-style (`useServerClockOffset`, best-RTT of a burst,
+  re-burst on a clock step) and extrapolates. Measured against the TV with a
+  phone clock skewed 7s (`.claude/telop-harness/sync.mjs`): under 1ms,
+  through seeks and pauses. That phone was on this machine; over WiFi the
+  error is bounded by half the best round trip, a few ms. The layout is
+  60-80kb of JSON, hence `express.json({ limit })` on `/graphql`.
 - **Avatar portraits** (`scripts/getPortraits.mjs`, `main/portraits.ts`,
   `remocon/components/PmdPortraitPicker`): the avatar picker runs off a
   **local mirror** of PMDCollab SpriteCollab (no external requests at

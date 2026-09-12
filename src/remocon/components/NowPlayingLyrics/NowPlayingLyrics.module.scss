@@ -1,0 +1,93 @@
+// The lyrics are the TV's telop, colors and all, which JOYSOUND designs to sit
+// over video. So the stage is a dark screen in both themes, like the TV
+// behind them, rather than a themed surface the telop colors weren't made for.
+$stage-background: #05070a;
+
+.panel {
+  padding: 8px 8px 0;
+  background-color: var(--chrome);
+}
+
+.dockedStage {
+  position: relative;
+  width: 100%;
+  // Tall enough to read, short enough to keep searching underneath it. A
+  // landscape phone hits this and letterboxes; full screen is the fix there.
+  max-height: 40vh;
+  overflow: hidden;
+  background-color: $stage-background;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+.fullscreen {
+  position: fixed;
+  inset: 0;
+  // Over the nav bar's settings drawer (20), under toasts (1000).
+  z-index: 900;
+  display: flex;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+  background-color: $stage-background;
+}
+
+.fullscreenStage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.message {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 24px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  text-align: center;
+}
+
+// Upright, the lyrics are as wide as the phone and no bigger than docked;
+// sideways they fill it. Only worth saying while it would help.
+.rotateHint {
+  position: absolute;
+  right: 0;
+  bottom: 24px;
+  left: 0;
+  display: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 13px;
+  text-align: center;
+
+  @media (orientation: portrait) {
+    display: block;
+  }
+}
+
+.fullscreenButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 16px;
+  color: rgba(255, 255, 255, 0.85);
+  background-color: rgba(255, 255, 255, 0.12);
+  font-size: 18px;
+  line-height: 0;
+  cursor: pointer;
+}

@@ -27,11 +27,13 @@ import {
   findInstrumentalBreaks,
   parseScoringData,
 } from "../common/scoringData";
+import { queueItemKey } from "../common/telopLayout";
 import { buildTuningExercise } from "../common/tuningExercise";
 import { RangeAccumulator } from "../common/vocalRange";
 import AdhocLyrics from "./AdhocLyrics";
 import DamGuideMelodySynth from "./damGuideMelody";
 import JoysoundRenderer from "./JoysoundRenderer";
+import { publishSongTelop, usePlaybackClockReporter } from "./lyricsMirror";
 import { InputDevice } from "./nativeAudio";
 import PianoRoll from "./PianoRoll";
 import "./Player.css";
@@ -222,6 +224,14 @@ function Player(props: {
   const [joysoundTelop, setJoysoundTelop] = useState<ArrayBuffer | null>(null);
   const [shouldShowJoysound, setShouldShowJoysound] = useState<boolean>(false);
   const [joysoundIsRomaji, setJoysoundIsRomaji] = useState<boolean>(false);
+  // Which queue entry joysoundTelop is, so the layout JoysoundRenderer
+  // publishes for the remocon's lyrics panel can't land on the wrong song.
+  const [joysoundSongKey, setJoysoundSongKey] = useState<string>("");
+
+  // The queue entry the <video> is playing (queueItemKey), or null between
+  // songs. Read by the playback clock reporter on every media event.
+  const currentSongKeyRef = useRef<string | null>(null);
+  usePlaybackClockReporter(videoRef, currentSongKeyRef);
 
   const [shouldShowPianoRoll, setShouldShowPianoRoll] = useState<boolean>(true);
   // Gates the piano roll's fade-in so it doesn't cover the JOYSOUND title
@@ -726,6 +736,12 @@ function Player(props: {
           restoreGuideMelodyVolume();
           if (!videoRef.current) return;
 
+          // Before the source changes: swapping it fires "emptied", which
+          // already describes the incoming song (position 0, stopped), so it
+          // and everything after must be reported under the incoming key.
+          currentSongKeyRef.current =
+            popSong && "timestamp" in popSong ? queueItemKey(popSong) : null;
+
           if (!popSong) {
             setPlaybackState("WAITING");
             pollTimeoutRef.current = setTimeout(pollQueue, POLL_INTERVAL_MS);
@@ -964,6 +980,7 @@ function Player(props: {
                 .then((data) => {
                   setJoysoundTelop(data);
                   setJoysoundIsRomaji(popSong.isRomaji);
+                  setJoysoundSongKey(queueItemKey(popSong));
 
                   invariant(videoRef.current);
                   videoRef.current.play();
@@ -1357,6 +1374,8 @@ function Player(props: {
           onTitleFadeout={() => setPianoRollTitleCleared(true)}
           breaks={instrumentalBreaks}
           onBreakActiveChange={setPianoRollDucked}
+          songKey={joysoundSongKey}
+          onLayout={publishSongTelop}
         />
       ) : null}
       {shouldShowPianoRoll ? (

@@ -8,6 +8,12 @@ import { toKatakana } from "wanakana";
 
 import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "../common/constants";
 import kanjiToReading from "./dictionary.json";
+import {
+  TelopBlock,
+  TelopBreak,
+  TelopLayout,
+  TELOP_LAYOUT_VERSION,
+} from "./telopLayout";
 
 type DictionaryKanji = keyof typeof kanjiToReading;
 
@@ -1141,6 +1147,62 @@ async function parseJoysoundData(
     metadata,
     lyrics: lyricsData,
     timeline,
+  };
+}
+
+// The parse, flattened into what the screen actually draws (see
+// telopLayout.ts): every glyph and ruby character decoded to text, romaji in
+// draw order, palette indices resolved to colors. Both the TV and the
+// remocon's lyrics panel draw from this, so it is the one place those
+// decisions get made.
+export function toTelopLayout(
+  data: JoysoundTelopData,
+  isRomaji: boolean,
+  breaks: TelopBreak[],
+): TelopLayout {
+  return {
+    version: TELOP_LAYOUT_VERSION,
+    isRomaji,
+    title: {
+      musicName: data.metadata.musicName,
+      artistName: data.metadata.artistName,
+      lyricistName: data.metadata.lyricistName,
+      composerName: data.metadata.composerName,
+      fadeoutTime: data.metadata.fadeoutTime,
+    },
+    blocks: data.lyrics.map(
+      (block): TelopBlock => ({
+        xPos: block.xPos,
+        yPos: block.yPos,
+        preFill: block.preFill.rgb,
+        postFill: block.postFill.rgb,
+        preBorder: block.preBorder.rgb,
+        postBorder: block.postBorder.rgb,
+        glyphs: block.chars.map((char) => ({
+          text: decodeJoysoundText(char.charCode, char.font, block.flags),
+          width: char.width,
+          font: char.font,
+        })),
+        furigana: block.furigana.map((furigana) => ({
+          xPos: furigana.xPos,
+          chars: furigana.chars.map((charCode) => decodeJoysoundText(charCode)),
+        })),
+        // The renderer used to sort these in place at draw time. A stable
+        // sort with the same comparator over the same array gives the same
+        // order, so drawing happens left to right exactly as before.
+        romaji: [...block.romaji]
+          .sort((a, b) => a.xPos - b.xPos)
+          .map((romaji) => ({ ...romaji })),
+        scrollEvents: block.scrollEvents.map((event) => ({ ...event })),
+        fadeinTime: block.fadeinTime,
+        fadeoutTime: block.fadeoutTime,
+      }),
+    ),
+    breaks: breaks.map((b) => ({
+      startTime: b.startTime,
+      endTime: b.endTime,
+      approxDurationSecs: b.approxDurationSecs,
+    })),
   };
 }
 

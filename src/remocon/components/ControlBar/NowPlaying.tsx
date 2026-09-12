@@ -1,13 +1,18 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 import useNowPlaying from "../../hooks/useNowPlaying";
 import useUserIdentity from "../../hooks/useUserIdentity";
 import SongQueueItem from "../SongQueue/SongQueueItem";
 import * as styles from "./ControlBar.module.scss";
 
-const NowPlaying = () => {
+// Takes the song from ControlBar, which also needs it for the lyrics button,
+// rather than opening a second now-playing subscription of its own.
+const NowPlaying = ({
+  currentSong,
+}: {
+  currentSong: ReturnType<typeof useNowPlaying>;
+}) => {
   const { nickname } = useUserIdentity();
-  const currentSong = useNowPlaying();
 
   return (
     <div className={styles.nowPlaying}>

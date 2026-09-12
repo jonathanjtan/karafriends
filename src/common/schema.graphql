@@ -4,6 +4,17 @@ type Query {
   artistsByName(name: String, first: Int, after: String): ArtistConnection!
   config: KarafriendsConfig!
   currentSong: QueueItem
+  # The current song's lyrics exactly as the big screen lays them out, for the
+  # remocon's lyrics panel. Null until the TV has parsed this song's telop
+  # (JOYSOUND songs only; nothing else has timed lyrics to mirror).
+  currentSongTelop: SongTelop
+  # Where the big screen's player is: the latest position it reported, and
+  # when. Null while nothing is playing.
+  playbackClock: PlaybackClock
+  # This machine's clock, epoch milliseconds. The remocon times a few of these
+  # round trips to work out how far its own clock is from this one, which is
+  # what lets it place the TV's reported position on its own timeline.
+  serverNow: Float!
   joysoundArtistsByKeyword(
     keyword: String
     first: Int
@@ -230,6 +241,12 @@ type Mutation {
   sendEmote(emote: EmoteInput!): Boolean!
   popSong: QueueItem
   pushAdhocLyrics(input: PushAdhocLyricsInput): Boolean!
+  # Called by the renderer with the current song's telop layout, every time it
+  # (re)parses one. Ignored unless songKey is the current song's.
+  publishSongTelop(input: SongTelopInput!): Boolean!
+  # Called by the renderer on every play/pause/seek/stall and on a heartbeat.
+  # Ignored unless songKey is the current song's.
+  reportPlaybackClock(input: PlaybackClockInput!): Boolean!
   queueDamSong(
     input: QueueDamSongInput
     tryHeadOfQueue: Boolean!
@@ -315,6 +332,10 @@ type Subscription {
   breakMessageChanged: BreakMessage
   currentSongAdhocLyricsChanged: [AdhocLyricsEntry!]!
   currentSongChanged: QueueItem
+  # Fires when the TV publishes (or re-publishes, after a word-segmentation
+  # toggle) a layout. Select songKey only; the layout itself is fetched with
+  # currentSongTelop by the phones that are actually showing lyrics.
+  currentSongTelopChanged: SongTelop
   emote: Emote!
   guideMelodyVolumeChanged: Float!
   joysoundRomajiWordSegmentationChanged: Boolean!
@@ -329,6 +350,7 @@ type Subscription {
   pianoRollSizeChanged: Float!
   pitchShiftSemisChanged: Int!
   playbackStateChanged: PlaybackState!
+  playbackClockChanged: PlaybackClock
   queueIntermissionEnabledChanged: Boolean!
   settingsCollapsedChanged: Boolean!
   sidebarCollapsedChanged: Boolean!
@@ -342,6 +364,42 @@ type Subscription {
 type SubscriptionQueueChanged {
   currentSong: QueueItem
   newQueue: [QueueItem!]!
+}
+
+# Which queue entry is meant: "<songId>:<timestamp>". Per entry rather than
+# per song so a song queued twice in a row can't inherit the previous play's
+# lyrics or clock. See queueItemKey in common/telopLayout.ts.
+type SongTelop {
+  songKey: String!
+  # JSON, a TelopLayout (common/telopLayout.ts). Null when the TV could not
+  # lay this song's lyrics out at all, in which case it shows none either.
+  layout: String
+}
+
+input SongTelopInput {
+  songKey: String!
+  layout: String
+}
+
+type PlaybackClock {
+  songKey: String!
+  # The media position, in milliseconds, at the moment `capturedAt`.
+  positionMs: Float!
+  # When the position was read, epoch milliseconds on this machine's clock
+  # (the renderer and main share it).
+  capturedAt: Float!
+  # Whether the position is advancing: false while paused, seeking, stalled,
+  # or ended.
+  playing: Boolean!
+  rate: Float!
+}
+
+input PlaybackClockInput {
+  songKey: String!
+  positionMs: Float!
+  capturedAt: Float!
+  playing: Boolean!
+  rate: Float!
 }
 
 type AdhocLyricsEntry {
