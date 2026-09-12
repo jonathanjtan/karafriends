@@ -77,6 +77,12 @@
   --chrome-raised: #f7f9fa;
   --on-chrome-raised: #1cb3ff;
   --chrome-inset: rgba(28, 92, 255, 0.22);
+  /* The same two surfaces, for the control bar's queue drawer, which slides
+     up over the now-playing lyrics panel and used to hide it completely. Just
+     sheer enough (over a backdrop blur) to see the lyrics moving behind it,
+     without costing the queue any contrast of its own. */
+  --chrome-veil: rgba(28, 179, 255, 0.9);
+  --chrome-raised-veil: rgba(247, 249, 250, 0.9);
 
   --danger: #de4e4e;
   --danger-surface: #de4e4e;
@@ -127,6 +133,10 @@ html.dark {
   --chrome-raised: #1b3a52;
   --on-chrome-raised: #7fd3ff;
   --chrome-inset: rgba(255, 255, 255, 0.1);
+  /* Dark mode can afford to be sheerer: the lyrics stage behind it is nearly
+     this dark already, so the drawer doesn't have to fight it. */
+  --chrome-veil: rgba(14, 44, 65, 0.88);
+  --chrome-raised-veil: rgba(27, 58, 82, 0.86);
 
   --danger: #ff7b7b;
   --danger-surface: #a33636;

@@ -11,6 +11,7 @@ import Collapse from "../Collapse";
 import EmoteButtons from "../EmoteButtons";
 import NowPlayingLyrics, { LyricsToggle } from "../NowPlayingLyrics";
 import PlaybackControls from "../PlaybackControls";
+import Reveal from "../Reveal";
 import SongQueue from "../SongQueue";
 import * as styles from "./ControlBar.module.scss";
 import NowPlaying from "./NowPlaying";
@@ -50,11 +51,13 @@ const ControlBar = () => {
 
   return (
     <div className={styles.controlBar}>
-      {lyricsOpen && lyricsSongKey !== null ? (
-        // Keyed by song so a new song starts from a clean panel (no carried
-        // over wipe position, full screen, or rasterized blocks).
-        <NowPlayingLyrics key={lyricsSongKey} songKey={lyricsSongKey} />
-      ) : null}
+      <Reveal open={lyricsOpen && lyricsSongKey !== null}>
+        {lyricsSongKey !== null ? (
+          // Keyed by song so a new song starts from a clean panel (no carried
+          // over wipe position, full screen, or rasterized blocks).
+          <NowPlayingLyrics key={lyricsSongKey} songKey={lyricsSongKey} />
+        ) : null}
+      </Reveal>
       <div className={styles.expander}>
         <NowPlaying currentSong={currentSong} />
         <div className={styles.expanderButtons}>

@@ -94,7 +94,7 @@
   margin: 8px 12px;
   padding: 8px 12px;
   overflow: auto;
-  background-color: var(--chrome-raised);
+  background-color: var(--chrome-raised-veil);
   color: var(--on-chrome-raised);
   text-align: center;
   border-radius: 10px;
@@ -116,7 +116,15 @@
 
 .drawerContent {
   position: relative;
-  background-color: var(--chrome);
+  // Sheer rather than solid. The drawer opens right on top of the now-playing
+  // lyrics panel and used to hide it outright; at this weight the lyrics stay
+  // visibly in motion behind the queue without the queue losing contrast of
+  // its own. Deliberately NOT a backdrop blur: a blur is what you reach for
+  // when you want the thing behind gone, and here the whole point is that
+  // it's still there. (It also wouldn't work as written: Collapse animates
+  // this with a transform, and a transformed ancestor is a backdrop root, so
+  // the filter would see nothing behind the drawer to blur.)
+  background-color: var(--chrome-veil);
   // The queue's card background would otherwise blend invisibly into the
   // page it overlays, so it takes the app header/footer's shadow.
   box-shadow: 0 0 4px var(--shadow);
@@ -129,7 +137,7 @@
   bottom: 8px;
   display: flex;
   color: var(--on-chrome-raised);
-  background-color: var(--chrome-raised);
+  background-color: var(--chrome-raised-veil);
   height: 32px;
   line-height: 0;
   border-radius: 16px;

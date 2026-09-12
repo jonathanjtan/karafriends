@@ -1,0 +1,39 @@
+// The collapsed state is the base one, so a panel that mounts already open
+// still starts from here and animates (see the layout effect in index.tsx).
+.reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  // Rises from the edge it is docked to, with a touch of scale so it reads as
+  // popping up rather than sliding. The curve overshoots slightly at the end,
+  // which is what makes it feel like a sheet rather than a resize.
+  transform: translateY(10px) scale(0.98);
+  transform-origin: bottom center;
+  transition:
+    grid-template-rows 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.12),
+    transform 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.12),
+    opacity 0.18s ease-out;
+}
+
+// min-height: 0 is what lets the 0fr row actually clip the content: a grid
+// item's automatic minimum size is its content, which would otherwise hold the
+// row open at full height the whole way.
+.inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+// The pop is decoration; anyone who has asked for less motion gets the panel
+// without it.
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    transition: none;
+    transform: none;
+  }
+}
