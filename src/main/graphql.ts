@@ -1894,6 +1894,8 @@ enum SubscriptionEvent {
   CurrentSongAdhocLyricsChanged = "CurrentSongAdhocLyricsChanged",
   CurrentSongChanged = "CurrentSongChanged",
   CurrentSongTelopChanged = "CurrentSongTelopChanged",
+  CurrentSongPianoRollChanged = "CurrentSongPianoRollChanged",
+  PitchTraceChanged = "PitchTraceChanged",
   Emote = "Emote",
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
   HistoryRecordingEnabledChanged = "HistoryRecordingEnabledChanged",
@@ -1987,6 +1989,13 @@ type SongTelopState = {
   layout: string | null;
 };
 
+type SongPianoRollState = {
+  songKey: string;
+  // PianoRollLayout JSON, or null when the song has no guide melody to draw.
+  layout: string | null;
+  micCount: number;
+};
+
 type PlaybackClockState = {
   songKey: string;
   positionMs: number;
@@ -1996,7 +2005,14 @@ type PlaybackClockState = {
 };
 
 let currentSongTelop: SongTelopState | null = null;
+let currentSongPianoRoll: SongPianoRollState | null = null;
 let playbackClock: PlaybackClockState | null = null;
+
+// How many phones are drawing the big screen's sung-pitch trail right now.
+// The renderer streams samples ~10x a second, so it asks (via the return value
+// of publishPitchTrace) whether that is reaching anybody, and drops back to a
+// slow probe when it isn't.
+let pitchTraceSubscribers = 0;
 
 function currentSongKey(): string | null {
   return db.currentSong ? queueItemKey(db.currentSong) : null;
@@ -2011,6 +2027,13 @@ function resetCurrentSongPlaybackState() {
     currentSongTelop = null;
     pubsub.publish(SubscriptionEvent.CurrentSongTelopChanged, {
       currentSongTelopChanged: null,
+    });
+  }
+
+  if (currentSongPianoRoll?.songKey !== songKey) {
+    currentSongPianoRoll = null;
+    pubsub.publish(SubscriptionEvent.CurrentSongPianoRollChanged, {
+      currentSongPianoRollChanged: null,
     });
   }
 
@@ -2220,6 +2243,37 @@ function loadDb(): NotARealDb {
 }
 
 const pubsub = new PubSub();
+
+// A pubsub subscription that keeps `pitchTraceSubscribers` honest. graphql-ws
+// calls return() (or throw()) on the iterator when the client unsubscribes or
+// its socket drops, so that is where the count comes back down; `released`
+// guards against being told twice.
+function countedSubscription(event: SubscriptionEvent) {
+  const inner = pubsub.asyncIterableIterator([event]);
+  pitchTraceSubscribers++;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    pitchTraceSubscribers--;
+  };
+  return {
+    [Symbol.asyncIterator]() {
+      return this;
+    },
+    next: () => inner.next(),
+    return: () => {
+      release();
+      return inner.return
+        ? inner.return()
+        : Promise.resolve({ value: undefined, done: true as const });
+    },
+    throw: (error?: any) => {
+      release();
+      return inner.throw ? inner.throw(error) : Promise.reject(error);
+    },
+  };
+}
 
 const nicovideo = new Nicovideo();
 
@@ -3369,6 +3423,10 @@ const resolvers = {
     },
     currentSongTelop: (): SongTelopState | null =>
       currentSongTelop?.songKey === currentSongKey() ? currentSongTelop : null,
+    currentSongPianoRoll: (): SongPianoRollState | null =>
+      currentSongPianoRoll?.songKey === currentSongKey()
+        ? currentSongPianoRoll
+        : null,
     playbackClock: (): PlaybackClockState | null =>
       playbackClock?.songKey === currentSongKey() ? playbackClock : null,
     serverNow: (): number => Date.now(),
@@ -4160,6 +4218,48 @@ const resolvers = {
       });
       return true;
     },
+    publishSongPianoRoll: (
+      _: any,
+      args: {
+        input: { songKey: string; layout?: string | null; micCount: number };
+      },
+    ): boolean => {
+      // Same guard as publishSongTelop: a layout built for a song that has
+      // already been skipped must not land on the one that replaced it.
+      if (args.input.songKey !== currentSongKey()) return false;
+
+      currentSongPianoRoll = {
+        songKey: args.input.songKey,
+        layout: args.input.layout ?? null,
+        micCount: args.input.micCount,
+      };
+      pubsub.publish(SubscriptionEvent.CurrentSongPianoRollChanged, {
+        currentSongPianoRollChanged: currentSongPianoRoll,
+      });
+      return true;
+    },
+    publishPitchTrace: (
+      _: any,
+      args: {
+        input: {
+          songKey: string;
+          generation: number;
+          mics: { index: number; samples: number[] }[];
+        };
+      },
+    ): boolean => {
+      if (args.input.songKey !== currentSongKey()) return false;
+      // Nothing is stored: this is a live stream, and a phone that opens the
+      // panel mid-song simply starts drawing from the next batch. The answer
+      // is what the renderer actually wants, so it can stop streaming into
+      // an empty room.
+      if (pitchTraceSubscribers > 0) {
+        pubsub.publish(SubscriptionEvent.PitchTraceChanged, {
+          pitchTraceChanged: args.input,
+        });
+      }
+      return pitchTraceSubscribers > 0;
+    },
     reportPlaybackClock: (
       _: any,
       args: { input: PlaybackClockState },
@@ -4819,6 +4919,20 @@ const resolvers = {
         pubsub.asyncIterableIterator([
           SubscriptionEvent.CurrentSongTelopChanged,
         ]),
+    },
+    currentSongPianoRollChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.CurrentSongPianoRollChanged,
+        ]),
+    },
+    pitchTraceChanged: {
+      // Counted, not just forwarded: this is the one subscription the big
+      // screen pays for per frame rather than per event, so it needs to know
+      // whether anyone is on the other end. graphql-ws calls return() on the
+      // iterator when a client goes away (including when its socket drops),
+      // which is where the count comes back down.
+      subscribe: () => countedSubscription(SubscriptionEvent.PitchTraceChanged),
     },
     playbackClockChanged: {
       subscribe: () =>

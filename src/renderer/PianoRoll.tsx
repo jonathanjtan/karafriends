@@ -1,10 +1,4 @@
-/* tslint:disable:max-classes-per-file */
-
-import convert from "color-convert";
-import Spline from "cubic-spline";
-import vec from "gl-vec2";
-import getNormals from "polyline-normals";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   DEFAULT_MIC_RMS_GATE_THRESHOLD,
@@ -18,542 +12,28 @@ import useMicRmsGateThreshold from "../common/hooks/useMicRmsGateThreshold";
 import usePianoRollOpacity from "../common/hooks/usePianoRollOpacity";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { MicGate } from "../common/micGate";
+import { DEFAULT_SPAN_SEMIS, octaveRails } from "../common/pianoRoll/geometry";
+import { buildPianoRollLayout } from "../common/pianoRoll/layout";
+import "../common/pianoRoll/pianoRoll.css";
+import { PianoRollScene } from "../common/pianoRoll/scene";
 import { ScoreAccumulator } from "../common/scoring";
-import { parseScoringData } from "../common/scoringData";
 import { RangeAccumulator } from "../common/vocalRange";
 import MediaClock from "./mediaClock";
 import { InputDevice } from "./nativeAudio";
-import "./PianoRoll.css";
-import midiVertShaderRaw from "./shaders/PianoRollMidi.vert.glsl";
-import noteFragShaderRaw from "./shaders/PianoRollNote.frag.glsl";
-import seekVertShaderRaw from "./shaders/PianoRollSeek.vert.glsl";
-import singleColorFragShaderRaw from "./shaders/PianoRollSingleColor.frag.glsl";
+import { PitchTracePublisher, publishSongPianoRoll } from "./pianoRollMirror";
 
 // The visible window is TIME_WIDTH_SECS wide, with "now" pinned at
 // CURSOR_FRACTION from the left edge; notes scroll right-to-left past it.
 // 0.3 * 7s leaves ~4.9s of upcoming notes visible (matching the old
-// page-at-a-time view) plus ~2.1s of trailing pitch-detection history.
-const PITCH_RESOLUTION = 8;
-const STROKE_WIDTH = 0.03;
+// page-at-a-time view) plus ~2.1s of trailing pitch-detection history. How all
+// of that is drawn lives in common/pianoRoll/, because the remocon's lyrics
+// panel draws the same roll from the same code.
+//
 // How much to dim the roll during an announced instrumental break.
 const PIANO_ROLL_DUCK_FACTOR = 0.15;
 
-function loadShader(
-  gl: WebGL2RenderingContext,
-  type:
-    | WebGLRenderingContextBase["VERTEX_SHADER"]
-    | WebGLRenderingContextBase["FRAGMENT_SHADER"],
-  source: string,
-) {
-  const shader = gl.createShader(type)!;
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error(`Error compiling shader: ${gl.getShaderInfoLog(shader)}`);
-    gl.deleteShader(shader);
-    return null;
-  }
-
-  return shader;
-}
-
-function edgesToTriangles(top: number[][], bottom: number[][]) {
-  const triangles = [];
-
-  for (let i = 0; i < top.length - 1; i++) {
-    const x0 = top[i][0];
-    const y0 = top[i][1];
-
-    const x1 = bottom[i][0];
-    const y1 = bottom[i][1];
-
-    const x2 = top[i + 1][0];
-    const y2 = top[i + 1][1];
-
-    const x3 = bottom[i + 1][0];
-    const y3 = bottom[i + 1][1];
-
-    triangles.push(...[x0, y0, x1, y1, x2, y2, x1, y1, x2, y2, x3, y3]);
-  }
-
-  return triangles;
-}
-
-function quadToTriangles(x0: number, y0: number, x1: number, y1: number) {
-  /*
-    (x0, y0) - (x1, y0)
-       |     \    |
-    (x0, y1) - (x1, y1)
-
-    GL makes us list triangles in counter-clockwise order
-  */
-  return [x0, y0, x0, y1, x1, y1, x0, y0, x1, y1, x1, y0];
-}
-
-function median(nums: number[]) {
-  const numsSorted = [...nums];
-  // Numeric, not the default lexicographic sort: MIDI numbers happen to all be
-  // two digits for real songs, which is the only reason the bare sort() this
-  // replaces gave the right answer. A single value at 100 or above (or below
-  // 10) would have silently mis-centred the whole roll.
-  numsSorted.sort((a, b) => a - b);
-  const middleIndex = Math.floor(nums.length / 2);
-  if (nums.length % 2 === 0) {
-    return (numsSorted[middleIndex - 1] + numsSorted[middleIndex]) / 2;
-  } else {
-    return numsSorted[middleIndex];
-  }
-}
-
-abstract class ShaderProgram<T extends unknown[]> {
-  readonly gl: WebGL2RenderingContext;
-  readonly program: WebGLProgram;
-  readonly attributeLocations: { [name: string]: number };
-  readonly uniformLocations: { [name: string]: WebGLUniformLocation };
-  readonly buffers: { [name: string]: WebGLBuffer };
-  // Vertex attribute state is global in GL, not per-program. All four programs
-  // here bind their vec2 stream to attribute index 0, so whichever drew last
-  // leaves that attribute pointing at its own buffer, and every draw has to
-  // re-point it. A VAO records the wiring once and restores it in a single
-  // bind.
-  //
-  // This is what the `if (gl.CURRENT_PROGRAM !== this.program)` guard that used
-  // to wrap every draw was reaching for, and it never worked:
-  // `gl.CURRENT_PROGRAM` is the enum constant 0x8B8D, never a WebGLProgram, so
-  // the condition was always true and the setup ran every frame regardless.
-  // Worth knowing before "fixing" it somewhere else: reading it properly (via
-  // getParameter) would have made it *wrong* rather than merely redundant,
-  // because of the global attribute state above.
-  private readonly vertexArray: WebGLVertexArrayObject;
-  private readonly shaders: WebGLShader[];
-
-  constructor(
-    gl: WebGL2RenderingContext,
-    shaders: WebGLShader[],
-    attributeNames: string[],
-    uniformNames: string[],
-    bufferNames: string[],
-  ) {
-    this.gl = gl;
-    this.shaders = shaders;
-    this.program = gl.createProgram()!;
-    shaders.forEach((shader) => gl.attachShader(this.program, shader));
-    gl.linkProgram(this.program);
-    this.attributeLocations = Object.fromEntries(
-      attributeNames.map((name) => [
-        name,
-        gl.getAttribLocation(this.program, name),
-      ]),
-    );
-    this.uniformLocations = Object.fromEntries(
-      uniformNames.map((name) => [
-        name,
-        gl.getUniformLocation(this.program, name)!,
-      ]),
-    );
-    this.buffers = Object.fromEntries(
-      bufferNames.map((name) => [name, gl.createBuffer()!]),
-    );
-
-    // Every program here draws one vec2 stream ("position") out of one buffer
-    // ("positions"), so the wiring is identical for all of them.
-    this.vertexArray = gl.createVertexArray()!;
-    gl.bindVertexArray(this.vertexArray);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
-    gl.vertexAttribPointer(
-      this.attributeLocations.position,
-      2,
-      gl.FLOAT,
-      false,
-      0,
-      0,
-    );
-    gl.enableVertexAttribArray(this.attributeLocations.position);
-    gl.bindVertexArray(null);
-  }
-
-  // Select this program and its attribute wiring. Uniforms that never change
-  // are set once in each subclass's constructor instead of here: uniform state
-  // belongs to the program object, so it survives from one draw to the next.
-  protected use() {
-    this.gl.useProgram(this.program);
-    this.gl.bindVertexArray(this.vertexArray);
-  }
-
-  // The effect that owns these rebuilds per song, and again on every
-  // pitch-shift change, on a canvas (and so a GL context) that outlives it.
-  // Chromium does eventually collect unreferenced GL objects, but on its own
-  // schedule; releasing them here makes it deterministic instead of leaving a
-  // song's whole pipeline resident into the next one.
-  dispose() {
-    this.gl.deleteVertexArray(this.vertexArray);
-    this.gl.deleteProgram(this.program);
-    this.shaders.forEach((shader) => this.gl.deleteShader(shader));
-    Object.values(this.buffers).forEach((buffer) =>
-      this.gl.deleteBuffer(buffer),
-    );
-  }
-
-  abstract draw(...args: T): void;
-}
-
-class NoteProgram extends ShaderProgram<[number, number]> {
-  readonly triangleCount: number;
-
-  constructor(gl: WebGL2RenderingContext, positions: number[]) {
-    super(
-      gl,
-      [
-        loadShader(gl, gl.VERTEX_SHADER, midiVertShaderRaw)!,
-        loadShader(gl, gl.FRAGMENT_SHADER, noteFragShaderRaw)!,
-      ],
-      ["position"],
-      ["time", "timeWidth", "canvasWidth", "cursorFraction"],
-      ["positions"],
-    );
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-    this.triangleCount = positions.length / 2;
-
-    gl.useProgram(this.program);
-    gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-    gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
-  }
-
-  draw(time: number, canvasWidth: number) {
-    this.use();
-
-    this.gl.uniform1f(this.uniformLocations.time, time);
-    this.gl.uniform1f(this.uniformLocations.canvasWidth, canvasWidth);
-
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, this.triangleCount);
-  }
-}
-
-class SeekProgram extends ShaderProgram<[]> {
-  readonly triangleCount: number;
-
-  constructor(gl: WebGL2RenderingContext) {
-    super(
-      gl,
-      [
-        loadShader(gl, gl.VERTEX_SHADER, seekVertShaderRaw)!,
-        loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
-      ],
-      ["position"],
-      ["cursorFraction", "color"],
-      ["positions"],
-    );
-    const positions = quadToTriangles(-1.005, 1.0, -0.995, -1.0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-    this.triangleCount = positions.length / 2;
-
-    gl.useProgram(this.program);
-    gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
-    gl.uniform4fv(this.uniformLocations.color, [0.9, 0.9, 0.9, 1.0]);
-  }
-
-  draw() {
-    this.use();
-
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, this.triangleCount);
-  }
-}
-
-class PitchProgram extends ShaderProgram<[number, number, number[]]> {
-  readonly color: [number, number, number];
-  // The sung-pitch trace is the one stream that changes every frame, so it is
-  // the one worth not re-allocating. `new Float32Array(positions)` on a plain
-  // number array converts element by element and throws away ~67KB per mic per
-  // frame; the trace tops out at a fixed length (PitchDetectionBuffer caps at
-  // 200 samples), so a scratch array that grows a handful of times at the start
-  // of a take and never again does the same job with no per-frame garbage.
-  private scratch = new Float32Array(0);
-
-  constructor(gl: WebGL2RenderingContext, color: [number, number, number]) {
-    super(
-      gl,
-      [
-        loadShader(gl, gl.VERTEX_SHADER, midiVertShaderRaw)!,
-        loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
-      ],
-      ["position"],
-      ["time", "timeWidth", "color", "cursorFraction"],
-      ["positions"],
-    );
-    this.color = color;
-
-    gl.useProgram(this.program);
-    gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-    gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
-    gl.uniform4f(this.uniformLocations.color, ...this.color, 1.0);
-  }
-
-  draw(time: number, canvasWidth: number, positions: number[]) {
-    this.use();
-
-    this.gl.uniform1f(this.uniformLocations.time, time);
-
-    // The ARRAY_BUFFER binding is global state, not part of the VAO: the VAO
-    // records which buffer the attribute *reads*, but an upload still has to
-    // name its target. Binding here rather than relying on some earlier call
-    // having left the right buffer bound is what keeps each mic's trace out of
-    // its neighbour's buffer.
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.buffers.positions);
-    if (this.scratch.length < positions.length) {
-      this.scratch = new Float32Array(Math.max(positions.length * 2, 4096));
-      this.gl.bufferData(
-        this.gl.ARRAY_BUFFER,
-        this.scratch.byteLength,
-        this.gl.DYNAMIC_DRAW,
-      );
-    }
-    this.scratch.set(positions);
-    this.gl.bufferSubData(
-      this.gl.ARRAY_BUFFER,
-      0,
-      this.scratch,
-      0,
-      positions.length,
-    );
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, positions.length / 2);
-  }
-}
-
-class FreeTimeProgram extends ShaderProgram<[number, number]> {
-  readonly triangleCount: number;
-
-  constructor(gl: WebGL2RenderingContext, positions: number[]) {
-    super(
-      gl,
-      [
-        loadShader(gl, gl.VERTEX_SHADER, midiVertShaderRaw)!,
-        loadShader(gl, gl.FRAGMENT_SHADER, singleColorFragShaderRaw)!,
-      ],
-      ["position"],
-      ["time", "timeWidth", "canvasWidth", "color", "cursorFraction"],
-      ["positions"],
-    );
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffers.positions);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-    this.triangleCount = positions.length / 2;
-
-    gl.useProgram(this.program);
-    gl.uniform1f(this.uniformLocations.timeWidth, TIME_WIDTH_SECS);
-    gl.uniform1f(this.uniformLocations.cursorFraction, CURSOR_FRACTION);
-    gl.uniform4fv(this.uniformLocations.color, [0, 0, 0, 0.5]);
-  }
-
-  draw(time: number, canvasWidth: number) {
-    this.use();
-
-    this.gl.uniform1f(this.uniformLocations.time, time);
-    this.gl.uniform1f(this.uniformLocations.canvasWidth, canvasWidth);
-
-    this.gl.drawArrays(this.gl.TRIANGLES, 0, this.triangleCount);
-  }
-}
-
-class PitchDetectionBuffer {
-  buffer: { time: number; value: number }[] = [];
-  positions: number[] = [];
-  pitchOffset: number = 0;
-  // The roll's vertical window for this song, in semitones. Constant for the
-  // buffer's life (it is rebuilt per song), so it is held here rather than
-  // threaded through every push.
-  readonly spanSemis: number;
-
-  constructor(spanSemis: number) {
-    this.spanSemis = spanSemis;
-  }
-
-  push(
-    pitchMidiNumber: number,
-    medianMidiNumber: number,
-    currentMidiNumber: number,
-    time: number,
-  ) {
-    this.pitchOffset +=
-      Math.round(
-        (currentMidiNumber - (pitchMidiNumber + this.pitchOffset)) / 12,
-      ) * 12;
-
-    const pitchMidiNumberOffset = pitchMidiNumber + this.pitchOffset;
-
-    if (
-      this.buffer.length === 0 ||
-      time > this.buffer[this.buffer.length - 1].time
-    ) {
-      this.buffer.push({
-        time,
-        value: pitchMidiNumberOffset,
-      });
-    } else {
-      this.buffer[this.buffer.length - 1] = {
-        time,
-        value: pitchMidiNumberOffset,
-      };
-    }
-
-    if (this.buffer.length > 200) {
-      this.buffer.shift();
-      this.positions.splice(0, 12 * (PITCH_RESOLUTION - 1));
-    }
-
-    if (this.buffer.length >= 1) {
-      const lastIndex = this.buffer.length - 1;
-
-      let timeGap = null;
-      let pitchGap = null;
-
-      if (this.buffer.length >= 3) {
-        timeGap = this.buffer[lastIndex].time - this.buffer[lastIndex - 2].time;
-
-        pitchGap = Math.max(
-          Math.abs(
-            this.buffer[lastIndex].value - this.buffer[lastIndex - 1].value,
-          ),
-          Math.abs(
-            this.buffer[lastIndex - 1].value - this.buffer[lastIndex - 2].value,
-          ),
-          Math.abs(
-            this.buffer[lastIndex].value - this.buffer[lastIndex - 2].value,
-          ),
-        );
-      }
-
-      // If we don't have 3 points to create a spline with, or the time/pitch gap
-      // between points is too large, just draw the current point as is.
-      if (!timeGap || !pitchGap || timeGap > 0.06 || pitchGap > 7) {
-        const pitchPoint = quadToTriangles(
-          this.buffer[lastIndex].time - 0.025,
-          this.buffer[lastIndex].value - STROKE_WIDTH / 2,
-          this.buffer[lastIndex].time,
-          this.buffer[lastIndex].value + STROKE_WIDTH / 2,
-        );
-
-        for (let i = 0; i < PITCH_RESOLUTION - 1; i++) {
-          this.positions.push(...pitchPoint);
-        }
-
-        return;
-      }
-
-      const path = [];
-
-      const bufferSlice = this.buffer.slice(lastIndex - 2, lastIndex + 1);
-      const spline = new Spline(
-        bufferSlice.map((obj) => obj.time),
-        bufferSlice.map((obj) =>
-          midiNumberToYCoord(obj.value, medianMidiNumber, this.spanSemis),
-        ),
-      );
-
-      for (let i = 0; i < PITCH_RESOLUTION; i++) {
-        const currX =
-          this.buffer[lastIndex - 2].time + i * (timeGap / PITCH_RESOLUTION);
-
-        path.push([currX, spline.at(currX)]);
-      }
-
-      const edges: number[][][] = this.createEdges(path);
-      const newLineSegment = edgesToTriangles(edges[0], edges[1]);
-
-      // Only add the newest line segment to positions
-      this.positions.push(...newLineSegment);
-    }
-  }
-
-  clear() {
-    this.buffer = [];
-    this.positions = [];
-  }
-
-  createEdges(path: number[][]) {
-    const top: number[][] = [];
-    const bottom: number[][] = [];
-
-    const normals: any = getNormals(path, false);
-    const tmp = [0, 0];
-
-    path.forEach((point, i) => {
-      const normal: number[] = normals[i][0];
-      const join: number = normals[i][1];
-
-      vec.scaleAndAdd(tmp, point, normal, (join * STROKE_WIDTH) / 2);
-      top.push(tmp.slice());
-
-      vec.scaleAndAdd(tmp, point, normal, (-join * STROKE_WIDTH) / 2);
-      bottom.push(tmp.slice());
-    });
-
-    return [top, bottom];
-  }
-}
-
-// The roll's default vertical window: 18 rows behind the canvas, and notes can
-// align in-between rows, so 36 positions, +/-18 semitones around the median.
-// Every real song fits inside this, and it stays the exact historical geometry.
-const DEFAULT_SPAN_SEMIS = 36;
-
-// How tall a window this note set needs, in semitones. Never narrower than the
-// default, so songs are laid out exactly as they always were; wider only when
-// something genuinely does not fit.
-//
-// The guided range exercise is what needs this: it walks the whole plausible
-// vocal range (E2..C6, 44 semitones) so that nobody's measurement is cut short
-// by a preset they chose before knowing their range. At a fixed 36 its
-// extremes, the entire point of the test, were clipped off the top and bottom
-// of the canvas by PianoRollMidi.vert.glsl, which discards anything outside
-// y 0..1.
-function spanSemisFor(midiNumbers: number[], medianMidiNumber: number) {
-  if (midiNumbers.length === 0) return DEFAULT_SPAN_SEMIS;
-  const furthest = Math.max(
-    ...midiNumbers.map((midi) => Math.abs(midi - medianMidiNumber)),
-  );
-  // +1 for the semitone of note thickness either side, +1 of breathing room.
-  return Math.max(DEFAULT_SPAN_SEMIS, Math.ceil(2 * (furthest + 2)));
-}
-
-function midiNumberToYCoord(
-  midiNumber: number,
-  medianMidiNumber: number,
-  spanSemis: number = DEFAULT_SPAN_SEMIS,
-) {
-  // Positions correspond to the center of a bar or in-between two bars. If
-  // we're at the median MIDI number, we should be dead-center.
-  return 0.5 + (midiNumber - medianMidiNumber) / spanSemis;
-}
-
 interface RollStyleVars extends React.CSSProperties {
   "--piano-roll-span": number;
-}
-
-// Octave rails: which C's are visible, and where.
-//
-// The roll's vertical axis floats. It is relative to the song's median note,
-// with no clef and no absolute reference, so without these there is nothing
-// on screen that says which octave anything is in. They are informational only:
-// the sung-pitch trace is still octave-folded onto the guide (that is what
-// keeps it readable), and scoring is still octave-blind on purpose, because
-// singing in your own comfortable octave is normal and must not cost points.
-//
-// PianoRollMidi.vert.glsl maps y through `y * 2 - 1`, so the visible window is
-// exactly y 0..1, which is +/-spanSemis/2 around the median.
-function octaveRails(medianMidiNumber: number, spanSemis: number) {
-  const rails: { midi: number; topPercent: number }[] = [];
-  const lowest = Math.ceil(medianMidiNumber - spanSemis / 2);
-  const highest = Math.floor(medianMidiNumber + spanSemis / 2);
-  for (let midi = lowest; midi <= highest; midi++) {
-    if (midi % 12 !== 0) continue; // C's only, one label per octave
-    const y = midiNumberToYCoord(midi, medianMidiNumber, spanSemis);
-    if (y < 0.02 || y > 0.98) continue; // would be clipped at the edge
-    // y is bottom-up in GL, top-down in CSS.
-    rails.push({ midi, topPercent: (1 - y) * 100 });
-  }
-  return rails;
 }
 
 export default function PianoRoll(props: {
@@ -581,6 +61,11 @@ export default function PianoRoll(props: {
   // rather than state, since it updates at 40Hz per mic and must not re-render
   // the big screen.
   micLevelsRef?: React.MutableRefObject<number[]>;
+  // The queue entry the <video> is playing (queueItemKey), so the roll this
+  // component draws can be published to main under the right song for the
+  // remocon's lyrics panel to mirror. A ref because Player sets it before the
+  // source swap, ahead of the render that brings the new song's data here.
+  songKeyRef?: React.MutableRefObject<string | null>;
   // Gates the fade-in so the roll doesn't cover a JOYSOUND title card.
   visible: boolean;
   // Dims the roll during an announced instrumental break so it doesn't
@@ -615,27 +100,41 @@ export default function PianoRoll(props: {
   const micRmsGateThresholdRef = useRef(DEFAULT_MIC_RMS_GATE_THRESHOLD);
   micRmsGateThresholdRef.current = micRmsGateThreshold;
 
-  // The song's median note decides where the floating axis sits, so the rail
-  // labels have to be derived from exactly the value the GL effect uses. Kept
-  // here rather than inside that effect because the overlay is plain DOM and
+  // Everything about this song's roll that isn't per-frame: the notes with the
+  // key shift folded in, the bands, and the vertical window. Derived once and
+  // shared by the rail overlay, the fade gate and the GL scene, so all three
+  // are guaranteed to agree, and it is exactly what gets mirrored to the
+  // phones. Null when the song has no guide melody to draw.
+  const layout = useMemo(
+    () => buildPianoRollLayout(props.scoringData, props.pitchShiftSemis),
+    [props.scoringData, props.pitchShiftSemis],
+  );
+
+  // Which octaves are on screen, and where. Plain DOM over the canvas, so it
   // must not depend on the GL pipeline being rebuilt.
-  const { rails, spanSemis } = React.useMemo(() => {
-    const { notes } = parseScoringData(props.scoringData);
-    if (notes.length === 0) {
-      return { rails: [], spanSemis: DEFAULT_SPAN_SEMIS };
-    }
-    const midis = notes.map((note) => note.midiNumber + props.pitchShiftSemis);
-    const medianMidi = median(midis);
-    const span = spanSemisFor(midis, medianMidi);
-    return { rails: octaveRails(medianMidi, span), spanSemis: span };
-  }, [props.scoringData, props.pitchShiftSemis]);
+  const { rails, spanSemis } = useMemo(() => {
+    if (layout === null) return { rails: [], spanSemis: DEFAULT_SPAN_SEMIS };
+    return {
+      rails: octaveRails(layout.medianMidiNumber, layout.spanSemis),
+      spanSemis: layout.spanSemis,
+    };
+  }, [layout]);
+
+  // Hand the phones the roll this screen is about to draw. Republished on
+  // every key change, since the shift is baked into the layout.
+  useEffect(() => {
+    const songKey = props.songKeyRef?.current;
+    if (!songKey) return;
+    publishSongPianoRoll(songKey, layout, props.mics.length);
+    // props.mics.length, not props.mics: all this reads is how many trails the
+    // phone has to colour, and a fresh array on an unrelated Player render
+    // would otherwise republish kilobytes of notes for nothing.
+  }, [layout, props.mics.length, props.songKeyRef]);
 
   useEffect(() => {
     const video = props.videoRef.current;
-    if (!video) return;
-
-    const { notes } = parseScoringData(props.scoringData);
-    if (notes.length === 0) return;
+    if (!video || layout === null) return;
+    const { notes } = layout;
 
     // Fade in once the first note starts entering the visible window from
     // the right edge, PIANO_ROLL_LOOKAHEAD_SECS before its startTime crosses
@@ -658,10 +157,12 @@ export default function PianoRoll(props: {
     // would re-run this on every Player render, since the props object is a
     // fresh literal each time. See the effect below, where that was
     // silently wiping the sung-pitch trail mid-song.
-  }, [props.scoringData, props.videoRef]);
+  }, [layout, props.videoRef]);
 
   useEffect(() => {
-    if (!canvasRef.current || !props.videoRef.current) return;
+    if (!canvasRef.current || !props.videoRef.current || layout === null) {
+      return;
+    }
 
     // Read once, not per sample: the pitch-probe capture is a calibration aid,
     // and the poll loop is hot. Toggle with config.yaml's pitchProbeEnabled.
@@ -713,51 +214,21 @@ export default function PianoRoll(props: {
       probeFlushInterval = setInterval(flushProbeBuffer, 2000);
     }
 
-    const {
-      notes: rawNotes,
-      freeTimeIntervals,
-      pogIntervals,
-    } = parseScoringData(props.scoringData);
-
-    const notes = rawNotes.map((note) => ({
-      ...note,
-      midiNumber: note.midiNumber + props.pitchShiftSemis,
-    }));
-
-    const medianMidiNumber = median(notes.map((note) => note.midiNumber));
-    // Widens only when the note set genuinely doesn't fit the historical
-    // +/-18 window, which in practice means only the guided range exercise.
-    const effectSpanSemis = spanSemisFor(
-      notes.map((note) => note.midiNumber),
-      medianMidiNumber,
+    // Every note quad, band and trail this song draws, on this canvas. The
+    // remocon's lyrics panel builds the same scene from the layout published
+    // above, so anything about how the roll looks belongs in common/pianoRoll/
+    // rather than here.
+    const scene = new PianoRollScene(
+      canvasRef.current,
+      layout,
+      props.mics.length,
     );
 
-    const positions = notes
-      .map((note) =>
-        quadToTriangles(
-          note.startTime,
-          midiNumberToYCoord(
-            note.midiNumber + 1,
-            medianMidiNumber,
-            effectSpanSemis,
-          ),
-          note.endTime,
-          midiNumberToYCoord(
-            note.midiNumber - 1,
-            medianMidiNumber,
-            effectSpanSemis,
-          ),
-        ),
-      )
-      .flat();
-
-    let currentNoteIndex = 0;
-
-    const freeTimePositions = freeTimeIntervals
-      .map(({ startTime, endTime }) =>
-        quadToTriangles(startTime, 1.0, endTime, 0.0),
-      )
-      .flat();
+    // The samples the scene plots, on their way to any phone showing the roll.
+    // Null when this song isn't mirrorable (nothing is playing under a key).
+    const songKey = props.songKeyRef?.current ?? null;
+    const tracePublisher =
+      songKey === null ? null : new PitchTracePublisher(songKey);
 
     // One gate per mic, since each channel has its own level and its own
     // reason to be open. Held here rather than in a ref because the state is
@@ -765,11 +236,7 @@ export default function PianoRoll(props: {
     // lifetime is exactly one song.
     const micGates = props.mics.map(() => new MicGate());
 
-    function pollPitch(
-      mic: InputDevice | null,
-      buffer: PitchDetectionBuffer,
-      micIndex: number,
-    ) {
+    function pollPitch(mic: InputDevice | null, micIndex: number) {
       if (!mic || !props.videoRef.current) return;
       // A batch, oldest first: the detector slides its window every 10ms while
       // this poll runs every 25ms and late besides, so one call collects
@@ -834,19 +301,12 @@ export default function PianoRoll(props: {
         if (!gateOpen) continue;
         if (confidence < 0.8 || midiNumber === 0) continue;
 
-        while (
-          notes[currentNoteIndex].endTime < sampleTime &&
-          currentNoteIndex < notes.length - 2
-        ) {
-          currentNoteIndex++;
-        }
-        const currentMidiNumber = notes[currentNoteIndex].midiNumber;
-        buffer.push(
-          midiNumber,
-          medianMidiNumber,
-          currentMidiNumber,
-          sampleTime,
-        );
+        // The scene folds the reading onto the octave of the note being sung
+        // and hands back the value it plotted, which is exactly what the
+        // phones mirror: they append it as-is rather than re-deriving an
+        // octave offset of their own from a partial trail.
+        const plotted = scene.pushPitch(micIndex, midiNumber, sampleTime);
+        tracePublisher?.add(micIndex, sampleTime, plotted);
         // Latency-calibration capture, off unless config.pitchProbeEnabled is
         // set (checked once when this effect ran, see pitchProbeEnabled). Each
         // accepted sample is buffered as
@@ -884,36 +344,14 @@ export default function PianoRoll(props: {
       }
     }
 
-    const gl = canvasRef.current.getContext("webgl2", {
-      antialias: true,
-      premultipliedAlpha: false,
-    })!;
-
-    const pitchPollers: [PitchDetectionBuffer, PitchProgram, NodeJS.Timeout][] =
-      props.mics.map((mic, i) => {
-        const buffer = new PitchDetectionBuffer(effectSpanSemis);
-        return [
-          buffer,
-          new PitchProgram(
-            gl,
-            convert.hsv
-              .rgb([(360 / props.mics.length) * i, 30, 100])
-              .map((channel) => channel / 255) as [number, number, number],
-          ),
-          setInterval(() => pollPitch(mic, buffer, i), 25),
-        ];
-      });
-
-    const noteProgram = new NoteProgram(gl, positions);
-    const seekProgram = new SeekProgram(gl);
-    const freeTimeProgram = new FreeTimeProgram(gl, freeTimePositions);
+    const pitchPollers = props.mics.map((mic, i) =>
+      setInterval(() => pollPitch(mic, i), 25),
+    );
 
     // Driven from the draw loop below and nowhere else: the filter is paced by
     // how often it is asked, so the 25ms pitch poll keeps reading the raw clock
     // rather than sharing this.
     const mediaClock = new MediaClock();
-
-    gl.clearColor(0.0, 0.0, 0.0, 0.0);
 
     // The loop now reschedules unconditionally (see below), so it needs an
     // explicit stop rather than relying on a missing ref to brake it: a frame
@@ -935,33 +373,9 @@ export default function PianoRoll(props: {
       if (canvas && video) {
         // Smoothed, not `video.currentTime` raw: see mediaClock.ts for what the
         // raw clock's jitter does to a continuous scroll.
-        const time = mediaClock.now(video);
-        const canvasWidth = canvas.width;
-
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        if (freeTimePositions.length > 0) {
-          freeTimeProgram.draw(time, canvasWidth);
-        }
-
-        if (positions.length > 0) {
-          noteProgram.draw(time, canvasWidth);
-        }
-
-        pitchPollers.forEach(([buffer, shader, _]) => {
-          if (buffer.positions.length > 0) {
-            shader.draw(time, canvasWidth, buffer.positions);
-          }
-        });
-
-        seekProgram.draw();
-
         canvas.classList.toggle(
           "pianoRollPog",
-          pogIntervals.some(
-            ({ startTime, endTime }) =>
-              time >= startTime - 1 && time <= endTime,
-          ),
+          scene.draw(mediaClock.now(video)),
         );
       }
 
@@ -970,24 +384,16 @@ export default function PianoRoll(props: {
 
     animationFrameRequestRef.current = window.requestAnimationFrame(draw);
 
-    function updateSize() {
-      if (!canvasRef.current) return;
-      canvasRef.current.width =
-        canvasRef.current.clientWidth * window.devicePixelRatio;
-      canvasRef.current.height =
-        canvasRef.current.clientHeight * window.devicePixelRatio;
-      gl.viewport(0, 0, canvasRef.current.width, canvasRef.current.height);
-    }
-
-    updateSize();
     // Watches the element, not just the window: the synced pianoRollSize
     // setting changes the canvas height without a window resize.
-    const resizeObserver = new ResizeObserver(updateSize);
+    const resizeObserver = new ResizeObserver(() => scene.resize());
     resizeObserver.observe(canvasRef.current);
 
     function clearPitchDetectionBuffers() {
-      currentNoteIndex = 0;
-      pitchPollers.forEach(([buffer, _1, _2]) => buffer.clear());
+      scene.clearPitch();
+      // The phones are drawing the same trail off the same samples, so they
+      // have to be told to drop it too.
+      tracePublisher?.clear();
       // Re-anchor rather than waiting for the smoothing filter to notice the
       // jump on its own.
       mediaClock.reset();
@@ -1007,7 +413,7 @@ export default function PianoRoll(props: {
     );
 
     return () => {
-      pitchPollers.forEach(([_1, _2, interval]) => clearInterval(interval));
+      pitchPollers.forEach((interval) => clearInterval(interval));
       // Nothing polls the mics between songs, so leaving the last values in
       // place would freeze the meters at whatever the final note read.
       props.micLevelsRef?.current.fill(0);
@@ -1017,10 +423,8 @@ export default function PianoRoll(props: {
       // scored song follows another, since PianoRoll stays mounted across the
       // transition. Without this, every song leaves a full set of programs,
       // shaders, buffers and VAOs behind on that context.
-      pitchPollers.forEach(([_1, program, _2]) => program.dispose());
-      noteProgram.dispose();
-      seekProgram.dispose();
-      freeTimeProgram.dispose();
+      scene.dispose();
+      tracePublisher?.dispose();
       resizeObserver.disconnect();
       if (props.videoRef.current) {
         props.videoRef.current.removeEventListener(
@@ -1041,11 +445,12 @@ export default function PianoRoll(props: {
     // in practice the sung-pitch trail was erased several times a song, at
     // section boundaries, while the singer was mid-phrase.
   }, [
-    props.scoringData,
+    layout,
     props.songId,
     props.videoRef,
     props.mics,
     props.pitchShiftSemis,
+    props.songKeyRef,
     props.scoreAccumulatorRef,
     props.rangeAccumulatorRef,
   ]);

@@ -422,6 +422,28 @@ These stay here. The first two are whole-app contracts, the third spans
   through seeks and pauses. That phone was on this machine; over WiFi the
   error is bounded by half the best round trip, a few ms. The layout is
   60-80kb of JSON, hence `express.json({ limit })` on `/graphql`.
+- **Remocon piano roll mirror** (`common/pianoRoll/`, `renderer/pianoRollMirror.ts`,
+  `remocon/components/NowPlayingLyrics/PianoRollCanvas.tsx`): the same panel
+  also draws the big screen's piano roll above the lyrics, off the same clock.
+  Same contract as the telop, so the same rule applies: **the roll is drawn in
+  exactly one place, `common/pianoRoll/`** (geometry, the four GL programs, and
+  the `PianoRollScene` both surfaces build), and the TV is the source of truth
+  for what it draws. Two payloads, because they have different shapes:
+  - The **layout** (`publishSongPianoRoll` → `currentSongPianoRoll`) is one
+    snapshot per song, keyed by `queueItemKey` like the telop: notes with
+    `pitchShiftSemis` already folded in, the free-time bands, and the vertical
+    window. The phone never sees the scoring blob, so a key change reaches it
+    as a republished layout rather than as something to recompute.
+  - The **sung-pitch trail** (`publishPitchTrace` → `pitchTraceChanged`) is a
+    stream, ~10Hz, and main stores none of it; a phone that opens the panel
+    mid-song starts from the next batch. The values are the ones the TV
+    plotted (already octave-folded onto the guide), so a phone joining late
+    doesn't re-converge an octave of its own. A `generation` counter carries
+    the TV's seek-time clear.
+    The renderer only pays for the stream while someone is on the other end:
+    `publishPitchTrace` answers with whether anyone is subscribed (main counts
+    them in `countedSubscription`) and `PitchTracePublisher` drops to a 2s probe
+    when the answer is no.
 - **Avatar portraits** (`scripts/getPortraits.mjs`, `main/portraits.ts`,
   `remocon/components/PmdPortraitPicker`): the avatar picker runs off a
   **local mirror** of PMDCollab SpriteCollab (no external requests at

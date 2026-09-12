@@ -5,7 +5,7 @@ rules, in particular the **queue-advance contract** (every song-start path must
 terminate in `play()` or `pollQueue()`, `.catch` included), which lives there
 because breaking it wedges the whole app.
 
-## Piano roll (`PianoRoll.tsx` + `shaders/`)
+## Piano roll (`PianoRoll.tsx`, drawn by `common/pianoRoll/`)
 
 Continuous right-to-left scroll past a fixed "now" cursor at
 `CURSOR_FRACTION=0.3` of canvas width, `TIME_WIDTH_SECS=7`. All shader programs
@@ -14,6 +14,17 @@ plain CSS (the GL effect's deps are `[props]`, so a hook-state change re-renders
 without rebuilding the GL pipeline; canvas backing-store resize is handled by a
 ResizeObserver). Size `0` = "Off" (hides the canvas). JOYSOUND telop lyrics
 reflow to clear the roll (`remapLyricsYPos` in JoysoundRenderer).
+
+**The drawing is not in here.** Geometry, the four GL programs, the shaders and
+the per-song `PianoRollScene` live in **`src/common/pianoRoll/`**, because the
+remocon's lyrics panel draws the same roll from the same code (see the piano
+roll mirror in the root `CLAUDE.md`). What stays here is what only the big
+screen has: the mics, the level gate, the probe captures, the score/range
+accumulators, the melody-active fade and the `pianoRollSize`/opacity CSS. If
+you change how a note, a band or a trail is drawn, change it in common/ or the
+phone quietly stops matching. `PianoRoll.tsx` also hands the scene's plotted
+values to `pianoRollMirror.ts` so the phone draws the trail the TV drew rather
+than one it derived.
 
 - **WebGL test harness lesson**: `drawImage`/late `readPixels` from a WebGL
   canvas without `preserveDrawingBuffer` returns blank after compositing, so

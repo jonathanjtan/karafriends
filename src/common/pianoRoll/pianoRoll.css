@@ -1,5 +1,11 @@
+/* The piano roll's painted surface. Shared by the big screen (which overlays
+   it on the video) and the remocon's lyrics panel (which gives it a strip of
+   its own above the lyrics), so both rolls read the same; see
+   common/pianoRoll/geometry.ts for why the drawing itself is shared too.
+   Each surface positions the canvas itself, inline. */
 .pianoRollRoll {
-  /* top and height are set inline from the shared piano roll settings */
+  /* top and height are set inline by the big screen from the shared piano
+     roll settings; the phone's strip fills its own box */
   position: absolute;
   left: 0;
   width: 100%;

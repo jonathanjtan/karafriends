@@ -124,6 +124,26 @@ fetch), so it costs no extra YouTube request. Optional per-queue via
 `youtubeVideoSyncEnabled` (a default-on remocon checkbox; null = enabled for
 old clients).
 
+## Piano roll (`common/pianoRoll/`)
+
+Drawn twice, from one implementation: the big screen (`renderer/PianoRoll.tsx`,
+from live mic pitch) and the phone's lyrics panel
+(`remocon/components/NowPlayingLyrics`, from the TV's mirrored trace). Same rule
+as `telopLayout.ts`: **change how the roll looks only in here.**
+
+- `geometry.ts` is where a note sits and how estimates become a stroked trail;
+  `programs.ts` + `shaders/` are the four GL programs; `scene.ts` is one song on
+  one canvas; `layout.ts` is the serializable per-song description the TV
+  publishes (notes with the key shift folded in, bands, the vertical window).
+- `PitchDetectionBuffer` has two doors on purpose. `push` takes a raw estimate
+  and folds it onto the octave of the note being sung, returning the value it
+  plotted; `pushValue` takes an already-folded value. The TV uses the first and
+  mirrors what it returns; the phone uses the second, so a phone that opens the
+  panel mid-song doesn't spend the first few notes converging an octave offset
+  of its own.
+- The wire protocol, the ~10Hz trace stream and the subscriber-count backoff
+  are documented in the root `CLAUDE.md` under the piano roll mirror.
+
 ## Guide melody (`common/guideMelody.ts`, `renderer/damGuideMelody.ts`)
 
 - JOYSOUND's getFME ogg is **3.0-channel vorbis with the guide melody isolated

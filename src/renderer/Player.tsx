@@ -1383,6 +1383,7 @@ function Player(props: {
           scoringData={scoringData}
           songId={scoringSongId}
           videoRef={videoRef}
+          songKeyRef={currentSongKeyRef}
           mics={props.mics}
           pitchShiftSemis={pitchShiftSemis}
           visible={pianoRollTitleCleared}

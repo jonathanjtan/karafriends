@@ -1,6 +1,7 @@
 // The lyrics are the TV's telop, colors and all, which JOYSOUND designs to sit
 // over video. So the stage is a dark screen in both themes, like the TV
 // behind them, rather than a themed surface the telop colors weren't made for.
+// The piano roll above them is drawn on the same understanding.
 $stage-background: #05070a;
 
 .panel {
@@ -10,14 +11,42 @@ $stage-background: #05070a;
 
 .dockedStage {
   position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
-  // Tall enough to read, short enough to keep searching underneath it. A
-  // landscape phone hits this and letterboxes; full screen is the fix there.
-  max-height: 40vh;
   overflow: hidden;
   background-color: $stage-background;
   border-radius: 10px;
   box-shadow: inset 0 0 0 1px var(--hairline);
+}
+
+// The lyrics themselves, sized by the aspect ratio of the song's lyrics band
+// (set inline). Tall enough to read, short enough to keep searching
+// underneath it. A landscape phone hits the cap and letterboxes; full screen
+// is the fix there.
+.lyricsStage {
+  position: relative;
+  width: 100%;
+  max-height: 40vh;
+  overflow: hidden;
+}
+
+// With the roll above them the two together have to stay inside roughly the
+// same budget, or the control bar eats the page.
+.withRoll .lyricsStage {
+  max-height: 30vh;
+}
+
+// The piano roll's strip. Short by TV standards, but at +/-18 semitones a
+// note is still a couple of pixels tall, which is all it has to be to read as
+// above or below the guide.
+.rollStage {
+  position: relative;
+  width: 100%;
+  height: 13vh;
+  min-height: 76px;
+  max-height: 132px;
+  flex-shrink: 0;
 }
 
 .fullscreen {
@@ -33,9 +62,26 @@ $stage-background: #05070a;
 
 .fullscreenStage {
   position: relative;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+// Full screen is where there's room to spare, so the roll takes a real share
+// of it rather than the docked strip's sliver.
+.fullscreenStage .rollStage {
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  flex: 0 0 30%;
+}
+
+.fullscreenStage .lyricsStage {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .canvas {
@@ -56,6 +102,13 @@ $stage-background: #05070a;
   text-align: center;
 }
 
+// The octave rail labels are sized for a television; in a 13vh strip on a
+// phone they'd be most of the roll.
+.rollStage :global(.pianoRollRailLabel) {
+  font-size: 10px;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+}
+
 // Upright, the lyrics are as wide as the phone and no bigger than docked;
 // sideways they fill it. Only worth saying while it would help.
 .rotateHint {
@@ -73,10 +126,15 @@ $stage-background: #05070a;
   }
 }
 
-.fullscreenButton {
+.stageButtons {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 6px;
+}
+
+.stageButton {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -90,4 +148,13 @@ $stage-background: #05070a;
   font-size: 18px;
   line-height: 0;
   cursor: pointer;
+}
+
+// "On" reads as a brighter version of the same chip rather than the control
+// bar's light-on-dark pill: these sit on the lyrics stage, which is nearly
+// black in both themes, and a near-white fill there is a bigger thing on
+// screen than the roll it toggles.
+.stageButtonOn {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.26);
 }

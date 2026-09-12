@@ -8,6 +8,11 @@ type Query {
   # remocon's lyrics panel. Null until the TV has parsed this song's telop
   # (JOYSOUND songs only; nothing else has timed lyrics to mirror).
   currentSongTelop: SongTelop
+  # The current song's piano roll exactly as the big screen laid it out, for
+  # the remocon's lyrics panel to draw the same one. Null until the TV has
+  # published it (it does so as the song starts, and again whenever the key
+  # changes).
+  currentSongPianoRoll: SongPianoRoll
   # Where the big screen's player is: the latest position it reported, and
   # when. Null while nothing is playing.
   playbackClock: PlaybackClock
@@ -244,6 +249,13 @@ type Mutation {
   # Called by the renderer with the current song's telop layout, every time it
   # (re)parses one. Ignored unless songKey is the current song's.
   publishSongTelop(input: SongTelopInput!): Boolean!
+  # Called by the renderer once per song (and on every key change) with the
+  # roll it is about to draw.
+  publishSongPianoRoll(input: SongPianoRollInput!): Boolean!
+  # Called by the renderer ~10x a second with the sung-pitch samples it just
+  # plotted. Returns whether anyone is actually listening, which is the
+  # renderer's cue to keep streaming rather than drop back to a slow probe.
+  publishPitchTrace(input: PitchTraceInput!): Boolean!
   # Called by the renderer on every play/pause/seek/stall and on a heartbeat.
   # Ignored unless songKey is the current song's.
   reportPlaybackClock(input: PlaybackClockInput!): Boolean!
@@ -336,6 +348,11 @@ type Subscription {
   # toggle) a layout. Select songKey only; the layout itself is fetched with
   # currentSongTelop by the phones that are actually showing lyrics.
   currentSongTelopChanged: SongTelop
+  currentSongPianoRollChanged: SongPianoRoll
+  # The big screen's live sung-pitch trail. Unlike the trio above there is no
+  # query beside it: a phone that joins mid-song simply starts drawing from
+  # the next batch.
+  pitchTraceChanged: PitchTrace!
   emote: Emote!
   guideMelodyVolumeChanged: Float!
   joysoundRomajiWordSegmentationChanged: Boolean!
@@ -379,6 +396,56 @@ type SongTelop {
 input SongTelopInput {
   songKey: String!
   layout: String
+}
+
+# The current song's piano roll as the big screen laid it out. Keyed like
+# SongTelop, and for the same reason.
+type SongPianoRoll {
+  songKey: String!
+  # JSON, a PianoRollLayout (common/pianoRoll/layout.ts): the guide melody
+  # notes with the song's key shift already applied, the free-time bands, and
+  # the vertical window they were laid out in. Null when the song has no
+  # guide melody to draw.
+  layout: String
+  # How many mics the big screen is drawing trails for, so the phone gives
+  # each one the same colour the TV does.
+  micCount: Int!
+}
+
+input SongPianoRollInput {
+  songKey: String!
+  layout: String
+  micCount: Int!
+}
+
+# A batch of sung-pitch samples the big screen just plotted.
+type PitchTrace {
+  songKey: String!
+  # Bumped whenever the big screen clears its own trails (it does so on every
+  # seek). A phone whose generation differs clears before appending, so it
+  # can't stitch a pre-seek trail onto a post-seek one.
+  generation: Int!
+  mics: [PitchTraceMic!]!
+}
+
+type PitchTraceMic {
+  index: Int!
+  # Interleaved [timeSecs, midiValue, ...]. The values are the ones the big
+  # screen drew: already octave-folded onto the guide melody and key-shifted,
+  # so a phone joining mid-song doesn't have to re-converge an octave of its
+  # own.
+  samples: [Float!]!
+}
+
+input PitchTraceInput {
+  songKey: String!
+  generation: Int!
+  mics: [PitchTraceMicInput!]!
+}
+
+input PitchTraceMicInput {
+  index: Int!
+  samples: [Float!]!
 }
 
 type PlaybackClock {
