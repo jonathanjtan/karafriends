@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
 interface Props extends React.InputHTMLAttributes<HTMLInputElement> {
   period: number;
@@ -6,6 +6,9 @@ interface Props extends React.InputHTMLAttributes<HTMLInputElement> {
 
 const DebouncedInput = ({ period, onChange, ...props }: Props) => {
   const timeout = useRef(0);
+
+  useEffect(() => () => clearTimeout(timeout.current), []);
+
   const handleChange = onChange
     ? (e: React.ChangeEvent<HTMLInputElement>) => {
         clearTimeout(timeout.current);

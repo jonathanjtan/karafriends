@@ -23,8 +23,7 @@ function resetKeysChanged(
 
 // Catches errors thrown while rendering lazy-loaded Relay queries (a rejected
 // `useLazyLoadQuery` re-throws after Suspense resolves) and renders an inline
-// message instead of letting the throw unmount all of `<App>`, which used to
-// whitescreen the whole remocon on any failed search or unreachable service.
+// message instead of letting the throw unmount all of `<App>`.
 class QueryErrorBoundary extends React.Component<Props, State> {
   state: State = { error: null };
 

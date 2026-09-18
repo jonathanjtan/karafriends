@@ -135,6 +135,7 @@ export default function SettingRow(props: {
           <div className={styles.breakRow}>
             <button
               className={styles.segment}
+              aria-label="Decrease break length"
               onClick={settings.break.decrement}
             >
               −
@@ -149,6 +150,7 @@ export default function SettingRow(props: {
             </button>
             <button
               className={styles.segment}
+              aria-label="Increase break length"
               onClick={settings.break.increment}
             >
               +

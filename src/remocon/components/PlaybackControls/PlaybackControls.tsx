@@ -34,9 +34,6 @@ const PlaybackControls = () => {
   }
 
   const disabled = !isPlaybackControllable || !isUserEntitled;
-  console.log(
-    `isPlaybackControllable=${isPlaybackControllable}, isUserEntitled=${isUserEntitled}, disabled=${disabled}`,
-  );
 
   return (
     <>

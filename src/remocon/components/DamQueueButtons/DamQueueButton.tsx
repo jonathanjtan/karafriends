@@ -74,7 +74,7 @@ const DamQueueButton = ({
   useEffect(() => {
     const timeout = setTimeout(() => setText(defaultText), 2500);
     return () => clearTimeout(timeout);
-  });
+  }, [text, defaultText]);
 
   const { processing, displayText } = useProcessingLabel(text, defaultText);
 

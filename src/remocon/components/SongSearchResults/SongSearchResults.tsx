@@ -57,9 +57,25 @@ interface Props {
   initialSource?: SearchSource | null;
 }
 
+// The query is only known once something has been typed. Bailing out here
+// rather than inside the hook-calling component below keeps every render of
+// that component calling the same hooks in the same order: this wrapper
+// either renders nothing (no hooks of its own) or mounts a fresh instance of
+// it, rather than the same instance skipping hooks on some renders.
 const SongSearchResults = ({ query, initialSource = null }: Props) => {
   if (!query) return null;
+  return (
+    <SongSearchResultsForQuery query={query} initialSource={initialSource} />
+  );
+};
 
+const SongSearchResultsForQuery = ({
+  query,
+  initialSource,
+}: {
+  query: string;
+  initialSource: SearchSource | null;
+}) => {
   const [source, setSource] = useState<SearchSource | null>(initialSource);
 
   const queryData = useLazyLoadQuery<SongSearchResultsViewQuery>(

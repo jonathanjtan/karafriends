@@ -4,6 +4,7 @@ import { Link } from "react-router";
 
 import { midiToNoteName } from "../../../common/tuningExercise";
 import useUserIdentity from "../../hooks/useUserIdentity";
+import { withLoader } from "../Loader";
 import * as styles from "./VocalRangeCard.module.scss";
 import { VocalRangeCardQuery } from "./__generated__/VocalRangeCardQuery.graphql";
 
@@ -102,4 +103,4 @@ const VocalRangeCard = () => {
   );
 };
 
-export default VocalRangeCard;
+export default withLoader(VocalRangeCard);

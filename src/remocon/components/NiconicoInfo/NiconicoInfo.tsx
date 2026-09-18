@@ -38,7 +38,7 @@ const NiconicoInfo = ({ videoId }: Props) => {
 
   const videoData = useLazyLoadQuery<NiconicoInfoVideoInfoQuery>(
     niconicoInfoVideoInfoQuery,
-    { videoId }
+    { videoId },
   );
 
   return (
@@ -51,8 +51,15 @@ const NiconicoInfo = ({ videoId }: Props) => {
       )}
       {videoData.nicoVideoInfo.__typename === "NicoVideoInfo" && (
         <>
-          <a href={`https://www.nicovideo.jp/watch/${videoId}`} target="_blank">
-            <img src={videoData.nicoVideoInfo.thumbnailUrl} />
+          <a
+            href={`https://www.nicovideo.jp/watch/${videoId}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <img
+              src={videoData.nicoVideoInfo.thumbnailUrl}
+              alt={videoData.nicoVideoInfo.title}
+            />
           </a>
           <VideoMetadata
             videoSource="niconico"

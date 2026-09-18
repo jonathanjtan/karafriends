@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { graphql, useLazyLoadQuery, useMutation } from "react-relay";
 import { useNavigate } from "react-router";
 import invariant from "ts-invariant";
@@ -53,13 +53,18 @@ function AdhocLyricsControls({ id }: Props) {
     adhocLyricsControlsPushLyricsMutation,
   );
 
-  if (
+  const noLyrics =
     !adhocLyrics?.length ||
     (currentSong !== undefined &&
-      !isYouTubeVideoWithLyricsPlaying(currentSong, id, nickname))
-  ) {
-    navigate("/");
+      !isYouTubeVideoWithLyricsPlaying(currentSong, id, nickname));
 
+  // Navigating away belongs in an effect rather than directly in the render
+  // body, which would update the router while this component is rendering.
+  useEffect(() => {
+    if (noLyrics) navigate("/");
+  }, [noLyrics, navigate]);
+
+  if (noLyrics) {
     return (
       <div className={styles.noLyrics}>
         Cannot find lyrics for the song with ID: {id}

@@ -29,9 +29,17 @@ interface Props {
   query: string | null;
 }
 
+// The query is only known once something has been typed. Bailing out here
+// rather than inside the hook-calling component below keeps every render of
+// that component calling the same hooks in the same order: this wrapper
+// either renders nothing (no hooks of its own) or mounts a fresh instance of
+// it, rather than the same instance skipping hooks on some renders.
 const KaraokeChannelSearchResults = ({ query }: Props) => {
   if (!query) return null;
+  return <KaraokeChannelSearchResultsForQuery query={query} />;
+};
 
+const KaraokeChannelSearchResultsForQuery = ({ query }: { query: string }) => {
   // Bumping this re-issues the query; a channel that didn't answer is the
   // only reason to, so the retry goes straight past the store.
   const [retryKey, setRetryKey] = useState(0);
