@@ -5,7 +5,7 @@
 // PianoRoll.tsx, from live mic pitch) and on the phone inside the remocon's
 // lyrics panel (from the TV's mirrored trace). Same reasoning as
 // common/telopLayout.ts: change how the roll is laid out only in here, or the
-// phone quietly stops matching the TV.
+// phone stops matching the TV.
 
 import Spline from "cubic-spline";
 import vec from "gl-vec2";
@@ -54,7 +54,7 @@ export function quadToTriangles(
        |     \    |
     (x0, y1) - (x1, y1)
 
-    GL makes us list triangles in counter-clockwise order
+    GL requires triangles listed in counter-clockwise order
   */
   return [x0, y0, x0, y1, x1, y1, x0, y0, x1, y1, x1, y0];
 }
@@ -101,8 +101,8 @@ export function midiNumberToYCoord(
   medianMidiNumber: number,
   spanSemis: number = DEFAULT_SPAN_SEMIS,
 ) {
-  // Positions correspond to the center of a bar or in-between two bars. If
-  // we're at the median MIDI number, we should be dead-center.
+  // Positions correspond to the center of a bar or in-between two bars. The
+  // median MIDI number sits dead-center.
   return 0.5 + (midiNumber - medianMidiNumber) / spanSemis;
 }
 
@@ -217,8 +217,8 @@ export class PitchDetectionBuffer {
         );
       }
 
-      // If we don't have 3 points to create a spline with, or the time/pitch gap
-      // between points is too large, just draw the current point as is.
+      // Without 3 points to spline, or too large a time/pitch gap between
+      // points, draw the current point as is.
       if (!timeGap || !pitchGap || timeGap > 0.06 || pitchGap > 7) {
         const pitchPoint = quadToTriangles(
           this.buffer[lastIndex].time - 0.025,

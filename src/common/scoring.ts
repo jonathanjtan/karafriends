@@ -16,7 +16,7 @@ import { ScoringInterval, ScoringNote } from "./scoringData";
 // the axis weights, DISPLAY_CURVE, BAND_THRESHOLDS, or how any axis is
 // computed. Persisted score records carry it (see main/scores.ts), so a
 // personal best from an older formula can be shown with that caveat, or
-// filtered out, rather than quietly competing with numbers it was never on the
+// filtered out, rather than competing with numbers it was never on the
 // same scale as.
 //
 // 1: pitch/longTone/timing on a display curve, fitted to the 54-take corpus.
@@ -291,8 +291,8 @@ export function fitCompensation(
   // The plateau midpoint is normally the stable estimate, but it is not
   // guaranteed to beat the seed on a lumpy surface. Since pitchScore is the
   // criterion *and* the headline's leading axis, refusing a fit that would
-  // score worse than the seed makes "we scored you at the offset that suited
-  // you" unconditionally true.
+  // score worse than the seed guarantees a take is never scored below what
+  // the seed compensation would have given it.
   const seedScore = pitchScore(notes, placeSamples(notes, samples, seedMs));
   const fittedScore = pitchScore(notes, placeSamples(notes, samples, fitted));
   return fittedScore >= seedScore ? fitted : seedMs;
@@ -928,9 +928,10 @@ export class ScoreAccumulator {
     // renormalized away. Renormalizing made a song with no held notes
     // systematically easier, because long tone is the axis singers score
     // lowest on. The first draft handed 言って。 and Bad Apple!! straight SS
-    // for the crime of being fast. Substituting pitch is the neutral choice;
-    // that it still leans the headline on pitch is why ScoreResult reports the
-    // gap for the card to show.
+    // simply for being fast songs with no held notes to lose points on.
+    // Substituting pitch is the neutral choice; that it still leans the
+    // headline on pitch is why ScoreResult reports the gap for the card to
+    // show.
     const axis = (value: number | null) => (value === null ? pitch : value);
     // Timing gets the same treatment by degree rather than all-or-nothing: how
     // many onsets a song offers is a property of the song, not the singer, and

@@ -64,7 +64,7 @@ export interface TargetOutcome {
 export interface VocalRangeResult {
   version: number;
   // Null throughout when the exercise produced nothing usable: an empty room,
-  // a muted mic. A null range is reported as "we couldn't hear you", never as a
+  // a muted mic. A null range is reported as "couldn't hear you", never as a
   // range of zero.
   lowMidi: number | null;
   highMidi: number | null;
@@ -255,7 +255,8 @@ export interface SongRange {
   // count of note time inside a band, which needs the note list. Shipping or
   // re-fetching that per song is out of the question (a DAM blob is a network
   // call, a JOYSOUND melody is an 8s extraction), but the histogram answers all
-  // of them exactly, compresses ~400 notes into ~40 pairs, and caches happily.
+  // of them exactly, compresses ~400 notes into ~40 pairs, and is cheap to
+  // cache.
   histogram: ReadonlyArray<readonly [number, number]>;
 }
 
@@ -285,7 +286,7 @@ function weightedPercentile(
 // JOYSOUND's own guide synth caps its register, playing the top note or two of a
 // song an octave below the rest of the melody (~9% of notes in validation,
 // see the header of guideMelody.ts), and that is a property of JOYSOUND's audio,
-// not of our tracker. Absolute min/max is precisely the statistic those notes
+// not of the tracker. Absolute min/max is precisely the statistic those notes
 // poison; a percentile shrugs them off. The absolute bounds are reported too,
 // but nothing decides anything on them.
 export function songRangeFromScoringData(
@@ -384,8 +385,8 @@ function comfortableFraction(
   return total > 0 ? inside / total : 0;
 }
 
-// At or above this much of the song inside the band, the song is a nice fit and
-// we say so. Below it we simply say nothing. There is no "bad fit" state.
+// At or above this much of the song inside the band, the song is marked a
+// nice fit. Below it, nothing is said. There is no "bad fit" state.
 //
 // Fitted against the 54 cached melodies rather than chosen by taste, and only
 // meaningful *after* octave normalisation (before it, real songs sat 1-2 octaves
@@ -419,8 +420,8 @@ export interface KeyShiftSuggestion {
   comfortableFractionAtZero: number;
 }
 
-// The positive-only marker: is this song already a nice fit, in the octave the
-// singer would naturally take it in?
+// The positive-only marker: whether this song is already a nice fit, in the
+// octave the singer would naturally take it in.
 export function sitsComfortably(
   histogram: PitchHistogram,
   band: SingerBand,
@@ -433,10 +434,10 @@ export function sitsComfortably(
 // A kinder key, or null.
 //
 // Null is the common and correct answer: the song already fits, or no shift
-// meaningfully helps, or we have no measurement. The caller shows nothing at
-// all in that case: never a warning, never a "this is a stretch". A returned
-// suggestion is an offer that sits *beside* the normal queue button, never in
-// place of it.
+// meaningfully helps, or there is no measurement at all. The caller shows
+// nothing at all in that case: never a warning, never a "this is a stretch".
+// A returned suggestion is an offer that sits *beside* the normal queue
+// button, never in place of it.
 export function suggestKeyShift(
   histogram: PitchHistogram,
   band: SingerBand,

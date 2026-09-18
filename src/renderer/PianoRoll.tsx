@@ -267,8 +267,9 @@ export default function PianoRoll(props: {
         // amplitude away), so the gate is a level test instead, with
         // hysteresis and a hold so that a dip inside a phrase doesn't punch a
         // hole through the middle of a note (see MicGate). rms is undefined
-        // when the addon behind us predates it (Parcel can reuse a cached
-        // index.node); the gate is then inert rather than gating everything.
+        // when the native addon predates the rms field (Parcel can reuse a
+        // cached index.node); the gate is then inert rather than gating
+        // everything.
         let gateOpen: boolean;
         if (!micRmsGateEnabledRef.current || typeof rms !== "number") {
           // Reset rather than merely skip, so that switching the gate off and

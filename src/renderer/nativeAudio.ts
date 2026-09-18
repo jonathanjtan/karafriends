@@ -28,7 +28,7 @@ export class InputDevice {
   // being mixed through an external mixer instead.
   //
   // The addon can be older than the JS that calls it: `parcel watch` only
-  // rebuilds the remocon and renderer targets, and Parcel will happily reuse a
+  // rebuilds the remocon and renderer targets, and Parcel can reuse a
   // cached copy of index.node under build/dev while rebuilding the preload
   // bundle around it. This is a comfort toggle, and an inert one beats an
   // uncaught throw, which takes <App> (and with it the whole big screen) down

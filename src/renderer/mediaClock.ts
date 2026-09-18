@@ -17,8 +17,8 @@
 //
 // This is for DRAWING ONLY. Pitch samples are still stamped with the raw
 // `currentTime` (see PianoRoll's pollPitch): the mic-latency calibration was
-// measured through that path, and quietly re-basing it on a smoothed clock
-// would shift a number that was tuned by ear against a real room.
+// measured through that path, and re-basing it on a smoothed clock would
+// shift a number that was tuned by ear against a real room.
 
 // Past this the media clock has genuinely moved rather than jittered: a seek, a
 // stall, a loop, or the first frame after play. Snap to it instead of slewing,

@@ -39,14 +39,14 @@ class OLAProcessor extends AudioWorkletProcessor {
     this.inputBuffers = new Array(this.nbInputs);
     this.inputBuffersHead = new Array(this.nbInputs);
     this.inputBuffersToSend = new Array(this.nbInputs);
-    // default to 1 channel per input until we know more
+    // Default to 1 channel per input; corrected once the real count is known.
     for (let i = 0; i < this.nbInputs; i++) {
       this.allocateInputChannels(i, 1);
     }
     // pre-allocate input buffers (will be reallocated if needed)
     this.outputBuffers = new Array(this.nbOutputs);
     this.outputBuffersToRetrieve = new Array(this.nbOutputs);
-    // default to 1 channel per output until we know more
+    // Default to 1 channel per output; corrected once the real count is known.
     for (let i = 0; i < this.nbOutputs; i++) {
       this.allocateOutputChannels(i, 1);
     }
@@ -57,7 +57,7 @@ class OLAProcessor extends AudioWorkletProcessor {
    */
   reallocateChannelsIfNeeded(
     inputs: Float32Array[][],
-    outputs: Float32Array[][]
+    outputs: Float32Array[][],
   ) {
     for (let i = 0; i < this.nbInputs; i++) {
       const nbChannels = inputs[i].length;
@@ -80,7 +80,7 @@ class OLAProcessor extends AudioWorkletProcessor {
     this.inputBuffers[inputIndex] = new Array(nbChannels);
     for (let i = 0; i < nbChannels; i++) {
       this.inputBuffers[inputIndex][i] = new Float32Array(
-        this.blockSize + WEBAUDIO_BLOCK_SIZE
+        this.blockSize + WEBAUDIO_BLOCK_SIZE,
       );
       this.inputBuffers[inputIndex][i].fill(0);
     }
@@ -110,7 +110,7 @@ class OLAProcessor extends AudioWorkletProcessor {
     this.outputBuffersToRetrieve[outputIndex] = new Array(nbChannels);
     for (let i = 0; i < nbChannels; i++) {
       this.outputBuffersToRetrieve[outputIndex][i] = new Float32Array(
-        this.blockSize
+        this.blockSize,
       );
       this.outputBuffersToRetrieve[outputIndex][i].fill(0);
     }
@@ -120,7 +120,7 @@ class OLAProcessor extends AudioWorkletProcessor {
    * Read next web audio block to input buffers
    */
   readInputs(inputs: Float32Array[][]) {
-    // when playback is paused, we may stop receiving new samples
+    // Paused playback may stop delivering new samples.
     if (inputs[0].length && inputs[0][0].length === 0) {
       for (let i = 0; i < this.nbInputs; i++) {
         for (const buffer of this.inputBuffers[i]) {
@@ -146,7 +146,7 @@ class OLAProcessor extends AudioWorkletProcessor {
       for (let j = 0; j < this.inputBuffers[i].length; j++) {
         const webAudioBlock = this.outputBuffers[i][j].subarray(
           0,
-          WEBAUDIO_BLOCK_SIZE
+          WEBAUDIO_BLOCK_SIZE,
         );
         outputs[i][j].set(webAudioBlock);
       }
@@ -210,7 +210,7 @@ class OLAProcessor extends AudioWorkletProcessor {
     this.processOLA(
       this.inputBuffersToSend,
       this.outputBuffersToRetrieve,
-      params
+      params,
     );
     this.handleOutputBuffersToRetrieve();
     this.writeOutputs(outputs);
@@ -280,7 +280,7 @@ class PhaseVocoderProcessor extends OLAProcessor {
   processOLA(
     inputs: Float32Array[][],
     outputs: Float32Array[][],
-    parameters: any
+    parameters: any,
   ) {
     // no automation, take last value
     const pitchFactor =
@@ -303,7 +303,7 @@ class PhaseVocoderProcessor extends OLAProcessor {
         this.fft.completeSpectrum(this.freqComplexBufferShifted);
         this.fft.inverseTransform(
           this.timeComplexBuffer,
-          this.freqComplexBufferShifted
+          this.freqComplexBufferShifted,
         );
         this.fft.fromComplexArray(this.timeComplexBuffer, output);
 

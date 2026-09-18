@@ -220,7 +220,10 @@ export default function NoteRibbon(props: {
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [props]);
+    // result/breaks specifically, not `props` wholesale: the parent creates a
+    // fresh props object on every render (e.g. the card's hide/fade toggle),
+    // which would otherwise redraw the whole ribbon canvas for no data change.
+  }, [props.result, props.breaks]);
 
   return <canvas className="scoreCardRibbon" ref={canvasRef} />;
 }
