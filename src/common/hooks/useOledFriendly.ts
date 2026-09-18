@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { graphql } from "react-relay";
 
-import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
-import fetchQueryWithRetry from "./fetchQueryWithRetry";
+import useSyncedServerValue from "./useSyncedServerValue";
 import { useOledFriendlyMutation } from "./__generated__/useOledFriendlyMutation.graphql";
 import { useOledFriendlyQuery } from "./__generated__/useOledFriendlyQuery.graphql";
 import { useOledFriendlySubscription } from "./__generated__/useOledFriendlySubscription.graphql";
@@ -35,59 +28,21 @@ const oledFriendlySubscription = graphql`
 // remocon can toggle it on the TV remotely. A discrete toggle, so commits go
 // out immediately (no debounce).
 export default function useOledFriendly() {
-  const [oledFriendly, setLocalOledFriendly] = useState(false);
-  const [commit] = useMutation<useOledFriendlyMutation>(oledFriendlyMutation);
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<useOledFriendlyQuery>(
-        environment,
-        oledFriendlyQuery,
-        {},
-      ).subscribe({
-        next: (response: useOledFriendlyQuery["response"]) =>
-          setLocalOledFriendly(response.oledFriendly),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-    const initialQuery = fetchQueryWithRetry<useOledFriendlyQuery>(
-      environment,
-      oledFriendlyQuery,
-      {},
-      (response) => setLocalOledFriendly(response.oledFriendly),
-    );
-
-    const subscription = requestSubscription<useOledFriendlySubscription>(
-      environment,
-      {
-        subscription: oledFriendlySubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response) setLocalOledFriendly(response.oledFriendlyChanged);
-        },
-      },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setOledFriendly = (value: boolean) => {
-    setLocalOledFriendly(value);
-    commit({ variables: { oledFriendly: value } });
-  };
+  const { value: oledFriendly, setValue: setOledFriendly } =
+    useSyncedServerValue<
+      useOledFriendlyQuery,
+      useOledFriendlyMutation,
+      useOledFriendlySubscription,
+      boolean
+    >({
+      query: oledFriendlyQuery,
+      getQueryValue: (response) => response.oledFriendly,
+      mutation: oledFriendlyMutation,
+      makeMutationVariables: (value) => ({ oledFriendly: value }),
+      subscription: oledFriendlySubscription,
+      getSubscriptionValue: (response) => response.oledFriendlyChanged,
+      defaultValue: false,
+    });
 
   return { oledFriendly, setOledFriendly };
 }

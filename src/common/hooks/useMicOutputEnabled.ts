@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { graphql } from "react-relay";
 
-import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
-import fetchQueryWithRetry from "./fetchQueryWithRetry";
+import useSyncedServerValue from "./useSyncedServerValue";
 import { useMicOutputEnabledMutation } from "./__generated__/useMicOutputEnabledMutation.graphql";
 import { useMicOutputEnabledQuery } from "./__generated__/useMicOutputEnabledQuery.graphql";
 import { useMicOutputEnabledSubscription } from "./__generated__/useMicOutputEnabledSubscription.graphql";
@@ -38,62 +31,21 @@ const micOutputEnabledSubscription = graphql`
 // useQueueIntermissionEnabled, this is a discrete toggle, so commits go out
 // immediately (no debounce).
 export default function useMicOutputEnabled() {
-  const [micOutputEnabled, setLocalMicOutputEnabled] = useState(true);
-  const [commit] = useMutation<useMicOutputEnabledMutation>(
-    micOutputEnabledMutation,
-  );
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<useMicOutputEnabledQuery>(
-        environment,
-        micOutputEnabledQuery,
-        {},
-      ).subscribe({
-        next: (response: useMicOutputEnabledQuery["response"]) =>
-          setLocalMicOutputEnabled(response.micOutputEnabled),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-    const initialQuery = fetchQueryWithRetry<useMicOutputEnabledQuery>(
-      environment,
-      micOutputEnabledQuery,
-      {},
-      (response) => setLocalMicOutputEnabled(response.micOutputEnabled),
-    );
-
-    const subscription = requestSubscription<useMicOutputEnabledSubscription>(
-      environment,
-      {
-        subscription: micOutputEnabledSubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response)
-            setLocalMicOutputEnabled(response.micOutputEnabledChanged);
-        },
-      },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setMicOutputEnabled = (enabled: boolean) => {
-    setLocalMicOutputEnabled(enabled);
-    commit({ variables: { enabled } });
-  };
+  const { value: micOutputEnabled, setValue: setMicOutputEnabled } =
+    useSyncedServerValue<
+      useMicOutputEnabledQuery,
+      useMicOutputEnabledMutation,
+      useMicOutputEnabledSubscription,
+      boolean
+    >({
+      query: micOutputEnabledQuery,
+      getQueryValue: (response) => response.micOutputEnabled,
+      mutation: micOutputEnabledMutation,
+      makeMutationVariables: (enabled) => ({ enabled }),
+      subscription: micOutputEnabledSubscription,
+      getSubscriptionValue: (response) => response.micOutputEnabledChanged,
+      defaultValue: true,
+    });
 
   return { micOutputEnabled, setMicOutputEnabled };
 }

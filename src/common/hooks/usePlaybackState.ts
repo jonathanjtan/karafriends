@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { graphql } from "react-relay";
 
-import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
-import fetchQueryWithRetry from "./fetchQueryWithRetry";
+import useSyncedServerValue from "./useSyncedServerValue";
 import { usePlaybackStateMutation } from "./__generated__/usePlaybackStateMutation.graphql";
 import { usePlaybackStateQuery } from "./__generated__/usePlaybackStateQuery.graphql";
 import { usePlaybackStateSubscription } from "./__generated__/usePlaybackStateSubscription.graphql";
@@ -33,59 +26,23 @@ const playbackStateSubscription = graphql`
 type StateType = usePlaybackStateQuery["response"]["playbackState"];
 
 export default function usePlaybackState() {
-  const [playbackState, setLocalPlaybackState] = useState<StateType>("WAITING");
-  const [commit] = useMutation<usePlaybackStateMutation>(playbackStateMutation);
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<usePlaybackStateQuery>(
-        environment,
-        playbackStateQuery,
-        {},
-      ).subscribe({
-        next: (response: usePlaybackStateQuery["response"]) =>
-          setLocalPlaybackState(response.playbackState),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-    const initialQuery = fetchQueryWithRetry<usePlaybackStateQuery>(
-      environment,
-      playbackStateQuery,
-      {},
-      (response) => setLocalPlaybackState(response.playbackState),
-    );
-
-    const subscription = requestSubscription<usePlaybackStateSubscription>(
-      environment,
-      {
-        subscription: playbackStateSubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response) setLocalPlaybackState(response.playbackStateChanged);
-        },
-      },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setPlaybackState = (nextPlaybackState: StateType) => {
-    setLocalPlaybackState(nextPlaybackState);
-    commit({ variables: { playbackState: nextPlaybackState } });
-  };
+  const { value: playbackState, setValue: setPlaybackState } =
+    useSyncedServerValue<
+      usePlaybackStateQuery,
+      usePlaybackStateMutation,
+      usePlaybackStateSubscription,
+      StateType
+    >({
+      query: playbackStateQuery,
+      getQueryValue: (response) => response.playbackState,
+      mutation: playbackStateMutation,
+      makeMutationVariables: (nextPlaybackState) => ({
+        playbackState: nextPlaybackState,
+      }),
+      subscription: playbackStateSubscription,
+      getSubscriptionValue: (response) => response.playbackStateChanged,
+      defaultValue: "WAITING",
+    });
 
   return { playbackState, setPlaybackState };
 }

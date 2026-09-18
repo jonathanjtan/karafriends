@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { graphql } from "react-relay";
 
-import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
-import fetchQueryWithRetry from "./fetchQueryWithRetry";
+import useSyncedServerValue from "./useSyncedServerValue";
 import { useMicRmsGateEnabledMutation } from "./__generated__/useMicRmsGateEnabledMutation.graphql";
 import { useMicRmsGateEnabledQuery } from "./__generated__/useMicRmsGateEnabledQuery.graphql";
 import { useMicRmsGateEnabledSubscription } from "./__generated__/useMicRmsGateEnabledSubscription.graphql";
@@ -38,62 +31,21 @@ const micRmsGateEnabledSubscription = graphql`
 // Defaults to off (the historical behavior). Like useMicOutputEnabled, this
 // is a discrete toggle, so commits go out immediately (no debounce).
 export default function useMicRmsGateEnabled() {
-  const [micRmsGateEnabled, setLocalMicRmsGateEnabled] = useState(false);
-  const [commit] = useMutation<useMicRmsGateEnabledMutation>(
-    micRmsGateEnabledMutation,
-  );
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<useMicRmsGateEnabledQuery>(
-        environment,
-        micRmsGateEnabledQuery,
-        {},
-      ).subscribe({
-        next: (response: useMicRmsGateEnabledQuery["response"]) =>
-          setLocalMicRmsGateEnabled(response.micRmsGateEnabled),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-    const initialQuery = fetchQueryWithRetry<useMicRmsGateEnabledQuery>(
-      environment,
-      micRmsGateEnabledQuery,
-      {},
-      (response) => setLocalMicRmsGateEnabled(response.micRmsGateEnabled),
-    );
-
-    const subscription = requestSubscription<useMicRmsGateEnabledSubscription>(
-      environment,
-      {
-        subscription: micRmsGateEnabledSubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response)
-            setLocalMicRmsGateEnabled(response.micRmsGateEnabledChanged);
-        },
-      },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setMicRmsGateEnabled = (enabled: boolean) => {
-    setLocalMicRmsGateEnabled(enabled);
-    commit({ variables: { enabled } });
-  };
+  const { value: micRmsGateEnabled, setValue: setMicRmsGateEnabled } =
+    useSyncedServerValue<
+      useMicRmsGateEnabledQuery,
+      useMicRmsGateEnabledMutation,
+      useMicRmsGateEnabledSubscription,
+      boolean
+    >({
+      query: micRmsGateEnabledQuery,
+      getQueryValue: (response) => response.micRmsGateEnabled,
+      mutation: micRmsGateEnabledMutation,
+      makeMutationVariables: (enabled) => ({ enabled }),
+      subscription: micRmsGateEnabledSubscription,
+      getSubscriptionValue: (response) => response.micRmsGateEnabledChanged,
+      defaultValue: false,
+    });
 
   return { micRmsGateEnabled, setMicRmsGateEnabled };
 }

@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { graphql } from "react-relay";
 
-import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
-import fetchQueryWithRetry from "./fetchQueryWithRetry";
+import useSyncedServerValue from "./useSyncedServerValue";
 import { useQueueIntermissionEnabledMutation } from "./__generated__/useQueueIntermissionEnabledMutation.graphql";
 import { useQueueIntermissionEnabledQuery } from "./__generated__/useQueueIntermissionEnabledQuery.graphql";
 import { useQueueIntermissionEnabledSubscription } from "./__generated__/useQueueIntermissionEnabledSubscription.graphql";
@@ -36,67 +29,24 @@ const queueIntermissionEnabledSubscription = graphql`
 // renderer/remocon client. Like useSettingsCollapsed, this is a discrete
 // toggle, so commits go out immediately (no debounce).
 export default function useQueueIntermissionEnabled() {
-  const [queueIntermissionEnabled, setLocalQueueIntermissionEnabled] =
-    useState(false);
-  const [commit] = useMutation<useQueueIntermissionEnabledMutation>(
-    queueIntermissionEnabledMutation,
-  );
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<useQueueIntermissionEnabledQuery>(
-        environment,
-        queueIntermissionEnabledQuery,
-        {},
-      ).subscribe({
-        next: (response: useQueueIntermissionEnabledQuery["response"]) =>
-          setLocalQueueIntermissionEnabled(response.queueIntermissionEnabled),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-    const initialQuery = fetchQueryWithRetry<useQueueIntermissionEnabledQuery>(
-      environment,
-      queueIntermissionEnabledQuery,
-      {},
-      (response) =>
-        setLocalQueueIntermissionEnabled(response.queueIntermissionEnabled),
-    );
-
-    const subscription =
-      requestSubscription<useQueueIntermissionEnabledSubscription>(
-        environment,
-        {
-          subscription: queueIntermissionEnabledSubscription,
-          variables: {},
-          onNext: (response) => {
-            if (response)
-              setLocalQueueIntermissionEnabled(
-                response.queueIntermissionEnabledChanged,
-              );
-          },
-        },
-      );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setQueueIntermissionEnabled = (enabled: boolean) => {
-    setLocalQueueIntermissionEnabled(enabled);
-    commit({ variables: { enabled } });
-  };
+  const {
+    value: queueIntermissionEnabled,
+    setValue: setQueueIntermissionEnabled,
+  } = useSyncedServerValue<
+    useQueueIntermissionEnabledQuery,
+    useQueueIntermissionEnabledMutation,
+    useQueueIntermissionEnabledSubscription,
+    boolean
+  >({
+    query: queueIntermissionEnabledQuery,
+    getQueryValue: (response) => response.queueIntermissionEnabled,
+    mutation: queueIntermissionEnabledMutation,
+    makeMutationVariables: (enabled) => ({ enabled }),
+    subscription: queueIntermissionEnabledSubscription,
+    getSubscriptionValue: (response) =>
+      response.queueIntermissionEnabledChanged,
+    defaultValue: false,
+  });
 
   return { queueIntermissionEnabled, setQueueIntermissionEnabled };
 }

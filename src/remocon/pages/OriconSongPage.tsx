@@ -18,10 +18,9 @@ type OriconSongParams = {
 // rather than used to filter, because the three sources spell credits
 // differently ("WhiteFlame feat.初音ミク" vs the catalogs' own forms). A
 // strict artist match would hide real results, so the caller picks instead.
-// This used to be two per-service lists under two headings; the merged search
-// covers the same ground in one ranked list, and carries the same "one
-// service being unreachable still leaves the other usable" property in its
-// unavailableSources notice.
+// The merged search covers both catalogs in one ranked list, carrying the
+// "one service being unreachable still leaves the other usable" property
+// through its unavailableSources notice.
 const OriconSongPage = () => {
   const params = useParams<OriconSongParams>();
   const charted = params.query ? decodeURIComponent(params.query) : null;

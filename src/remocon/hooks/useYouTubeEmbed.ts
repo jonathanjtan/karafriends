@@ -52,10 +52,10 @@ export default function useYouTubeEmbed(
   > | null> = useRef(null);
   // Videos this device has actually failed to play. Keyed by id rather than a
   // single flag so switching back to an earlier pick doesn't re-embed a video
-  // we already know is broken here.
+  // already known to be broken here.
   const [blockedVideoIds, setBlockedVideoIds] = useState<readonly string[]>([]);
   // The error event says what went wrong but not which video it went wrong
-  // for, so track what we last handed the player.
+  // for, so track which one was last handed to the player.
   const loadedVideoIdRef = useRef<string>("");
 
   const blockVideoId = (id: string) =>

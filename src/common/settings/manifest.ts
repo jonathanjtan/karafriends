@@ -23,10 +23,7 @@ export type SettingSection =
   | "display"
   | "services";
 
-// Render order, and the one set of section names both surfaces use. The TV
-// used to say "Options" for what the remocon split into "Session Options" and
-// "Display Options"; scoring used to be filed under Microphone on the remocon
-// despite not being a mic setting.
+// Render order, and the one set of section names both surfaces use.
 export const SECTIONS: { id: SettingSection; label: string }[] = [
   // Holds no manifest entries. Each surface fills it with its own way of
   // answering "what address do people join on": the TV picks which of its
@@ -61,9 +58,8 @@ export type SettingsActions = Record<SettingActionId, SettingAction>;
 interface CommonDef {
   section: SettingSection;
   label: string;
-  // Rendered inline on both surfaces. The TV used to hide these in `title=`
-  // tooltips, which nobody hovers on a television. Pitch Gate, the setting
-  // most likely to be misconfigured, was one of them.
+  // Rendered inline on both surfaces: a `title=` tooltip doesn't work on a
+  // television that nobody hovers.
   hint?: string;
   surfaces?: Surface[];
   // Hides the row unless the predicate passes, e.g. Gate Threshold is

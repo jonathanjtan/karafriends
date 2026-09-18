@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { fetchQuery, graphql, requestSubscription } from "react-relay";
 
-import environment from "../../common/graphqlEnvironment";
+import environment, {
+  WS_RECONNECTED_EVENT,
+} from "../../common/graphqlEnvironment";
+import fetchQueryWithRetry from "../../common/hooks/fetchQueryWithRetry";
 import {
   useNowPlayingQuery,
   useNowPlayingQuery$data,
@@ -120,15 +123,14 @@ export default function useNowPlaying() {
     }
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
 
-    const initialQuery = fetchQuery<useNowPlayingQuery>(
+    const initialQuery = fetchQueryWithRetry<useNowPlayingQuery>(
       environment,
       nowPlayingQuery,
       {},
-    ).subscribe({
-      next: (response: useNowPlayingQuery$data) =>
-        setCurrentSong(response.currentSong),
-    });
+      (response) => setCurrentSong(response.currentSong),
+    );
 
     const subscription = requestSubscription<useNowPlayingSubscription>(
       environment,
@@ -142,6 +144,7 @@ export default function useNowPlaying() {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
       initialQuery.unsubscribe();
       subscription.dispose();
     };

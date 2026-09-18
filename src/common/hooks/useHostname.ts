@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { graphql } from "react-relay";
 
-import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
-import fetchQueryWithRetry from "./fetchQueryWithRetry";
+import useSyncedServerValue from "./useSyncedServerValue";
 import { useHostnameMutation } from "./__generated__/useHostnameMutation.graphql";
 import { useHostnameQuery } from "./__generated__/useHostnameQuery.graphql";
 import { useHostnameSubscription } from "./__generated__/useHostnameSubscription.graphql";
@@ -38,55 +31,20 @@ const hostnameSubscription = graphql`
 // bogus URL. Like useBgmTrack, a picker changes value at most once per
 // interaction, so commits go out immediately with no debounce.
 export default function useHostname() {
-  const [hostname, setLocalHostname] = useState("");
-  const [commit] = useMutation<useHostnameMutation>(hostnameMutation);
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<useHostnameQuery>(environment, hostnameQuery, {}).subscribe({
-        next: (response: useHostnameQuery["response"]) =>
-          setLocalHostname(response.hostname),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-    const initialQuery = fetchQueryWithRetry<useHostnameQuery>(
-      environment,
-      hostnameQuery,
-      {},
-      (response) => setLocalHostname(response.hostname),
-    );
-
-    const subscription = requestSubscription<useHostnameSubscription>(
-      environment,
-      {
-        subscription: hostnameSubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response) setLocalHostname(response.hostnameChanged);
-        },
-      },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setHostname = (next: string) => {
-    setLocalHostname(next);
-    commit({ variables: { hostname: next } });
-  };
+  const { value: hostname, setValue: setHostname } = useSyncedServerValue<
+    useHostnameQuery,
+    useHostnameMutation,
+    useHostnameSubscription,
+    string
+  >({
+    query: hostnameQuery,
+    getQueryValue: (response) => response.hostname,
+    mutation: hostnameMutation,
+    makeMutationVariables: (next) => ({ hostname: next }),
+    subscription: hostnameSubscription,
+    getSubscriptionValue: (response) => response.hostnameChanged,
+    defaultValue: "",
+  });
 
   return { hostname, setHostname };
 }

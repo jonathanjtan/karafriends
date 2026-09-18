@@ -64,7 +64,7 @@ const YouTubePage = () => {
   // already parsed out of the video title, and those are what should land in
   // the queue: "Mr. Brightside" by "The Killers", not "The Killers - Mr.
   // Brightside (Karaoke Version)". Pasting a different URL into the form
-  // below drops them: they described the video we navigated in with.
+  // below drops them: they described the video this page was opened with.
   const routedSong = location.state as {
     name?: string;
     artistName?: string;
@@ -89,15 +89,17 @@ const YouTubePage = () => {
     }
   };
 
-  if (
-    isYouTubeVideoWithLyricsPlaying(
-      currentSong,
-      videoId || params.videoId || "",
-      nickname,
-    )
-  ) {
-    navigate(`/adhocLyrics/${videoId || params.videoId || ""}`);
-  }
+  useEffect(() => {
+    if (
+      isYouTubeVideoWithLyricsPlaying(
+        currentSong,
+        videoId || params.videoId || "",
+        nickname,
+      )
+    ) {
+      navigate(`/adhocLyrics/${videoId || params.videoId || ""}`);
+    }
+  }, [currentSong, videoId, params.videoId, nickname, navigate]);
 
   return (
     <SearchFormWrapper>

@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { graphql } from "react-relay";
 
-import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
-import fetchQueryWithRetry from "./fetchQueryWithRetry";
+import useSyncedServerValue from "./useSyncedServerValue";
 import { useSidebarCollapsedMutation } from "./__generated__/useSidebarCollapsedMutation.graphql";
 import { useSidebarCollapsedQuery } from "./__generated__/useSidebarCollapsedQuery.graphql";
 import { useSidebarCollapsedSubscription } from "./__generated__/useSidebarCollapsedSubscription.graphql";
@@ -36,62 +29,21 @@ const sidebarCollapsedSubscription = graphql`
 // hide/show the TV's sidebar remotely. Like useSettingsCollapsed, this is a
 // discrete toggle, so commits go out immediately (no debounce).
 export default function useSidebarCollapsed() {
-  const [sidebarCollapsed, setLocalSidebarCollapsed] = useState(false);
-  const [commit] = useMutation<useSidebarCollapsedMutation>(
-    sidebarCollapsedMutation,
-  );
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<useSidebarCollapsedQuery>(
-        environment,
-        sidebarCollapsedQuery,
-        {},
-      ).subscribe({
-        next: (response: useSidebarCollapsedQuery["response"]) =>
-          setLocalSidebarCollapsed(response.sidebarCollapsed),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-    const initialQuery = fetchQueryWithRetry<useSidebarCollapsedQuery>(
-      environment,
-      sidebarCollapsedQuery,
-      {},
-      (response) => setLocalSidebarCollapsed(response.sidebarCollapsed),
-    );
-
-    const subscription = requestSubscription<useSidebarCollapsedSubscription>(
-      environment,
-      {
-        subscription: sidebarCollapsedSubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response)
-            setLocalSidebarCollapsed(response.sidebarCollapsedChanged);
-        },
-      },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setSidebarCollapsed = (collapsed: boolean) => {
-    setLocalSidebarCollapsed(collapsed);
-    commit({ variables: { collapsed } });
-  };
+  const { value: sidebarCollapsed, setValue: setSidebarCollapsed } =
+    useSyncedServerValue<
+      useSidebarCollapsedQuery,
+      useSidebarCollapsedMutation,
+      useSidebarCollapsedSubscription,
+      boolean
+    >({
+      query: sidebarCollapsedQuery,
+      getQueryValue: (response) => response.sidebarCollapsed,
+      mutation: sidebarCollapsedMutation,
+      makeMutationVariables: (collapsed) => ({ collapsed }),
+      subscription: sidebarCollapsedSubscription,
+      getSubscriptionValue: (response) => response.sidebarCollapsedChanged,
+      defaultValue: false,
+    });
 
   return { sidebarCollapsed, setSidebarCollapsed };
 }

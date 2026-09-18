@@ -1,13 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  fetchQuery,
-  graphql,
-  requestSubscription,
-  useMutation,
-} from "react-relay";
+import { graphql } from "react-relay";
 
-import environment, { WS_RECONNECTED_EVENT } from "../graphqlEnvironment";
-import fetchQueryWithRetry from "./fetchQueryWithRetry";
+import useSyncedServerValue from "./useSyncedServerValue";
 import { usePitchShiftSemisMutation } from "./__generated__/usePitchShiftSemisMutation.graphql";
 import { usePitchShiftSemisQuery } from "./__generated__/usePitchShiftSemisQuery.graphql";
 import { usePitchShiftSemisSubscription } from "./__generated__/usePitchShiftSemisSubscription.graphql";
@@ -33,62 +26,21 @@ const pitchShiftSemisSubscription = graphql`
 type StateType = usePitchShiftSemisQuery["response"]["pitchShiftSemis"];
 
 export default function usePitchShiftSemis() {
-  const [pitchShiftSemis, setLocalPitchShiftSemis] = useState<StateType>(0);
-  const [commit] = useMutation<usePitchShiftSemisMutation>(
-    pitchShiftSemisMutation,
-  );
-
-  useEffect(() => {
-    function handleVisibilityChange() {
-      if (document.hidden) {
-        return;
-      }
-
-      fetchQuery<usePitchShiftSemisQuery>(
-        environment,
-        pitchShiftSemisQuery,
-        {},
-      ).subscribe({
-        next: (response: usePitchShiftSemisQuery["response"]) =>
-          setLocalPitchShiftSemis(response.pitchShiftSemis),
-      });
-    }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-    const initialQuery = fetchQueryWithRetry<usePitchShiftSemisQuery>(
-      environment,
-      pitchShiftSemisQuery,
-      {},
-      (response) => setLocalPitchShiftSemis(response.pitchShiftSemis),
-    );
-
-    const subscription = requestSubscription<usePitchShiftSemisSubscription>(
-      environment,
-      {
-        subscription: pitchShiftSemisSubscription,
-        variables: {},
-        onNext: (response) => {
-          if (response)
-            setLocalPitchShiftSemis(response.pitchShiftSemisChanged);
-        },
-      },
-    );
-
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener(WS_RECONNECTED_EVENT, handleVisibilityChange);
-
-      initialQuery.unsubscribe();
-      subscription.dispose();
-    };
-  }, []);
-
-  const setPitchShiftSemis = (semis: StateType) => {
-    setLocalPitchShiftSemis(semis);
-    commit({ variables: { semis } });
-  };
+  const { value: pitchShiftSemis, setValue: setPitchShiftSemis } =
+    useSyncedServerValue<
+      usePitchShiftSemisQuery,
+      usePitchShiftSemisMutation,
+      usePitchShiftSemisSubscription,
+      StateType
+    >({
+      query: pitchShiftSemisQuery,
+      getQueryValue: (response) => response.pitchShiftSemis,
+      mutation: pitchShiftSemisMutation,
+      makeMutationVariables: (semis) => ({ semis }),
+      subscription: pitchShiftSemisSubscription,
+      getSubscriptionValue: (response) => response.pitchShiftSemisChanged,
+      defaultValue: 0,
+    });
 
   return { pitchShiftSemis, setPitchShiftSemis };
 }
