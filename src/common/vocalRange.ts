@@ -12,6 +12,7 @@
 
 import { SAMPLE_SLOT_MS, ScoreSample } from "./scoring";
 import { parseScoringData, ScoringNote } from "./scoringData";
+import { median } from "./stats";
 import { TuningPhase, TuningTarget } from "./tuningExercise";
 
 // Bump when a change here would make a stored range incomparable to a new one.
@@ -76,12 +77,6 @@ export interface VocalRangeResult {
   // lower or higher rather than presenting this as their limit.
   hitFloor: boolean;
   hitCeiling: boolean;
-}
-
-function median(values: number[]): number {
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 // Longest run of consecutive 25ms slots, in slots. Slots are absolute indices,

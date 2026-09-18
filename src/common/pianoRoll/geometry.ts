@@ -11,6 +11,8 @@ import Spline from "cubic-spline";
 import vec from "gl-vec2";
 import getNormals from "polyline-normals";
 
+import { median } from "../stats";
+
 // How many spline samples a three-estimate segment of the sung-pitch trail is
 // drawn with.
 export const PITCH_RESOLUTION = 8;
@@ -59,20 +61,8 @@ export function quadToTriangles(
   return [x0, y0, x0, y1, x1, y1, x0, y0, x1, y1, x1, y0];
 }
 
-export function median(nums: number[]) {
-  const numsSorted = [...nums];
-  // Numeric, not the default lexicographic sort: MIDI numbers happen to all be
-  // two digits for real songs, which is the only reason the bare sort() this
-  // replaces gave the right answer. A single value at 100 or above (or below
-  // 10) would have silently mis-centred the whole roll.
-  numsSorted.sort((a, b) => a - b);
-  const middleIndex = Math.floor(nums.length / 2);
-  if (nums.length % 2 === 0) {
-    return (numsSorted[middleIndex - 1] + numsSorted[middleIndex]) / 2;
-  } else {
-    return numsSorted[middleIndex];
-  }
-}
+// Shared with vocalRange.ts; see common/stats.ts for the implementation.
+export { median };
 
 // How tall a window this note set needs, in semitones. Never narrower than the
 // default, so songs are laid out exactly as they always were; wider only when
