@@ -115,7 +115,6 @@ export function decodeJoysoundText(
   switch (fontCode) {
     case 0:
       return decodeSJIS(charCode, flags);
-      break;
     case 1:
       return decodeEucKR(charCode);
       break;
@@ -180,6 +179,29 @@ function isKanjiUnicodeChar(unicodeChar: string) {
 // getTokenIndexByXPos.
 function isSpaceUnicodeChar(unicodeChar: string) {
   return unicodeChar === " " || unicodeChar === "　";
+}
+
+// Advances the (tokenizedLyricsIndex, tokenizedLyricsCharIndex) walk by one
+// character, rolling over to the next kuromoji token once the current one's
+// surface form is exhausted. Shared by every walk that steps tokenizedLyrics
+// in lockstep with a glyph loop (getMainRomajiBlocks, getTokenIndexByXPos,
+// getNonKanaRomajiBlocks).
+function advanceTokenPosition(
+  tokenizedLyrics: AnalyzerResult[],
+  tokenizedLyricsIndex: number,
+  tokenizedLyricsCharIndex: number,
+): [number, number] {
+  tokenizedLyricsCharIndex += 1;
+
+  if (
+    tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
+    tokenizedLyricsCharIndex
+  ) {
+    tokenizedLyricsIndex += 1;
+    tokenizedLyricsCharIndex = 0;
+  }
+
+  return [tokenizedLyricsIndex, tokenizedLyricsCharIndex];
 }
 
 function kanaReadingToRomaji(kanaReading: string) {
@@ -299,7 +321,6 @@ function getMainRomajiBlocks(
       currPhraseWidth = 0;
     }
 
-    // XXX: Welcome hell
     if (!isKanaUnicodeChar(unicodeChar) || unicodeChar === "・") {
       currXPos += currGlyph.width;
     } else {
@@ -349,15 +370,11 @@ function getMainRomajiBlocks(
       prevGlyph = currGlyph;
       prevGlyphTokenIndex = tokenizedLyricsIndex;
 
-      tokenizedLyricsCharIndex += 1;
-
-      if (
-        tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
-        tokenizedLyricsCharIndex
-      ) {
-        tokenizedLyricsIndex += 1;
-        tokenizedLyricsCharIndex = 0;
-      }
+      [tokenizedLyricsIndex, tokenizedLyricsCharIndex] = advanceTokenPosition(
+        tokenizedLyrics,
+        tokenizedLyricsIndex,
+        tokenizedLyricsCharIndex,
+      );
     }
   }
 
@@ -450,15 +467,11 @@ function getTokenIndexByXPos(
       continue;
     }
 
-    tokenizedLyricsCharIndex += 1;
-
-    if (
-      tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
-      tokenizedLyricsCharIndex
-    ) {
-      tokenizedLyricsIndex += 1;
-      tokenizedLyricsCharIndex = 0;
-    }
+    [tokenizedLyricsIndex, tokenizedLyricsCharIndex] = advanceTokenPosition(
+      tokenizedLyrics,
+      tokenizedLyricsIndex,
+      tokenizedLyricsCharIndex,
+    );
   }
 
   return xPosToTokenIndex;
@@ -541,7 +554,9 @@ function getNonKanaRomajiBlocks(
         tokenizedLyrics[tokenizedLyricsIndex].surface_form,
       )
     ) {
-      // XXX: This is a mega hack
+      // Sentinel marking this glyph as resolved via dictionary/kuroshiro
+      // lookup rather than a real furigana index (see the 6969 marker note
+      // in getTokenIndexByXPos).
       currGlyph.furiganaIndex = 6969;
       currPhrase += unicodeChar;
       currPhraseWidth += currGlyph.width;
@@ -565,15 +580,11 @@ function getNonKanaRomajiBlocks(
       currXPos += currGlyph.width;
     }
 
-    tokenizedLyricsCharIndex += 1;
-
-    if (
-      tokenizedLyrics[tokenizedLyricsIndex].surface_form.length ===
-      tokenizedLyricsCharIndex
-    ) {
-      tokenizedLyricsIndex += 1;
-      tokenizedLyricsCharIndex = 0;
-    }
+    [tokenizedLyricsIndex, tokenizedLyricsCharIndex] = advanceTokenPosition(
+      tokenizedLyrics,
+      tokenizedLyricsIndex,
+      tokenizedLyricsCharIndex,
+    );
   }
 
   if (currPhrase.length > 0) {
@@ -694,8 +705,8 @@ function mapCharsToFurigana(
   let currXPos = 0;
 
   for (const char of chars) {
-    // XXX: To map a character to furigana we assume the furigana must
-    //      cover at least 8 pixels
+    // A furigana annotation must cover at least 8 pixels of a character to
+    // count as mapping to it.
     let bestIntersection = 8;
     const unicodeChar = decodeJoysoundText(char.charCode, char.font);
 
@@ -827,11 +838,11 @@ async function parseLyricsBlock(
       wordSegmentation,
     );
     const furiganaRomaji = getFuriganaRomajiBlocks(furigana);
-    // XXX: For kanji without furigana and no kana (i.e. 空), we trust
-    //      dictionary.json and fallback to kuroshiro
+    // For kanji without furigana and no kana (i.e. 空), dictionary.json takes
+    // priority, falling back to kuroshiro.
     const nonKanaRomaji = getNonKanaRomajiBlocks(chars, tokenizedLyrics);
-    // XXX: For kanji without furigana and kana (i.e. 下げる), we trust
-    //      kuroshiro's okurigana format
+    // For kanji without furigana but with kana (i.e. 下げる), kuroshiro's
+    // okurigana format resolves the reading.
     const fillerRomaji = getFillerRomajiBlocks(chars, okuriganaLyrics);
 
     deleteOverwrittenFuriganaRomaji(chars, furiganaRomaji);
@@ -906,7 +917,6 @@ function parseJoy02Metadata(
 
   const currOffset = 0;
 
-  const musicType = metadataView.getUint16(currOffset, true);
   const musicNameOffset = metadataView.getUint16(currOffset + 2, true);
   const artistNameOffset = metadataView.getUint16(currOffset + 4, true);
   const lyricistNameOffset = metadataView.getUint16(currOffset + 6, true);
@@ -914,7 +924,6 @@ function parseJoy02Metadata(
   const musicNameReadingOffset = metadataView.getUint16(currOffset + 10, true);
   const artistNameReadingOffset = metadataView.getUint16(currOffset + 12, true);
   const jasracCodeOffset = metadataView.getUint16(currOffset + 14, true);
-  const musicDuration = metadataView.getUint16(currOffset + 18, true);
 
   const musicName = readSJISString(
     metadataView,

@@ -28,8 +28,6 @@ export const TELOP_TEXT_PADDING = 16;
 // it, or the phone's wipe runs 200ms ahead of the TV's.
 export const TELOP_TIMING_OFFSET_MS = -200;
 
-// XXX: RUBY_FONT_SIZE and RUBY_FONT_STROKE live in src/common/constants.ts for *reasons*
-
 const TITLE_FONT_SIZE = 48;
 const TITLE_FONT_STROKE = 4;
 

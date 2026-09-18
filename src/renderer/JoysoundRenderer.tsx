@@ -158,6 +158,14 @@ function quadToTriangles(
   return [x0, y0, x1, y0, x0, y1, x0, y1, x1, y0, x1, y1];
 }
 
+// Constant per-vertex attribute arrays reused across draw calls instead of
+// reallocated every frame: the title card, every break notice, and the
+// non-wiped half of every visible lyrics block all upload the same values.
+const ZERO_SCROLL_OFFSETS = new Float32Array(6);
+const PRE_SCROLL_TYPE = new Float32Array(6);
+const POST_SCROLL_TYPE = new Float32Array(6).fill(1.0);
+const FULL_TEX_COORDS = new Float32Array(quadToTriangles(0.0, 0.0, 1.0, 1.0));
+
 function createTextureFromImage(
   gl: WebGL2RenderingContext,
   bitmap: HTMLCanvasElement,
@@ -180,14 +188,16 @@ function createTextureFromImage(
   return texture;
 }
 
-function createTitleTexture(
+// Rasterizes one drawXToCanvas call into its own scratch canvas and uploads
+// the result as a GL texture, freeing the scratch canvas afterward.
+function createTextTexture(
   gl: WebGL2RenderingContext,
-  layout: TelopLayout,
+  draw: (textCtx: CanvasRenderingContext2D) => void,
 ): WebGLTexture {
   const textCtx = document.createElement("canvas").getContext("2d");
   invariant(textCtx);
 
-  drawTitleCard(textCtx, raster, layout.title, layout.isRomaji);
+  draw(textCtx);
 
   const result = createTextureFromImage(gl, textCtx.canvas);
 
@@ -196,23 +206,25 @@ function createTitleTexture(
   return result;
 }
 
+function createTitleTexture(
+  gl: WebGL2RenderingContext,
+  layout: TelopLayout,
+): WebGLTexture {
+  return createTextTexture(gl, (textCtx) =>
+    drawTitleCard(textCtx, raster, layout.title, layout.isRomaji),
+  );
+}
+
 function createBreakTexture(
   gl: WebGL2RenderingContext,
   approxDurationSecs: number,
 ): WebGLTexture {
-  const textCtx = document.createElement("canvas").getContext("2d");
-  invariant(textCtx);
-
   // Baked at yPos 0; the draw call shifts the quad to the live vertical
   // position (the piano roll band's center, which tracks the synced
   // pianoRollSize mid-song, or the bottom fallback).
-  drawBreakNotice(textCtx, raster, approxDurationSecs);
-
-  const result = createTextureFromImage(gl, textCtx.canvas);
-
-  textCtx.canvas.remove();
-
-  return result;
+  return createTextTexture(gl, (textCtx) =>
+    drawBreakNotice(textCtx, raster, approxDurationSecs),
+  );
 }
 
 function createLyricsBlockTextures(
@@ -261,8 +273,6 @@ function drawTitle(
   titleTexture: WebGLTexture,
   yOffset: number = 0,
 ): void {
-  const scrollArray = new Float32Array(Array(6).fill(0));
-
   const positions = quadToTriangles(
     0,
     yOffset,
@@ -270,7 +280,14 @@ function drawTitle(
     SCREEN_HEIGHT * raster.y + yOffset,
   );
 
-  drawLyricsTexture(gl, glBuffers, titleTexture, positions, scrollArray, false);
+  drawLyricsTexture(
+    gl,
+    glBuffers,
+    titleTexture,
+    positions,
+    ZERO_SCROLL_OFFSETS,
+    false,
+  );
 }
 
 function drawLyricsTexture(
@@ -284,17 +301,13 @@ function drawLyricsTexture(
   gl.bindBuffer(gl.ARRAY_BUFFER, glBuffers.scroll);
   gl.bufferData(gl.ARRAY_BUFFER, scrollArray, gl.STATIC_DRAW);
 
-  const scrollTypeArray = new Float32Array(
-    Array(6).fill(isPostTexture ? 1.0 : 0.0),
-  );
+  const scrollTypeArray = isPostTexture ? POST_SCROLL_TYPE : PRE_SCROLL_TYPE;
 
   gl.bindBuffer(gl.ARRAY_BUFFER, glBuffers.scrollType);
   gl.bufferData(gl.ARRAY_BUFFER, scrollTypeArray, gl.STATIC_DRAW);
 
-  const texCoordArray = new Float32Array(quadToTriangles(0.0, 0.0, 1.0, 1.0));
-
   gl.bindBuffer(gl.ARRAY_BUFFER, glBuffers.texCoord);
-  gl.bufferData(gl.ARRAY_BUFFER, texCoordArray, gl.STATIC_DRAW);
+  gl.bufferData(gl.ARRAY_BUFFER, FULL_TEX_COORDS, gl.STATIC_DRAW);
 
   gl.bindTexture(gl.TEXTURE_2D, texture);
 
@@ -366,7 +379,7 @@ function drawLyricsBlock(
   const toScreenX = (x: number) => (anchorX + (x - anchorX) * scale) * raster.x;
   const toScreenY = (y: number) => (yPos + (y - yPos) * scale) * raster.y;
 
-  const scrollArray = new Float32Array(Array(6).fill(toScreenX(scrollXPos)));
+  const scrollArray = new Float32Array(6).fill(toScreenX(scrollXPos));
 
   const positions = quadToTriangles(
     toScreenX(rect.left),
@@ -491,7 +504,7 @@ export default function JoysoundRenderer(props: {
       updateSize();
       window.addEventListener("resize", updateSize);
 
-      // Yeah we parse the data on each re-render, ffuck it
+      // Reparses the telop data on every re-render.
       //
       // A parse failure here must not throw out of refresh(): by the time
       // this effect runs, the previous effect instance's draw loop is already
@@ -499,8 +512,8 @@ export default function JoysoundRenderer(props: {
       // typically the PREVIOUS song's title card, for the entire song (the
       // EZ Romaji 6969-sentinel crash did exactly this). Degrade stepwise
       // instead: retry without word segmentation, then without romaji at all;
-      // only if even the plain parse fails do we give up, and then we clear
-      // the canvas so the room sees the bare MV rather than stale telop.
+      // only when the plain parse also fails does this give up and clear the
+      // canvas so the room sees the bare MV rather than stale telop.
       const parseAttempts = [
         {
           wordSegmentation: joysoundRomajiWordSegmentation,
@@ -654,7 +667,7 @@ export default function JoysoundRenderer(props: {
         const refreshTime =
           mediaClock.now(props.videoRef.current) * 1000 +
           TELOP_TIMING_OFFSET_MS;
-        invariant(refreshTime);
+        invariant(Number.isFinite(refreshTime));
 
         gl.clearColor(0.0, 0.0, 0.0, 0.2);
         gl.clear(gl.COLOR_BUFFER_BIT);

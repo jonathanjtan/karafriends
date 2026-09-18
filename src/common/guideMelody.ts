@@ -338,8 +338,9 @@ export function parseScoringData(data: ArrayLike<number>): GuideMelodyNote[] {
 }
 
 // The extraction version a cached melody was built by, or 1 for blobs written
-// before the field existed (word 5 was left zero then). Only call this on our
-// own cache files: DAM's blobs carry an unrelated value in the same word.
+// before the field existed (word 5 was left zero then). Only call this on
+// cache files written by buildScoringData below: DAM's blobs carry an
+// unrelated value in the same word.
 export function scoringDataExtractionVersion(data: ArrayLike<number>): number {
   const words = new Uint32Array(Uint8Array.from(data).buffer);
   if (words.length < 6) return 0;
@@ -358,9 +359,9 @@ export function buildScoringData(notes: GuideMelodyNote[]): Uint8Array {
   words[2] = intervals.length;
   // DAM's real blobs do put something in word 5 (6333 and 6500 on the two
   // surveyed), but nothing reads it: parseScoringData takes every count it
-  // needs from words 1-4. So it is free for our version in the blobs *we*
-  // write, and the version check only ever runs against our own cache files.
-  // A DAM blob never reaches it.
+  // needs from words 1-4. So it is free for the extraction version in blobs
+  // written here, and the version check only ever runs against cache files
+  // written by this function. A DAM blob never reaches it.
   words[5] = GUIDE_MELODY_EXTRACTION_VERSION;
 
   let w = 6;
