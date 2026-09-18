@@ -11,6 +11,7 @@ import tunnel from "tunnel";
 import karafriendsConfig from "../common/config";
 import { TEMP_FOLDER } from "../common/videoDownloader";
 import { JoysoundAPI } from "./joysoundApi";
+import mapWithConcurrency from "./mapWithConcurrency";
 
 export interface RankingSongEntry {
   readonly rank: number;
@@ -413,27 +414,6 @@ function artistMatches(chartArtist: string, candidateArtist: string): boolean {
   // Containment either way absorbs featuring/CV suffix differences between
   // the two sites' credits for the same artist.
   return a === b || a.includes(b) || b.includes(a);
-}
-
-async function mapWithConcurrency<T, U>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<U>,
-): Promise<U[]> {
-  const results: U[] = new Array(items.length);
-  let nextIndex = 0;
-
-  const workers = new Array(Math.min(concurrency, items.length))
-    .fill(null)
-    .map(async () => {
-      while (nextIndex < items.length) {
-        const i = nextIndex++;
-        results[i] = await fn(items[i]);
-      }
-    });
-
-  await Promise.all(workers);
-  return results;
 }
 
 // Resolve one JOYSOUND chart entry to a sound-cafe selSongNo by searching

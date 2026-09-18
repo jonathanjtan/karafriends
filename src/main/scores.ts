@@ -2,6 +2,8 @@ import { app } from "electron"; // tslint:disable-line:no-implicit-dependencies
 import fs from "fs";
 import path from "path";
 
+import isSameSinger from "./singerIdentity";
+
 // A scored performance, kept so a singer can be shown their own history.
 //
 // Until now a score existed only as the PNG screenshot the renderer saves,
@@ -91,18 +93,6 @@ export function recordScore(record: ScoreRecord): void {
     scores = scores.slice(scores.length - MAX_RECORDS);
   }
   writeScoresToDisk();
-}
-
-// Does this record belong to the singer being asked about? personId when both
-// sides have one, nickname otherwise, the same rule songPlayCount uses, so
-// the card's "3rd time" and its "your best" can't disagree about who sang.
-function isSameSinger(
-  record: ScoreRecord,
-  personId: string | null,
-  nickname: string,
-): boolean {
-  if (personId && record.personId) return record.personId === personId;
-  return record.nickname === nickname;
 }
 
 export interface ScoreHistory {

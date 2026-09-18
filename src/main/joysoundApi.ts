@@ -99,6 +99,27 @@ function parseCookies(setCookie: string, target: JoysoundCookies) {
   }
 }
 
+type NodeFetchResponse = Awaited<ReturnType<typeof nodeFetch>>;
+
+// Verifies a login step's HTTP status before the caller trusts its body or
+// Set-Cookie header. A geo-blocked exit answers every sound-cafe.jp request
+// with 403 and no Set-Cookie at all, which otherwise surfaces downstream as
+// an opaque `invariant` failure on the missing cookie instead of naming the
+// actual cause.
+function assertLoginStepStatus(
+  resp: NodeFetchResponse,
+  step: string,
+  host: string,
+  isExpected: (status: number) => boolean,
+): NodeFetchResponse {
+  if (!isExpected(resp.status)) {
+    throw new Error(
+      `JOYSOUND login failed at ${step} (${host}): unexpected HTTP status ${resp.status}`,
+    );
+  }
+  return resp;
+}
+
 // Song detail is static catalog data, and the remocon re-requests it on every
 // song-page visit (plus suggestedYoutubeVideos fetches it again right after).
 // JoysoundAPI instances are per-GraphQL-request, so memoize across instances
@@ -317,6 +338,13 @@ export class JoysoundAPI extends RESTDataSource {
       },
     })
       .then((resp) => {
+        assertLoginStepStatus(
+          resp,
+          "GET /login",
+          "www.sound-cafe.jp",
+          (status) => status === 200,
+        );
+
         const setCookie = resp.headers.get("set-cookie");
         invariant(setCookie);
 
@@ -350,6 +378,13 @@ export class JoysoundAPI extends RESTDataSource {
       },
     })
       .then((resp) => {
+        assertLoginStepStatus(
+          resp,
+          "POST /login/check",
+          "www.sound-cafe.jp",
+          (status) => status === 200,
+        );
+
         const setCookie = resp.headers.get("set-cookie");
         invariant(setCookie);
 
@@ -371,6 +406,16 @@ export class JoysoundAPI extends RESTDataSource {
         });
       })
       .then((resp) => {
+        // The Spring Security login endpoint redirects (302) on both success
+        // and failure (e.g. back to /login?error); either way it is a 3xx,
+        // not the 403 a geo-blocked exit would answer with instead.
+        assertLoginStepStatus(
+          resp,
+          "POST /login (submit)",
+          "www.sound-cafe.jp",
+          (status) => status >= 300 && status < 400,
+        );
+
         const setCookie = resp.headers.get("set-cookie");
         invariant(setCookie);
 
@@ -386,6 +431,13 @@ export class JoysoundAPI extends RESTDataSource {
         });
       })
       .then((resp) => {
+        assertLoginStepStatus(
+          resp,
+          "GET / (post-login)",
+          "www.sound-cafe.jp",
+          (status) => status === 200,
+        );
+
         const setCookie = resp.headers.get("set-cookie");
         invariant(setCookie);
 

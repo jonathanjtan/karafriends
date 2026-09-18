@@ -1,5 +1,7 @@
 import type { Innertube } from "youtubei.js";
 
+import mapWithConcurrency from "./mapWithConcurrency";
+
 // Karaoke channels whose uploads follow a fixed title grammar, searched as if
 // they were catalogs.
 //
@@ -886,31 +888,22 @@ function roundRobin<Item>(lists: Item[][]): Item[] {
 // is what actually removes requests.
 const SEARCH_CONCURRENCY = 8;
 
-async function mapWithConcurrency<Item, Result>(
-  items: readonly Item[],
-  run: (item: Item) => Promise<Result>,
-): Promise<PromiseSettledResult<Result>[]> {
-  const results: PromiseSettledResult<Result>[] = new Array(items.length);
-  let next = 0;
-
-  const worker = async (): Promise<void> => {
-    while (next < items.length) {
-      const index = next++;
-      try {
-        results[index] = {
-          status: "fulfilled",
-          value: await run(items[index]),
-        };
-      } catch (reason) {
-        results[index] = { status: "rejected", reason };
-      }
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(SEARCH_CONCURRENCY, items.length) }, worker),
-  );
-  return results;
+// mapWithConcurrency itself propagates a rejection like Promise.all; settle
+// per channel here (Promise.allSettled semantics) so one channel failing
+// (rate limit, renamed channel) can't fail the whole search.
+async function settleOneChannel(
+  youtube: Innertube,
+  channel: KaraokeChannelDef,
+  keyword: string,
+): Promise<PromiseSettledResult<KaraokeChannelSong[]>> {
+  try {
+    return {
+      status: "fulfilled",
+      value: await searchOneChannel(youtube, channel, keyword),
+    };
+  } catch (reason) {
+    return { status: "rejected", reason };
+  }
 }
 
 export async function searchKaraokeChannels(
@@ -922,8 +915,10 @@ export async function searchKaraokeChannels(
     ? KARAOKE_CHANNELS.filter((channel) => channelKeys.includes(channel.key))
     : KARAOKE_CHANNELS;
 
-  const settled = await mapWithConcurrency(channels, (channel) =>
-    searchOneChannel(youtube, channel, keyword),
+  const settled = await mapWithConcurrency(
+    channels,
+    SEARCH_CONCURRENCY,
+    (channel) => settleOneChannel(youtube, channel, keyword),
   );
 
   // One channel failing is normal (a rate limit, a channel that renamed) and

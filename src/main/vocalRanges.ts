@@ -2,6 +2,8 @@ import { app } from "electron"; // tslint:disable-line:no-implicit-dependencies
 import fs from "fs";
 import path from "path";
 
+import isSameSinger from "./singerIdentity";
+
 // A singer's measured range from the guided warm-up.
 //
 // Deliberately a log rather than one row per person: a voice on a Tuesday and a
@@ -85,18 +87,6 @@ export function recordVocalRange(record: VocalRangeRecord): void {
     ranges = ranges.slice(ranges.length - MAX_RECORDS);
   }
   writeRangesToDisk();
-}
-
-// personId when both sides have one, nickname otherwise, the same rule
-// scoreHistoryFor and songPlayCount use, so the profile page and the song page
-// can't disagree about whose range they are showing.
-function isSameSinger(
-  record: VocalRangeRecord,
-  personId: string | null,
-  nickname: string,
-): boolean {
-  if (personId && record.personId) return record.personId === personId;
-  return record.nickname === nickname;
 }
 
 // This singer's most recent measurement at the current estimator version, or
