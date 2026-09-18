@@ -33,35 +33,25 @@ function AdhocLyrics() {
   function handleNewLyrics(
     response: AdhocLyricsCurrentLyricsSubscription$data,
   ) {
-    setLyricLines((prevLyricLines) => {
-      const newLyricsLineCount = response.currentSongAdhocLyricsChanged.length;
-      const newLyricIndices = response.currentSongAdhocLyricsChanged.map(
-        (lyricEntry) => lyricEntry.lyricIndex,
-      );
+    const newLyricsLineCount = response.currentSongAdhocLyricsChanged.length;
+    const newLyricEntry: LyricEntry[] =
+      response.currentSongAdhocLyricsChanged.map((lyricEntry, index) => {
+        const height = getTextHeight(
+          lyricEntry.lyric,
+          // This must match the width specified in AdhocLyrics.css
+          "4vw sans-serif",
+        );
 
-      const currentLyricIndices = prevLyricLines.map(
-        (lyricEntry) => lyricEntry.lyricIndex,
-      );
-
-      const newLyricEntry: LyricEntry[] =
-        response.currentSongAdhocLyricsChanged.map((lyricEntry, index) => {
-          const height = getTextHeight(
-            lyricEntry.lyric,
-            // This must match the width specified in AdhocLyrics.css
-            "4vw sans-serif",
-          );
-
-          return {
-            lyric: lyricEntry.lyric,
-            lyricIndex: lyricEntry.lyricIndex,
-            displayIndex: index,
-            // marginTop for positioning each line
-            marginTop: -1 * (newLyricsLineCount - index) * height * 3.4,
-            isNewLyricLine: index === newLyricsLineCount - 1,
-          };
-        });
-      return newLyricEntry;
-    });
+        return {
+          lyric: lyricEntry.lyric,
+          lyricIndex: lyricEntry.lyricIndex,
+          displayIndex: index,
+          // marginTop for positioning each line
+          marginTop: -1 * (newLyricsLineCount - index) * height * 3.4,
+          isNewLyricLine: index === newLyricsLineCount - 1,
+        };
+      });
+    setLyricLines(newLyricEntry);
   }
 
   function getTextHeight(text: string, font: string): number {

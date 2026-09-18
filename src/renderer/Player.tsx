@@ -169,7 +169,7 @@ const recordVocalRangeMutation = graphql`
 `;
 
 const POLL_INTERVAL_MS = 5 * 1000;
-// XXX: Another idea is to add some gain to the DAM videos?
+// XXX: DAM videos may need additional gain.
 const DAM_GAIN = 1.0;
 const NON_DAM_GAIN = 0.8;
 const MAX_HLS_FATAL_ERROR_RETRIES = 2;
@@ -251,10 +251,8 @@ function Player(props: {
   // EXPERIMENTAL scoring. The accumulator lives here rather than in PianoRoll
   // because "ended" is handled here and PianoRoll's GL effect still rebuilds
   // whenever the song (or mic list, or pitch shift) changes, which would
-  // discard the performance. It used to rebuild on every render of this
-  // component too. That was a bug in PianoRoll's effect deps, since fixed;
-  // it was silently erasing the sung-pitch trail mid-song. It is fed from
-  // PianoRoll's poll loop and read once, on "ended".
+  // discard the performance. It is fed from PianoRoll's poll loop and read
+  // once, on "ended".
   const scoreAccumulatorRef = useRef<ScoreAccumulator | null>(null);
   // Who sang what, captured at pop time: the "ended" handler is wired up once
   // on mount and can't close over per-song state.
@@ -406,11 +404,11 @@ function Player(props: {
   };
 
   // The onended path only covers songs that finish while the app is up; show
-  // the idle screen any time we're WAITING with nothing playing too (fresh
-  // launch, or the setting flipped on while idle). It comes down via the
-  // pop-success handler when a song actually starts. A break forces it up
-  // even with the intermission setting off, since it doubles as the break
-  // screen.
+  // the idle screen any time playbackState is WAITING with nothing playing
+  // too (fresh launch, or the setting flipped on while idle). It comes down
+  // via the pop-success handler when a song actually starts. A break forces
+  // it up even with the intermission setting off, since it doubles as the
+  // break screen.
   useEffect(() => {
     if (
       playbackState === "WAITING" &&
@@ -694,7 +692,7 @@ function Player(props: {
     };
 
     const pollQueue = (force: boolean = false) => {
-      // No poll is in flight once we're inside one, whether this call came
+      // No poll is in flight once inside pollQueue, whether this call came
       // from the timer (whose handle is already spent) or straight from a
       // media event. Leaving a stale handle parked here silently disabled the
       // wedge watchdog below for the rest of the session, which requires "no
@@ -824,8 +822,9 @@ function Player(props: {
                 popSong.scoringData,
               );
 
-              // If caching is on this means we'll be serving almost everything through /static
-              // which seems kind of stupid, but whatever
+              // With predownload caching on, this local file exists for most
+              // songs, so playback is served from it instead of the remote
+              // streaming URL below.
               const fileUrl = `karafriends://${popSong.songId}-${popSong.streamingUrlIdx}.mp4`;
 
               let hlsFatalErrorRetries = 0;
@@ -848,8 +847,8 @@ function Player(props: {
                   // blip: hls.js has no level parsed to resume, so startLoad()
                   // is a no-op that emits no further events, and the give-up
                   // path below never runs. DAM's CDN 403s from some exit IPs
-                  // (see CLAUDE.md), which is exactly this case. The song sat
-                  // there with the room staring at a stalled player.
+                  // (see CLAUDE.md), which is exactly this case; without this
+                  // check playback stalls without the song ever being skipped.
                   const manifestUnrecoverable =
                     data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR ||
                     data.details === Hls.ErrorDetails.MANIFEST_LOAD_TIMEOUT ||
@@ -1292,6 +1291,8 @@ function Player(props: {
         damGuideSynthRef.current.dispose();
         damGuideSynthRef.current = null;
       }
+
+      if (hls) hls.destroy();
 
       scoreCardTimersRef.current.forEach(clearTimeout);
       scoreCardTimersRef.current = [];

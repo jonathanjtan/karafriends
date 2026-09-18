@@ -288,9 +288,9 @@ function App(props: {
     }
   };
 
+  // Mount-only: restoring the saved mics creates a native InputDevice (and
+  // its capture stream) per entry, so this must not re-run on every render.
   useEffect(() => {
-    window.addEventListener("keydown", handleKeyDown);
-
     const savedMicInfo = JSON.parse(localStorage.getItem("mics") || "[]");
     const inputDevices = window.karafriends.nativeAudio.inputDevices();
     const channelCounts: { [key: string]: number } = inputDevices.reduce(
@@ -309,10 +309,14 @@ function App(props: {
       .map(({ name, channel }: SavedMic) => new InputDevice(name, channel));
 
     setMics(savedMics);
+  }, []);
 
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+  // handleKeyDown reads sidebarCollapsed directly (not via a functional
+  // update), so the listener has to be re-registered whenever it changes or
+  // it would keep toggling from a stale value.
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [sidebarCollapsed]);
 
   // The popped-out settings window can't own the mics (see

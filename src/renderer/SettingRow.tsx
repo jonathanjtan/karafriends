@@ -12,8 +12,8 @@ export default function SettingRow(props: {
 }) {
   const { def, settings, actions } = props;
 
-  // Hints used to be `title=` tooltips here, which is useless on a screen
-  // nobody hovers. They're a real row now, spanning the whole grid width.
+  // Rendered as a full-width row rather than a `title=` tooltip: nobody
+  // hovers the big screen.
   const hint = def.hint ? (
     <span className="settingHint">{def.hint}</span>
   ) : null;

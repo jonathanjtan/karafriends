@@ -30,7 +30,7 @@ export default function HostnameSetting() {
 
   // Whatever the server says is current always has to be selectable, even if
   // it isn't one of this machine's addresses right now (a value saved on a
-  // network we're no longer on, say). Otherwise the <select> would show a
+  // network no longer reachable, say). Otherwise the <select> would show a
   // different address than the QR codes actually encode.
   const entries = Array.from(options);
   if (hostname !== "" && !entries.some(([, value]) => value === hostname)) {
