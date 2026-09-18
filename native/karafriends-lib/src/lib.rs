@@ -112,7 +112,7 @@ impl InputDevice {
         _input_devices()?
             .map(|(input_device, device_type)| {
                 let mut supported_input_configs: Vec<_> =
-                    input_device.supported_input_configs().unwrap().collect();
+                    input_device.supported_input_configs()?.collect();
                 supported_input_configs.sort_by(|a, b| compare_configs(a, b, None));
                 let best_supported_input_config = supported_input_configs
                     .last()
@@ -176,7 +176,7 @@ impl InputDevice {
 
         println!(
             "Created output device {} with config {:#?}, sample format {:#?}",
-            output_device.id().unwrap(),
+            output_device.id()?,
             output_config,
             best_supported_output_config.sample_format(),
         );
@@ -192,8 +192,9 @@ impl InputDevice {
         let (pitch_tx, pitch_rx) =
             ringbuf::HeapRb::new(pitch_sample_count * PITCH_RING_WINDOWS).split();
 
-        // TODO: rationalize how to pick this size
-        // it really needs to be large enough for the input bufer provided by the OS, which can be quite large on windows (upper bound??)
+        // TODO: rationalize how to pick this size.
+        // It needs to be large enough for the input buffer provided by the OS,
+        // which can be large on Windows with no known upper bound.
         let (output_tx, output_rx) = ringbuf::HeapRb::new(
             (2048.0 * output_channels as f32 * output_config.sample_rate as f32
                 / input_config.sample_rate as f32) as usize,
@@ -213,261 +214,62 @@ impl InputDevice {
 
         let mic_output_enabled = Arc::new(AtomicBool::new(true));
 
+        // Each sample format needs its own monomorphized callback, so the
+        // match is driven by a macro rather than repeating this block per arm.
+        macro_rules! input_stream_for {
+            ($sample:ty) => {{
+                let mut input_callback = Self::input_data_callback::<$sample>(
+                    &input_config,
+                    &output_config,
+                    channel_selection,
+                    pitch_tx,
+                    output_tx,
+                    Arc::clone(&mic_output_enabled),
+                )?;
+                input_device.build_input_stream(
+                    &input_config,
+                    move |samples: _, _| input_callback(samples),
+                    error_callback,
+                    None,
+                )
+            }};
+        }
         let input_stream = match best_supported_input_config.sample_format() {
-            cpal::SampleFormat::U8 => {
-                let mut input_callback = Self::input_data_callback::<u8>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::U16 => {
-                let mut input_callback = Self::input_data_callback::<u16>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::U32 => {
-                let mut input_callback = Self::input_data_callback::<u32>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::U64 => {
-                let mut input_callback = Self::input_data_callback::<u64>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I8 => {
-                let mut input_callback = Self::input_data_callback::<i8>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I16 => {
-                let mut input_callback = Self::input_data_callback::<i16>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I32 => {
-                let mut input_callback = Self::input_data_callback::<i32>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I64 => {
-                let mut input_callback = Self::input_data_callback::<i64>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::F32 => {
-                let mut input_callback = Self::input_data_callback::<f32>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::F64 => {
-                let mut input_callback = Self::input_data_callback::<f64>(
-                    &input_config,
-                    &output_config,
-                    channel_selection,
-                    pitch_tx,
-                    output_tx,
-                    Arc::clone(&mic_output_enabled),
-                )?;
-                input_device.build_input_stream(
-                    &input_config,
-                    move |samples: _, _| input_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
+            cpal::SampleFormat::U8 => input_stream_for!(u8),
+            cpal::SampleFormat::U16 => input_stream_for!(u16),
+            cpal::SampleFormat::U32 => input_stream_for!(u32),
+            cpal::SampleFormat::U64 => input_stream_for!(u64),
+            cpal::SampleFormat::I8 => input_stream_for!(i8),
+            cpal::SampleFormat::I16 => input_stream_for!(i16),
+            cpal::SampleFormat::I32 => input_stream_for!(i32),
+            cpal::SampleFormat::I64 => input_stream_for!(i64),
+            cpal::SampleFormat::F32 => input_stream_for!(f32),
+            cpal::SampleFormat::F64 => input_stream_for!(f64),
             _ => Err(cpal::BuildStreamError::StreamConfigNotSupported),
         }?;
 
+        macro_rules! output_stream_for {
+            ($sample:ty) => {{
+                let mut output_callback = Self::output_data_callback::<$sample>(output_rx)?;
+                output_device.build_output_stream(
+                    &output_config,
+                    move |samples: _, _| output_callback(samples),
+                    error_callback,
+                    None,
+                )
+            }};
+        }
         let output_stream = match best_supported_output_config.sample_format() {
-            cpal::SampleFormat::U8 => {
-                let mut output_callback = Self::output_data_callback::<u8>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::U16 => {
-                let mut output_callback = Self::output_data_callback::<u16>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::U32 => {
-                let mut output_callback = Self::output_data_callback::<u32>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::U64 => {
-                let mut output_callback = Self::output_data_callback::<u64>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I8 => {
-                let mut output_callback = Self::output_data_callback::<i8>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I16 => {
-                let mut output_callback = Self::output_data_callback::<i16>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I32 => {
-                let mut output_callback = Self::output_data_callback::<i32>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::I64 => {
-                let mut output_callback = Self::output_data_callback::<i64>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::F32 => {
-                let mut output_callback = Self::output_data_callback::<f32>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
-            cpal::SampleFormat::F64 => {
-                let mut output_callback = Self::output_data_callback::<f64>(output_rx)?;
-                output_device.build_output_stream(
-                    &output_config,
-                    move |samples: _, _| output_callback(samples),
-                    error_callback,
-                    None,
-                )
-            }
+            cpal::SampleFormat::U8 => output_stream_for!(u8),
+            cpal::SampleFormat::U16 => output_stream_for!(u16),
+            cpal::SampleFormat::U32 => output_stream_for!(u32),
+            cpal::SampleFormat::U64 => output_stream_for!(u64),
+            cpal::SampleFormat::I8 => output_stream_for!(i8),
+            cpal::SampleFormat::I16 => output_stream_for!(i16),
+            cpal::SampleFormat::I32 => output_stream_for!(i32),
+            cpal::SampleFormat::I64 => output_stream_for!(i64),
+            cpal::SampleFormat::F32 => output_stream_for!(f32),
+            cpal::SampleFormat::F64 => output_stream_for!(f64),
             _ => Err(cpal::BuildStreamError::StreamConfigNotSupported),
         }?;
 
@@ -661,9 +463,9 @@ fn compare_configs(
     b: &cpal::SupportedStreamConfigRange,
     desired_sample_rate: Option<cpal::SampleRate>,
 ) -> Ordering {
-    // Our priorities in order are buffer size (lower is better), sample rate
-    // (higher is better), and channel count (higher is better).
-    // If we have a desired sample rate, just being in range is good enough.
+    // Priority order: buffer size (lower is better), sample rate (higher is
+    // better), then channel count (higher is better). When a desired sample
+    // rate is given, being in range is good enough.
     if a.buffer_size() == &cpal::SupportedBufferSize::Unknown
         && b.buffer_size() != &cpal::SupportedBufferSize::Unknown
     {
@@ -744,7 +546,10 @@ fn _input_devices() -> Result<impl Iterator<Item = (cpal::Device, DeviceType)>> 
 fn _device_name(device: &cpal::Device, device_type: &DeviceType) -> String {
     format!(
         "{} ({})",
-        device.id().unwrap(),
+        device
+            .id()
+            .map(|id| id.to_string())
+            .unwrap_or_else(|_| "<unknown>".to_string()),
         match device_type {
             #[cfg(feature = "asio")]
             DeviceType::Asio => "ASIO",
@@ -779,7 +584,7 @@ mod tests {
             assert!(got >= requested, "{} shrank the window", sample_rate);
             assert_eq!(got % 2, 0, "{} gave an odd window", sample_rate);
             for factor in [2, 3, 5] {
-                while got % factor == 0 {
+                while got.is_multiple_of(factor) {
                     got /= factor;
                 }
             }
@@ -831,7 +636,7 @@ mod tests {
         let silence = vec![0.0; latency_sample_count];
         input_callback(&silence);
 
-        // We should now have some echo in the output, but pitch should get a clean signal
+        // The output now carries some echo, but pitch still gets a clean signal.
         let output_samples = output_rx.pop_iter().collect::<Vec<_>>();
         let pitch_samples: Vec<f32> = pitch_rx.pop_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -846,10 +651,6 @@ mod tests {
         Ok(())
     }
 
-    // Muting the mics has to stay strictly a speaker-path concern: the room
-    // hears nothing, but the pitch feed keeps getting the raw mic signal so
-    // scoring and the piano roll survive being mixed through outboard gear.
-    #[test]
     // A late poll must not cost the singing that happened while it was late.
     // The ring is what buys that: nothing is discarded on the read side any
     // more (PitchFramer analyses the whole backlog), so the ring has to be deep
@@ -861,8 +662,7 @@ mod tests {
 
         let (mut tx, rx) = ringbuf::HeapRb::<f32>::new(window * PITCH_RING_WINDOWS).split();
 
-        // Half a second arriving before anyone reads: twenty windows, far more
-        // than the four the ring used to carry.
+        // Half a second arriving before anyone reads: twenty windows of backlog.
         let stalled = wf!(f32, sample_rate as f32, sine!(220.0_f32))
             .iter()
             .take(window * 20)
@@ -876,6 +676,11 @@ mod tests {
         Ok(())
     }
 
+    // Muting the mics is strictly a speaker-path concern: the room hears
+    // nothing, but the pitch feed keeps getting the raw mic signal so scoring
+    // and the piano roll keep working while the mics are mixed through
+    // outboard gear.
+    #[test]
     fn test_mic_output_disabled_silences_speakers_but_not_pitch() -> Result<()> {
         let config = cpal::StreamConfig {
             channels: 1,

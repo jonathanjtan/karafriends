@@ -169,7 +169,8 @@ mod tests {
         let rate = oscillation_rate_hz(&midi, hop as f32 / SAMPLE_RATE);
         assert!(
             (rate - 5.5).abs() < 0.7,
-            "expected ~5.5Hz vibrato, measured {rate:.2}Hz"
+            "expected ~5.5Hz vibrato, measured {:.2}Hz",
+            rate
         );
 
         // And the depth is in the right ballpark: +/-0.5 semitone means a peak
@@ -199,7 +200,9 @@ mod tests {
             let step = pair[0].age_ms - pair[1].age_ms;
             assert!(
                 (step - hop_ms).abs() < 0.01,
-                "expected {hop_ms:.2}ms between estimates, got {step:.2}ms"
+                "expected {:.2}ms between estimates, got {:.2}ms",
+                hop_ms,
+                step
             );
         }
         assert!(
@@ -231,13 +234,15 @@ mod tests {
         for (a, b) in batch_midi.iter().zip(incremental.iter()) {
             assert!(
                 (a - b).abs() < 1e-4,
-                "chunking changed a reading: {a} vs {b}"
+                "chunking changed a reading: {} vs {}",
+                a,
+                b
             );
         }
     }
 
-    // A late poll used to cost every window but the newest. Now the backlog is
-    // analysed in full, so a renderer stall costs latency, not lost singing.
+    // A late poll analyses the whole backlog rather than only the newest
+    // window, so a renderer stall costs latency, not lost singing.
     #[test]
     fn a_backlog_is_analysed_rather_than_discarded() {
         let window = window_for(SAMPLE_RATE);
