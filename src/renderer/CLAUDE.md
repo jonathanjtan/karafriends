@@ -22,9 +22,9 @@ roll mirror in the root `CLAUDE.md`). What stays here is what only the big
 screen has: the mics, the level gate, the probe captures, the score/range
 accumulators, the melody-active fade and the `pianoRollSize`/opacity CSS. If
 you change how a note, a band or a trail is drawn, change it in common/ or the
-phone quietly stops matching. `PianoRoll.tsx` also hands the scene's plotted
-values to `pianoRollMirror.ts` so the phone draws the trail the TV drew rather
-than one it derived.
+phone stops matching, with no error surfaced. `PianoRoll.tsx` also hands the
+scene's plotted values to `pianoRollMirror.ts` so the phone draws the trail
+the TV drew rather than one it derived.
 
 - **WebGL test harness lesson**: `drawImage`/late `readPixels` from a WebGL
   canvas without `preserveDrawingBuffer` returns blank after compositing, so

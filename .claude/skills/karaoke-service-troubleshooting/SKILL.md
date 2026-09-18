@@ -36,7 +36,7 @@ start failing:
    message, the binary is fine and the **exit IP is rate-limited**; no yt-dlp
    version will fix it. Cycle the VPN (or wait; it expires on its own).
 
-**We pass a JS runtime.** yt-dlp only enables `deno` by default, and with no
+**yt-dlp is passed a JS runtime.** It only enables `deno` by default, and with no
 runtime it can't run YouTube's player JS, so it falls back to clients YouTube
 bot-walls (`android_vr`) and warns that JS-less extraction is deprecated.
 `youtubeJsRuntimeArgs()` points it at **Electron's own binary running as Node**
@@ -99,7 +99,8 @@ no-retry-on-429) lives in `src/common/CLAUDE.md`, next to the code it constrains
   IP (a datacenter exit gets bot-walled far harder), and `main/proxyAgent.ts`
   covers the `damApi`/`joysoundApi` **static logins**, which call out through
   node-fetch and would otherwise escape the proxy while every other call
-  succeeded, which is a maddening failure to diagnose.
+  succeeds. That failure is easy to miss because the rest of the app works
+  normally.
 - Some songs are catalog-present but streaming-absent
   (empty `mModelMusicInfoList`, `GetMusicStreamingURL` returns NG), which is a
   physical-machine-only license. Scoring reference data may still work.

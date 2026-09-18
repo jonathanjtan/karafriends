@@ -223,9 +223,6 @@ which the default scripts don't. Workaround: create a stub
 the existence-check passes. Then `yarn get-external-resources` skips
 the download entirely.
 
-In our setup it actually worked first try, so don't worry about this
-unless you hit it.
-
 ## Summary checklist
 
 If you're setting up from scratch:

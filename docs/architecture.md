@@ -297,7 +297,7 @@ Steinberg's ASIO SDK headers for the optional ASIO audio backend.
   required and isn't used by the default dev loop.
 - **Error reporting**: there is none. Upstream wired Sentry into the
   main process and both browser bundles, but the hardcoded DSN pointed
-  at upstream's own project. This fork was shipping crash reports to
-  someone else's dashboard and reading none of them. It was removed;
-  uncaught errors go to the console. Adding it back means our own DSN,
-  read from `config.yaml` rather than hardcoded.
+  at upstream's own project, so this fork's crash reports went to that
+  project's dashboard and were never read. It was removed; uncaught
+  errors go to the console. Re-adding it needs a DSN read from
+  `config.yaml` rather than hardcoded.

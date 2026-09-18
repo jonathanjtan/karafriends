@@ -162,9 +162,8 @@ The Husky `pre-commit` hook (configured under `lint-staged` in
 - TSLint with `--fix` on `.ts`/`.tsx` files.
 - `rustfmt` on `.rs` files.
 
-TSLint is end-of-life upstream but the project still uses it; don't be
-surprised by some flag combinations that look unusual compared to
-ESLint.
+TSLint is end-of-life upstream but the project still uses it, and some
+flag combinations look unusual compared to ESLint.
 
 ## Packaging a release
 

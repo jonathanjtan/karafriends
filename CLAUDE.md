@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 Guidance for Claude Code (and humans) working in this repo. Read this first;
-it captures the workflow, architecture, and the hard-won gotchas that aren't
-obvious from the code.
+it covers the workflow, architecture, and the gotchas that aren't obvious
+from the code.
 
 ## What this is
 
@@ -26,12 +26,6 @@ on-screen piano roll.
   during the commit. That's intentional, keep it.
 
 ## Dev environment (macOS / Windows / Linux)
-
-The app builds and runs on **macOS (arm64 + x86_64), Windows (x64), and
-Linux (x64)**. All four are CI targets (see `.github/workflows/build.yaml`),
-and mac + Windows both have signed release builds. Historically it was
-developed primarily on macOS; more recently on Windows. Nothing here is
-Windows-only except the optional ASIO audio backend (see below).
 
 Package manager is **Yarn (Berry) with PnP**, so there is **no `node_modules`**.
 
@@ -66,7 +60,7 @@ Platform notes:
   (`scripts/devStaticServer.mjs`), kept fresh by `parcel watch`, then launches
   the Electron app; the GraphQL/remocon server listens on **:8080**. The
   Electron window pops up on the dev machine's screen. (No HMR, so reload the
-  page after a change. We use `parcel watch` + a static server rather than
+  page after a change. `parcel watch` + a static server is used instead of
   `parcel serve` because `parcel serve`'s multi-target HMR build hoists bundles
   to the server root and serves a layout inconsistent with the on-disk build,
   which whitescreens the remocon behind the `/remocon/`-prefixing reverse
@@ -78,15 +72,14 @@ Platform notes:
   on Linux. Pass `PACKAGER_ARCH` (e.g. `arm64`) to cross-target.
   - **It does NOT compile. Run `build-prod` first, every time.**
     `package-prod` is only `node ./packager.js`; it packages whatever already
-    sits in `build/prod/`, and it does so silently, with no warning, however
-    stale that is. On 2026-09-03 it happily shipped a `dist/` built from a
-    five-week-old `build/prod`, which cost an hour: the bundle predated a
-    proxy fix, so DAM login escaped the proxy and 403'd, and both services
-    read unavailable in the packaged app while the identical source read
-    available under `run-dev`. Nothing about the symptom points at the build.
-    When a packaged app misbehaves in a way `run-dev` does not, check
-    `build/prod/main_/index.js`'s timestamp before you debug anything else,
-    and grep both bundles for a string you know you just added.
+    sits in `build/prod/`, with no warning however stale that is. Example
+    failure mode: a stale `build/prod` predates a proxy fix, so DAM login
+    escapes the proxy and 403s, and both services read unavailable in the
+    packaged app while the identical source is available under `run-dev`.
+    That symptom does not point at the build. When a packaged app misbehaves
+    in a way `run-dev` does not, check `build/prod/main_/index.js`'s
+    timestamp before debugging anything else, and grep both bundles for a
+    string you know you just added.
   - **macOS signing/notarization is opt-in**: `packager.js` only code-signs +
     notarizes when `NOTARIZATION_KEY_PATH` is set (the release CI sets it).
     Without it you get an **unsigned `.app` that runs locally**, exactly what
@@ -137,7 +130,7 @@ relaunching.
     guard; e.g. the DAM 403 / streaming-absent conditions under "DAM
     specifics" below used to crash the app via that predownload before it was
     guarded. Audit any new fire-and-forget chain for this.
-- **Stray `null` in `queue.json`** (fixed; kept for archaeology): `saveDb`
+- **Stray `null` in `queue.json`** (fixed): `saveDb`
   used to prepend `db.currentSong` unconditionally, so every idle-time save
   persisted a leading `null` in `songQueue`, breaking `queue` queries on the
   next launch until the first `popSong` shifted it out. `saveDb` now filters
@@ -161,16 +154,16 @@ http://localhost:8080/remocon.<hash>.js` (hash from `curl -s
 http://localhost:8080/ | grep -oE 'remocon\.[a-z0-9]+\.js'`). If it's
   `text/html` instead of `application/javascript`, the `<script>` is being fed
   an HTML page so the bundle never runs. `#root` stays empty, nothing throws.
-  This has bitten us twice (a reverse-proxy filename collision and a
-  `parcel serve` multi-target collision); both, plus the fast diagnostic, are
-  written up in `docs/dev-server-investigation.md`. Read that _first_ next time.
+  Two known causes: a reverse-proxy filename collision and a
+  `parcel serve` multi-target collision; both, plus the fast diagnostic, are
+  written up in `docs/dev-server-investigation.md`. Read that first.
 - **`run-dev` and the packaged app read DIFFERENT `config.yaml` files.**
   `config.ts` resolves `app.getPath("userData")`, which in dev derives from the
   _executable_ name, so `run-dev` reads
   `~/Library/Application Support/`**`Electron`**`/config.yaml` (Windows:
   `%APPDATA%\Electron\`, Linux: `~/.config/Electron/`) while the packaged app
   reads the `karafriends/` one. Configure one and the other silently keeps its
-  **defaults**, and `config.ts` helpfully writes a fresh default file on first
+  **defaults**, and `config.ts` writes a fresh default file on first
   launch so it looks configured. The tell: the service health check reports
   **both** DAM and JOYSOUND unreachable under `run-dev` while the packaged app
   is fine. `proxyEnable` is still `false` there, so every login goes out
@@ -185,63 +178,12 @@ http://localhost:8080/ | grep -oE 'remocon\.[a-z0-9]+\.js'`). If it's
 
 ### Preview tooling for the remocon
 
-The preview MCP tools can't attach to an externally-started server on :8080.
-There's a launch.json entry **`karafriends-remocon-via-app`**, a transparent
-TCP proxy (`.claude/tcp-proxy-8080.js`, port 3002 → app :8080) that
-carries both HTTP and graphql-ws, letting the preview browser drive the real
-running app's remocon.
-
-When the app on :8080 belongs to a **different checkout** (another worktree
-owns the port), that proxy serves _their_ remocon, since the app reverse-proxies
-page requests to whichever dev static server holds :3000. Use
-**`karafriends-remocon-local-build`** instead
-(`.claude/remocon-preview-3006.js`, port 3006): it serves this checkout's
-`build/dev/remocon` and forwards only what it can't serve (`/graphql` incl.
-the websocket upgrade, `/portraits/*`) to :8080. Build the bundle first with
-`parcel build --target remocon --dist-dir build/dev --public-url .`, and
-**`rm -rf .parcel-cache` before the next full build**, or `run-dev` dies with
-`bundleInfoMap[bundleId] is not iterable` on the single-target cache.
-
-- **The remocon gates on a server-registered device identity, not just
-  localStorage.** `IdentityGate` (`src/remocon/components/IdentityGate`)
-  queries `personByDevice(deviceId)` on mount; an unrecognized device gets the
-  "New phone, who this?" `AccountPicker` and nothing else, no matter what you
-  seed into `localStorage.nickname`/`personId`. The gate's effect calls
-  `forgetPerson()` and wipes them right back out since the server is the
-  authority. Clicking a card in that picker fires a `claimPerson` GraphQL
-  mutation, which registers, but driving it via the preview browser's
-  `computer` click is flaky (see below). Fastest path: there's a
-  pre-registered throwaway device id **`claude-preview-dev`** already claimed
-  under a person in `<userData>/people.json`. Call `localStorage.setItem`
-  `('deviceId', 'claude-preview-dev')` then reload skips the gate entirely.
-  If it's ever missing (fresh `people.json`), recreate it once by hand through
-  the picker's "+ New account" flow, or add a `deviceIds` entry for an
-  existing person directly in `people.json` (app must be stopped, since it's only
-  read at startup).
-- **The preview browser's `computer` tool cannot produce a true high-DPI
-screenshot**, and clicks through it into the account picker sometimes throw
-a spurious `computer timed out after 30s ... pane is currently hidden` even
-though the click landed (check network requests / re-screenshot before
-assuming it failed). Two independent caps: `resize_window` accepts arbitrary
-width/height but **pins `devicePixelRatio` at 2** (only the `mobile` preset
-gets real device emulation, and even that isn't 3x), and the `computer`
-screenshot action **downsamples whatever it captures to roughly 800px wide**
-regardless of viewport size or the `scale` param (which only goes _down_ to
-0–1, not up). Neither is adjustable through these MCP tools. For an exact
-physical-pixel capture (e.g. "iPhone 17 Pro Max screenshot" at 1320x2868),
-skip the preview pane and drive **real Chrome via `puppeteer-core`**
-instead. It's already a repo dependency (`puppeteer-core` in
-`package.json`, used by the wdio suite), so `corepack yarn node
-<script>.mjs` resolves it under PnP as long as the script lives in the repo
-  (same rule as any scratch script, see above). Point `executablePath` at
-  `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, launch with
-  `args: ["--force-device-scale-factor=3"]`, and call
-  `page.setViewport({width, height, deviceScaleFactor: 3, isMobile: true,
-  hasTouch: true})` before `page.goto`. `page.screenshot()` then returns
-  exact-dimension PNGs (verified 440x956 @3x → precisely 1320x2868), no
-  cropping/scaling surprises. Navigate through the same `.claude/tcp-proxy-8080.js`
-  proxy on :3002 as the preview tools use. Chrome launched this way has no
-  special access to :8080 that the preview browser lacks.
+Drive the remocon through the launch.json entry **`karafriends-remocon-via-app`**
+(TCP proxy :3002 → app :8080), or **`karafriends-remocon-local-build`** (:3006)
+when another checkout owns :8080. Skip the device gate with
+`localStorage.setItem('deviceId', 'claude-preview-dev')`, then reload. Setup
+details, the preview tools' screenshot limits, and exact-resolution captures
+are in the **`remocon-preview`** skill; load it before driving the remocon.
 
 ## The temp/cache dir
 
@@ -251,12 +193,12 @@ the OS temp dir (`app.getPath("temp")`), so **Windows**
 (under `/var/folders/…/T/`), **Linux** `/tmp/karafriends_tmp/`:
 
 - `queue.json`, the persisted NotARealDb (see below). **This dir is swept on
-  reboot** (macOS wipes `/var/folders/…/T/` at boot), which on 2026-07-25 ate
-  the room's whole song history mid-party along with every cached composite.
-  The composites are a cache and re-download; the history isn't, so
-  `songHistory` is mirrored to `<userData>/song-history.json` and the two are
-  merged (union, keyed by typename+songId+timestamp) in `loadDb`. Same
-  reasoning as `people.json` and the score cards. Nothing else in here
+  reboot** (macOS wipes `/var/folders/…/T/` at boot), which loses anything
+  not mirrored elsewhere, including the room's whole song history and every
+  cached composite. The composites are a cache and re-download; the history
+  isn't, so `songHistory` is mirrored to `<userData>/song-history.json` and
+  the two are merged (union, keyed by typename+songId+timestamp) in `loadDb`.
+  Same reasoning as `people.json` and the score cards. Nothing else in here
   survives a sweep, so don't put durable state in this dir.
 - `reading-cache.json`, the persisted name→reading (yomi) cache backing the
   helper romaji. Entries are `{yomi, canonical}` keyed by an NFKC-normalized
@@ -282,81 +224,20 @@ the OS temp dir (`app.getPath("temp")`), so **Windows**
 
 ## Architecture
 
-Four Parcel bundles from `src/` (`main`, `renderer`, `remocon`, `common`) plus
-a Rust `.node` addon in `native/` for audio I/O and port reservation. See
-`docs/architecture.md` for the tour.
+See `docs/architecture.md` for the architecture tour.
 
 GraphQL on **:8080** is **POST-only** (Apollo CSRF protection); it also serves
 graphql-ws subscriptions over WebSocket. The remocon talks to it; in dev,
 non-GraphQL requests are reverse-proxied to the Parcel dev server.
 
-### The synced-state pattern (`NotARealDb`)
+### Synced settings (`NotARealDb` + `src/common/settings/`)
 
-Room-wide settings live in a single in-memory object `db: NotARealDb` in
-`main/graphql.ts`, persisted to `queue.json` via `saveDb()` (a `...db` spread,
-so new fields persist for free). Each synced setting is a **query + mutation +
-subscription trio** wired through graphql-subscriptions `PubSub`, exposed to
-clients via a **shared React hook**:
-
-- Float settings (bgmVolume, guideMelodyVolume, pianoRollOpacity,
-  pianoRollSize) use the generic **`useSyncedServerFloat`** hook
-  (`src/common/hooks`): initial `fetchQuery`, refetch on `visibilitychange`,
-  `requestSubscription` for remote changes, and a **200ms trailing-debounced**
-  mutation for local slider drags, with stale-echo suppression while a commit
-  is pending and a flush-on-unmount. Relay requires static `graphql\`\``documents, so each concrete hook (e.g.`usePianoRollSize`) declares its own
-  three operations and hands them to the generic hook.
-- Non-float / non-debounced settings (bgmTrack, pitchShiftSemis) have their
-  own small hooks with the same fetch/subscribe/mutate shape but commit
-  immediately.
-
-All these hooks share resilience plumbing, so copy it when writing a new one:
-the initial fetch goes through **`fetchQueryWithRetry`** (`src/common/hooks`)
-so a flaky first request after launch retries with backoff instead of
-silently leaving the default value (this is what made BGM "sometimes not
-kick in" after `run-dev`), and they refetch on **`WS_RECONNECTED_EVENT`**
-(dispatched by `graphqlEnvironment` whenever the graphql-ws socket
-(re)connects; `retryAttempts: Infinity` there keeps clients reconnecting
-across server restarts instead of freezing on stale values).
-
-**To add a synced setting**: add the field to `NotARealDb` + both `db` init
-sites + `loadDb`, add query/mutation/subscription to `schema.graphql`, add
-resolvers + a `SubscriptionEvent` + a pubsub publish in the mutation, write a
-hook, relay-compile. Persistence is automatic via the `...db` spread.
-
-### The settings manifest (`src/common/settings/`)
-
-**To surface that setting in the UI, add it here, not to each settings
-screen.** The TV sidebar (`renderer/Sidebar.tsx`) and the remocon panel
-(`remocon/components/RoomSettings/`) both render one pure-data manifest, so a
-setting is a single edit rather than two that can disagree. They used to be
-hand-maintained lists and had drifted: Scoring and Edit Break Message existed
-only on the phone, Scoring sat under MICROPHONE despite not being a mic
-setting, and the same value went by two names on the two screens.
-
-- `useRoomSettings()` calls every setting hook unconditionally, in a fixed
-  order, and returns a keyed map of `{value, set}`. That's what satisfies the
-  rules of hooks _once_ and lets the manifest stay data. Add the `Control`
-  here.
-- `manifest.ts` declares the entry: section, label, hint, and a `kind`
-  (`toggle` / `slider` / `select` / `presets` / `break` / `action`) with a
-  `get` accessor. Slider bounds are in **display** units (percent, dB) with
-  `toDisplay`/`fromDisplay` converting.
-- Each surface owns only a presenter (`SettingRow.tsx`, one per surface)
-  switching on `def.kind`. Don't add rendering logic to the manifest.
-- `surfaces: ["remocon"]` marks entries meaningless on the other screen (e.g.
-  "hide the TV settings panel" would hide its own switch). `visibleWhen` hides
-  a row conditionally (Gate Threshold under Pitch Gate).
-- Things that **aren't** synced settings, the mic pickers, mic level meters,
-  the hostname picker and the service-health rows, are per-surface
-  `sectionExtras` slots keyed by section, not manifest entries.
-- Actions (`editBreakMessage`, `recheckServices`, `clearQueue`) are typed by
-  id, so adding one is a compile error until both surfaces implement it.
-- **Hints render inline on both surfaces.** Don't put explanations in `title=`
-  tooltips; nobody hovers a television.
-- The TV grid is drag-resizable to 180px. `1fr` is `minmax(auto, 1fr)`, so a
-  long `.settingLabel` (or a `<select>`'s widest `<option>`) sets the column
-  and pushes the value column off the clipped edge. Labels wrap in the narrow
-  container query for exactly this reason.
+Room-wide settings are a query + mutation + subscription trio on
+`db: NotARealDb` in `main/graphql.ts`, exposed to clients through shared hooks.
+**Surface a setting in the UI only through the manifest in
+`src/common/settings/`, never by editing each settings screen.** The recipe,
+the hooks' retry/reconnect plumbing to copy, and the manifest rules are in the
+**`synced-settings`** skill; load it before adding or changing a setting.
 
 ### Key subsystems
 
@@ -411,7 +292,8 @@ These stay here. The first two are whole-app contracts, the third spans
   main (`publishSongTelop`, keyed by `queueItemKey` so a late parse can't land
   on the next song). The phone draws the same layout with the same functions,
   so it gets the romaji without shipping kuromoji. **Change how the TV draws
-  telop only inside `telopLayout.ts`**, or the phone quietly stops matching.
+  telop only inside `telopLayout.ts`**, or the phone stops matching, with no
+  error surfaced.
   The extraction was verified pixel-identical against the pre-refactor
   renderer with a Chrome harness (`.claude/telop-harness/compare.mjs`).
   Sync: Player reports `video.currentTime` stamped with `Date.now()` on every
@@ -489,7 +371,4 @@ for testing, but never print or commit them.
 
 ## More docs
 
-`docs/` has longer-form writeups: `architecture.md`, `development.md`,
-`configuration.md`, `glossary.md`, `overview.md`, `windows-dev-setup.md`, and
-investigation logs (`audio-chopping-investigation.md`,
-`joysound-piano-roll-investigation.md`, `dev-server-investigation.md`).
+The `docs/` folder has longer-form writeups and investigation logs.

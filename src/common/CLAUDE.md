@@ -27,9 +27,9 @@ which breaks the song-name filter and hides the JP exclusion keywords.
 
 The MV fetch uses `-f bv+ba/b` so the downloaded file carries its own audio,
 which `computeYoutubeIntroOffsetMs` reads off disk. It used to be `-f bv`
-(video-only) plus a _second_ `-f ba` extraction just for intro-sync, two full
-extractions per song, four on a failing song once both retried, which is how we
-started earning 429s. Because the MV file now has an audio track, the composite
+(video-only) plus a _second_ `-f ba` extraction just for intro-sync: two full
+extractions per song, four on a failing song once both retried, causing 429s.
+Because the MV file now has an audio track, the composite
 **must** map streams explicitly (`-map 0:v:0 -map 1:a:0`); default selection
 only picks the ogg by luck of channel count (3.0 vs stereo). Retries back off
 (`YOUTUBE_RETRY_BACKOFF_MS`) and are **skipped entirely on a 429/bot-wall**
@@ -110,7 +110,7 @@ inconclusive (the common case, since a karaoke re-recording rarely
 envelope-correlates with the original master) it falls back to **onset
 alignment** (`estimateOnsetOffsetMs`): detect where the music starts in each
 track and align those points (already-aligned songs → ≈0, so it's
-self-limiting). Only when onset also can't locate both starts do we give up
+self-limiting). Only when onset also can't locate both starts does it give up
 (null) and leave the heads at t=0. There is **no end-together pad** anymore.
 The old "assume the video and song end together" fallback blindly shoved the
 whole video several seconds late, desyncing songs whose heads were already
