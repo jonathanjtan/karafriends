@@ -8,6 +8,7 @@ import usePlaybackState from "../../../common/hooks/usePlaybackState";
 import useConfig from "../../hooks/useConfig";
 import useNowPlaying from "../../hooks/useNowPlaying";
 import useUserIdentity from "../../hooks/useUserIdentity";
+import accessibleClick from "../accessibleClick";
 import PitchControls from "../PitchControls/PitchControls";
 import Slider from "../Slider";
 import * as styles from "./PlaybackControls.module.scss";
@@ -59,18 +60,35 @@ const PlaybackControls = () => {
       <div
         className={classnames(styles.controls, { [styles.disabled]: disabled })}
       >
-        <div onClick={() => setPlaybackState("RESTARTING")}>
+        <div
+          {...accessibleClick(() => setPlaybackState("RESTARTING"), {
+            ariaLabel: "Restart song",
+            disabled,
+          })}
+        >
           <MdReplay />
         </div>
         <div
           className={styles.playPause}
-          onClick={() =>
-            setPlaybackState(playbackState === "PAUSED" ? "PLAYING" : "PAUSED")
-          }
+          {...accessibleClick(
+            () =>
+              setPlaybackState(
+                playbackState === "PAUSED" ? "PLAYING" : "PAUSED",
+              ),
+            {
+              ariaLabel: playbackState === "PLAYING" ? "Pause" : "Play",
+              disabled,
+            },
+          )}
         >
           {playbackState === "PLAYING" ? <MdPause /> : <MdPlayArrow />}
         </div>
-        <div onClick={() => setPlaybackState("SKIPPING")}>
+        <div
+          {...accessibleClick(() => setPlaybackState("SKIPPING"), {
+            ariaLabel: "Skip song",
+            disabled,
+          })}
+        >
           <MdSkipNext />
         </div>
       </div>

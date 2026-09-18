@@ -59,16 +59,30 @@ interface Props {
   songOverride?: { name: string; artistName: string } | null;
 }
 
-const YouTubeQueueButton = ({
+// videoInfo is only known to be a real, queueable video once the query has
+// resolved, so this bails out before any hook below runs. Keeping the bailout
+// hookless (rather than an early return inside the hook-calling component)
+// means every render of that component calls the same hooks in the same
+// order: this wrapper either renders nothing or mounts a fresh instance,
+// rather than the same instance skipping hooks on some renders.
+const YouTubeQueueButton = (props: Props) => {
+  if (props.videoInfo.__typename !== "YoutubeVideoInfo") return null;
+  return <YouTubeQueueButtonForVideo {...props} videoInfo={props.videoInfo} />;
+};
+
+const YouTubeQueueButtonForVideo = ({
   videoId,
   videoInfo,
   adhocSongLyrics,
   selectedCaption,
   userIdentity,
   songOverride = null,
-}: Props) => {
-  if (videoInfo.__typename !== "YoutubeVideoInfo") return null;
-
+}: Omit<Props, "videoInfo"> & {
+  videoInfo: Extract<
+    YouTubeInfoVideoInfoQuery$data["youtubeVideoInfo"],
+    { __typename: "YoutubeVideoInfo" }
+  >;
+}) => {
   const defaultText = "Queue video";
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<YouTubeQueueButtonMutation>(

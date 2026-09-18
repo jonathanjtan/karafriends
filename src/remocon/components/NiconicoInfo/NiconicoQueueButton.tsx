@@ -56,9 +56,27 @@ interface Props {
   userIdentity: NiconicoQueueButtonMutation$variables["input"]["userIdentity"];
 }
 
-const NiconicoQueueButton = ({ videoId, videoInfo, userIdentity }: Props) => {
-  if (videoInfo.__typename !== "NicoVideoInfo") return null;
+// videoInfo is only known to be a real, queueable video once the query has
+// resolved, so this bails out before any hook below runs. Keeping the bailout
+// hookless (rather than an early return inside the hook-calling component)
+// means every render of that component calls the same hooks in the same
+// order: this wrapper either renders nothing or mounts a fresh instance,
+// rather than the same instance skipping hooks on some renders.
+const NiconicoQueueButton = (props: Props) => {
+  if (props.videoInfo.__typename !== "NicoVideoInfo") return null;
+  return <NiconicoQueueButtonForVideo {...props} videoInfo={props.videoInfo} />;
+};
 
+const NiconicoQueueButtonForVideo = ({
+  videoId,
+  videoInfo,
+  userIdentity,
+}: Omit<Props, "videoInfo"> & {
+  videoInfo: Extract<
+    NiconicoInfoVideoInfoQuery$data["nicoVideoInfo"],
+    { __typename: "NicoVideoInfo" }
+  >;
+}) => {
   const defaultText = "Queue video";
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<NiconicoQueueButtonMutation>(

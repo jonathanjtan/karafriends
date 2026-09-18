@@ -42,6 +42,10 @@ interface Playability {
  * back to thumbnails. Pass `null` when the video info couldn't be fetched.
  *
  * None of this gates queueing: the download runs on the host, not the phone.
+ *
+ * Assumes a single `#youtube-player` element exists at a time: JoysoundSongPage
+ * and YouTubePage are on mutually exclusive routes, and JoysoundSongPage never
+ * renders more than one JoysoundYouTubeInfo at once.
  */
 export default function useYouTubeEmbed(
   videoId: string,

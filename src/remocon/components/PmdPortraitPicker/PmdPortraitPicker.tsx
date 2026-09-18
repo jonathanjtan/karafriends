@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import accessibleClick from "../accessibleClick";
 import * as styles from "./PmdPortraitPicker.module.scss";
 
 // Portrait picker backed by a local mirror of the PMDCollab SpriteCollab
@@ -148,10 +149,10 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
               className={`${styles.cell} ${
                 selectedMonster?.id === monster.id ? styles.cellSelected : ""
               }`}
-              onClick={() => {
+              {...accessibleClick(() => {
                 setSelectedMonster(monster);
                 setFormIdx(0);
-              }}
+              })}
             >
               {/* lazy: the unfiltered grid is the whole dex (~1000 images);
                   only fetch the ones scrolled into view */}
@@ -200,7 +201,9 @@ const PmdPortraitPicker = ({ onSelect, selectedUrl }: Props) => {
                     ? styles.cellSelected
                     : ""
                 }`}
-                onClick={() => onSelect(portraitUrl(selectedForm!, emotion))}
+                {...accessibleClick(() =>
+                  onSelect(portraitUrl(selectedForm!, emotion)),
+                )}
               >
                 <img src={portraitUrl(selectedForm!, emotion)} alt={emotion} />
                 <span>{emotion}</span>

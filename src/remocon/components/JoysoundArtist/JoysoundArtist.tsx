@@ -55,10 +55,13 @@ const JoysoundArtist = ({ id }: Props) => {
   >(joysoundArtistPaginationQuery, queryData);
 
   const songs = data.joysoundSongsByArtist;
+  // An artist with no songs left in the catalog (or a stale/bad id) comes
+  // back with no edges to read a name from.
+  const artistName = songs.edges[0]?.node.artistName ?? "";
 
   return (
     <div>
-      <h2 data-subject>{songs.edges[0].node.artistName}</h2>
+      <h2 data-subject>{artistName}</h2>
       <List>
         {songs.edges.map(({ node }) => (
           <JoysoundArtistSongItem key={node.id} {...node} />

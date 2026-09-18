@@ -7,6 +7,7 @@ import { FaAngleDown, FaAngleUp, FaSmile } from "react-icons/fa";
 import { queueItemKey } from "../../../common/telopLayout";
 import useLyricsPanelOpen from "../../hooks/useLyricsPanelOpen";
 import useNowPlaying from "../../hooks/useNowPlaying";
+import accessibleClick from "../accessibleClick";
 import Collapse from "../Collapse";
 import EmoteButtons from "../EmoteButtons";
 import NowPlayingLyrics, { LyricsToggle } from "../NowPlayingLyrics";
@@ -62,7 +63,11 @@ const ControlBar = () => {
         <NowPlaying currentSong={currentSong} />
         <div className={styles.expanderButtons}>
           {lyricsSongKey !== null ? <LyricsToggle /> : null}
-          <div onClick={() => setExpanded(!expanded)}>
+          <div
+            {...accessibleClick(() => setExpanded(!expanded), {
+              ariaLabel: expanded ? "Collapse controls" : "Expand controls",
+            })}
+          >
             {expanded ? <FaAngleDown /> : <FaAngleUp />}
           </div>
         </div>
@@ -74,7 +79,9 @@ const ControlBar = () => {
           </div>
           <div
             className={styles.toggle}
-            onClick={() => setShowEmotes(!showEmotes)}
+            {...accessibleClick(() => setShowEmotes(!showEmotes), {
+              ariaLabel: showEmotes ? "Show playback controls" : "Show emotes",
+            })}
           >
             {showEmotes ? <BsMusicPlayerFill /> : <FaSmile />}
           </div>

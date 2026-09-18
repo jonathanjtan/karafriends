@@ -11,6 +11,7 @@ import { cyrb53 } from "../../../common/hash";
 import { useQueueQueueQuery$data } from "../../../common/hooks/__generated__/useQueueQueueQuery.graphql";
 import useConfig from "../../hooks/useConfig";
 import useUserIdentity from "../../hooks/useUserIdentity";
+import accessibleClick from "../accessibleClick";
 import Marquee from "../Marquee";
 import WeebText from "../WeebText";
 import * as styles from "./SongQueue.module.scss";
@@ -119,7 +120,7 @@ const SongQueueItem = ({
           <div
             className={styles.nickname}
             style={{ backgroundColor: nicknameBgColor }}
-            onClick={() => setExpanded(false)}
+            {...accessibleClick(() => setExpanded(false))}
           >
             {profilePictureUrl && (
               <img className={avatarClassName} src={profilePictureUrl} alt="" />
@@ -129,18 +130,31 @@ const SongQueueItem = ({
           {item.songId && item.timestamp && !isCurrent && canRemove && (
             <>
               {canMoveUp && (
-                <div className={styles.move} onClick={() => onMove(-1)}>
+                <div
+                  className={styles.move}
+                  {...accessibleClick(() => onMove(-1), {
+                    ariaLabel: "Move up in queue",
+                  })}
+                >
                   <MdArrowUpward />
                 </div>
               )}
               {canMoveDown && (
-                <div className={styles.move} onClick={() => onMove(1)}>
+                <div
+                  className={styles.move}
+                  {...accessibleClick(() => onMove(1), {
+                    ariaLabel: "Move down in queue",
+                  })}
+                >
                   <MdArrowDownward />
                 </div>
               )}
               <div
                 className={styles.remove}
-                onClick={() => onRemove(item.songId, item.timestamp)}
+                {...accessibleClick(
+                  () => onRemove(item.songId, item.timestamp),
+                  { ariaLabel: "Remove from queue" },
+                )}
               >
                 <MdClose />
               </div>
@@ -153,7 +167,9 @@ const SongQueueItem = ({
           style={
             profilePictureUrl ? undefined : { backgroundColor: nicknameBgColor }
           }
-          onClick={() => setExpanded(true)}
+          {...accessibleClick(() => setExpanded(true), {
+            ariaLabel: `Show controls for ${nickname}`,
+          })}
         >
           {profilePictureUrl ? (
             <img className={avatarClassName} src={profilePictureUrl} alt="" />
@@ -162,7 +178,7 @@ const SongQueueItem = ({
           )}
         </div>
       )}
-      <div className={styles.songMeta} onClick={onClick}>
+      <div className={styles.songMeta} {...accessibleClick(onClick)}>
         <Marquee>
           <div className={styles.songMetaContent}>
             <WeebText

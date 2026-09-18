@@ -4,6 +4,7 @@ import { MdEdit } from "react-icons/md";
 import { graphql, useMutation } from "react-relay";
 
 import useUserIdentity from "../../hooks/useUserIdentity";
+import accessibleClick from "../accessibleClick";
 import * as styles from "./EmoteButtons.module.scss";
 import { EmoteButtonsMutation } from "./__generated__/EmoteButtonsMutation.graphql";
 
@@ -18,7 +19,9 @@ const DEFAULT_EMOTES = ["🆓", "🔥", "❤️"];
 const EmoteButtons = () => {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [emotes, setEmotes] = useState<string[]>(
-    JSON.parse(localStorage.getItem("emotes") || JSON.stringify(DEFAULT_EMOTES))
+    JSON.parse(
+      localStorage.getItem("emotes") || JSON.stringify(DEFAULT_EMOTES),
+    ),
   );
   const userIdentity = useUserIdentity();
   const [commit] = useMutation<EmoteButtonsMutation>(emoteButtonsMutation);
@@ -55,7 +58,12 @@ const EmoteButtons = () => {
 
   return (
     <div className={styles.emotes}>
-      <div className={styles.custom} onClick={() => showEmotesPrompt()}>
+      <div
+        className={styles.custom}
+        {...accessibleClick(() => showEmotesPrompt(), {
+          ariaLabel: "Edit emote list",
+        })}
+      >
         <MdEdit />
       </div>
       {emotes

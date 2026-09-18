@@ -3,11 +3,14 @@ import Button from "../Button/Button";
 import * as styles from "./EnableNotificationsButton.module.scss";
 
 const EnableNotificationsButton = () => {
-  if (!("Notification" in window)) {
-    return <></>;
-  }
+  const supported = "Notification" in window;
+  // The initializer must not touch Notification when it doesn't exist; the
+  // value is unused once the unsupported check below returns null.
+  const [permission, setPermission] = useState(
+    supported ? Notification.permission : "denied",
+  );
 
-  const [permission, setPermission] = useState(Notification.permission);
+  if (!supported) return null;
 
   return permission === "default" ? (
     <div className={styles.enableNotificationsButtonContainer}>
@@ -19,9 +22,7 @@ const EnableNotificationsButton = () => {
         Enable push notifications
       </Button>
     </div>
-  ) : (
-    <></>
-  );
+  ) : null;
 };
 
 export default EnableNotificationsButton;
