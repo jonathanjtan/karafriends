@@ -121,7 +121,7 @@ const winTasks = {
           `${extraResourcesDir}/ffmpeg/win/ffmpeg.exe`,
           (err) => {
             if (err) {
-              console.error(error);
+              console.error(err);
               throw err;
             }
             hasFinishedExtracting[0] = true;
@@ -242,7 +242,7 @@ const linuxTasks = {
               `${extraResourcesDir}/ffmpeg/linux/ffmpeg`,
               (err) => {
                 if (err) {
-                  console.error(error);
+                  console.error(err);
                   throw err;
                 }
                 hasFinishedExtracting[0] = true;
@@ -304,8 +304,8 @@ async function getExternalResources(tasks) {
       );
       process.exit(1);
     }
-    if (!tasks.doChecks(tmpDir).every((check) => check === true)) {
-      console.error("An external resource wasn't successfuly downloaded!");
+    if (!tasks.doChecks().every((check) => check === true)) {
+      console.error("An external resource wasn't successfully downloaded!");
       process.exit(1);
     }
     tasks.setPermissions();
