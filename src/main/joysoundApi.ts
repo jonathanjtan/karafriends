@@ -72,8 +72,8 @@ interface ServiceTypeData {
 }
 
 function generateCookieString(cookies: JoysoundCookies) {
-  // Skip the ones we haven't been handed yet -- sending `JSESSIONID=` with an
-  // empty value is not the same as not sending it.
+  // Skip cookies not yet received: sending `JSESSIONID=` with an empty value
+  // is not the same as omitting it.
   return COOKIE_IDS.filter(
     (cookieId) => cookies[cookieId as keyof JoysoundCookies],
   )
@@ -83,14 +83,12 @@ function generateCookieString(cookies: JoysoundCookies) {
     .join("; ");
 }
 
-// Accumulates whatever cookies this particular response carried, leaving the
-// rest of `target` alone. It used to `invariant` that EVERY id was present in
-// every response, which stopped being true around Aug 2026: sound-cafe now
-// withholds JSESSIONID until you actually authenticate (ordinary session-
-// fixation hygiene), so the very first GET /login threw and login never ran.
-// Note a missing cookie and a geo-block look identical at this layer -- a
-// blocked exit returns 403 with no Set-Cookie at all -- so callers that need
-// to tell those apart must check the status, not this function.
+// Accumulates whatever cookies this response carried, leaving the rest of
+// `target` alone. sound-cafe withholds JSESSIONID until authentication, so
+// not every cookie id is present in every response. A missing cookie and a
+// geo-block look identical at this layer: a blocked exit returns 403 with no
+// Set-Cookie at all, so callers that need to tell those apart must check the
+// status, not this function.
 function parseCookies(setCookie: string, target: JoysoundCookies) {
   for (const cookieId of COOKIE_IDS) {
     const matchData = setCookie.match(new RegExp(cookieId + "=([^;]+);"));
@@ -184,10 +182,9 @@ export class JoysoundAPI extends RESTDataSource {
         Referer: "https://www.sound-cafe.jp/player",
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/112.0",
-        // Both spellings on purpose. sound-cafe moved to Spring's
-        // CookieCsrfTokenRepository around Aug 2026, whose default header is
-        // X-XSRF-TOKEN; X-CSRF-TOKEN alone now 403s every API call. Sending
-        // the pair is verified to work and keeps us compatible either way.
+        // Both headers are sent on purpose: sound-cafe's CookieCsrfTokenRepository
+        // reads X-XSRF-TOKEN, and X-CSRF-TOKEN alone 403s every API call.
+        // Sending both keeps this compatible with either check.
         "X-CSRF-TOKEN": creds.csrfToken,
         "X-XSRF-TOKEN": creds.csrfToken,
       },
@@ -256,9 +253,10 @@ export class JoysoundAPI extends RESTDataSource {
     const tieUp = results[2];
     invariant(tieUp !== undefined);
 
-    const lyricsPreview = data.match(
+    const lyricsPreviewMatch = data.match(
       /<div class="flex items-center w-full border-b select-none border-gray">([^<>]*)/,
-    )[1];
+    );
+    const lyricsPreview = lyricsPreviewMatch?.[1];
     invariant(lyricsPreview !== undefined);
 
     const payload: JoysoundSongDetail = {

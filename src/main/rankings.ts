@@ -172,7 +172,7 @@ async function fetchPage(url: string): Promise<string> {
 // Oricon serves Shift_JIS, unlike joysound.com and clubdam.com, and resp.text()
 // would mangle every Japanese title, so its pages are decoded explicitly.
 // The final URL comes back too: the dateless weekly URL redirects to the
-// newest week, and that's how we learn which week we got.
+// newest week, and that final URL is how the fetched week is identified.
 async function fetchOriconPage(
   url: string,
 ): Promise<{ html: string; finalUrl: string }> {
@@ -789,7 +789,7 @@ function parseOriconRanking(html: string): OriconChartEntry[] {
 // /rank/ko/m/ monthly page (404). Past years are paywalled and immutable, so
 // they're a static table in common/oriconChart.ts; only the current week has
 // to be fetched. The dateless /rank/ko/w/ redirects to the newest week, so
-// this needs no date arithmetic. Which week we landed on is read back off
+// this needs no date arithmetic. Which week was landed on is read back off
 // the final URL.
 //
 // The weekly chart is a Top 20 split over two pages (…/ and …/p/2/), unlike the

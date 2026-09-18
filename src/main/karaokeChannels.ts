@@ -707,7 +707,7 @@ function getChannel(
 }
 
 // The remocon debounces typing, but the fan-out still turns one search into
-// one request per channel, and backing up a character re-runs a search we
+// one request per channel, and backing up a character re-runs a search that
 // just ran. Short TTL because a channel's catalog does change (these upload
 // daily). This is about a burst of near-identical searches, not about
 // caching a catalog.

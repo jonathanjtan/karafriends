@@ -5,7 +5,7 @@ import express, { Request, Response } from "express";
 
 function remoconReverseProxy(devPort: number) {
   if (isDev) {
-    // On dev, we should proxy non-graphql requests to the remocon dev server
+    // In dev, non-GraphQL requests are proxied to the remocon dev server.
     return (req: Request, res: Response, next: () => void) => {
       if (req.path === "/graphql") {
         next();
@@ -32,16 +32,22 @@ function remoconReverseProxy(devPort: number) {
             req.headers[header] as string,
           ]),
         },
-      ).then((proxiedRes) => {
-        res.status(proxiedRes.status);
-        proxiedRes.headers.forEach((value, name) => res.set(name, value));
-        proxiedRes.arrayBuffer().then((buf) => {
+      )
+        .then((proxiedRes) => {
+          res.status(proxiedRes.status);
+          proxiedRes.headers.forEach((value, name) => res.set(name, value));
+          return proxiedRes.arrayBuffer();
+        })
+        .then((buf) => {
           res.send(Buffer.from(buf));
+        })
+        .catch((err) => {
+          console.error("remocon reverse proxy request failed:", err);
+          if (!res.headersSent) res.sendStatus(502);
         });
-      });
     };
   } else {
-    // On prod, we can just serve up the built remocon bundle
+    // In production, serve the built remocon bundle directly.
     return express.static(
       path.join(__dirname, "..", "..", "..", "build", "prod", "remocon"),
     );

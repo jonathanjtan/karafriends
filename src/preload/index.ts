@@ -63,9 +63,8 @@ contextBridge.exposeInMainWorld("karafriends", {
     close: (): void => ipcRenderer.send("close-qr-panel"),
   },
   nativeAudio: {
-    // Repeatedly asking CPAL for input devices seems to cause unexpected
-    // breakages, like the default output device being released. Let's avoid
-    // that.
+    // Memoized because repeatedly asking CPAL for input devices can release
+    // the default output device.
     inputDevices: memoize(nativeAudio.inputDevices),
     outputDevices: nativeAudio.outputDevices,
     inputDevice_new(name: string, channelSelection: number) {
@@ -86,9 +85,10 @@ contextBridge.exposeInMainWorld("karafriends", {
       return nativeAudio.inputDevice_getPitches(inputDevices[deviceId]);
     },
     // Parcel rebuilds this bundle without necessarily re-copying index.node
-    // (it will reuse a cached copy), so the addon behind us can be older than
-    // this wrapper. A missing mic-output binding is a degraded toggle; throwing here
-    // would kill the renderer's <App> and blank the big screen instead.
+    // (it will reuse a cached copy), so the native addon behind this wrapper
+    // can be older than the wrapper itself. A missing mic-output binding is a
+    // degraded toggle; throwing here would kill the renderer's <App> and
+    // blank the big screen instead.
     inputDevice_setMicOutputEnabled(deviceId: number, enabled: boolean) {
       if (typeof nativeAudio.inputDevice_setMicOutputEnabled !== "function") {
         console.warn(

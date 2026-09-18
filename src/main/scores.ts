@@ -37,8 +37,8 @@ export interface ScoreRecord {
 }
 
 // userData, not the temp dir: the whole point of a personal best is surviving,
-// and an OS temp sweep would wipe it. Same reasoning as people.json and the
-// song-history mirror, and the melody cache learned this the hard way.
+// and an OS temp sweep would wipe it. Same reasoning as people.json, the
+// song-history mirror, and the melody cache.
 const SCORES_PATH = path.join(app.getPath("userData"), "scores.json");
 const FILE_VERSION = 1;
 // A night is tens of records and each is small, but nothing prunes this file,

@@ -1079,9 +1079,8 @@ async function searchWithRomajiFallback<T>(
   merge: (a: Awaited<T>, b: Awaited<T>) => Awaited<T>,
   search: (keyword: string) => Promise<T>,
 ): Promise<RomajiSearch<Awaited<T>>> {
-  const literalResult = await search(keyword);
   if (!isFirstPage || !keyword || !isRomaji(keyword)) {
-    return { result: literalResult, effectiveKeyword: keyword };
+    return { result: await search(keyword), effectiveKeyword: keyword };
   }
 
   // A romaji query is ambiguous about which mora should land in which kana
@@ -1103,14 +1102,21 @@ async function searchWithRomajiFallback<T>(
     ),
   ];
 
+  // The literal keyword and every candidate reading are independent
+  // requests; fetch them concurrently rather than one at a time.
+  const [literalResult, ...candidateResults] = await Promise.all([
+    search(keyword),
+    ...candidates.map(search),
+  ]);
+
   let result = literalResult;
   let effectiveKeyword = keyword;
   let bestCount = count(literalResult);
 
-  for (const candidate of candidates) {
-    const candidateResult = await search(candidate);
+  candidates.forEach((candidate, i) => {
+    const candidateResult = candidateResults[i];
     const candidateCount = count(candidateResult);
-    if (candidateCount === 0) continue;
+    if (candidateCount === 0) return;
 
     result =
       count(result) === 0 ? candidateResult : merge(result, candidateResult);
@@ -1118,7 +1124,7 @@ async function searchWithRomajiFallback<T>(
       effectiveKeyword = candidate;
       bestCount = candidateCount;
     }
-  }
+  });
   return { result, effectiveKeyword };
 }
 
@@ -2089,12 +2095,11 @@ let runHealthCheckOnce:
 
 const DB_PATH = path.resolve(TEMP_FOLDER, "queue.json");
 
-// queue.json lives in the OS temp dir, which macOS wipes on every boot. A
-// reboot mid-party (2026-07-25 is the case on record) took the room's whole
-// song history with it, along with the cached composites. The composites are
-// a cache and can be re-fetched; the history can't. Mirror it to userData,
-// for the same reason people.json and the score cards live there, and merge
-// the two on load.
+// queue.json lives in the OS temp dir, which macOS wipes on every boot,
+// taking the whole song history with it along with the cached composites.
+// The composites are a cache and can be re-fetched; the history can't.
+// Mirror it to userData, for the same reason people.json and the score
+// cards live there, and merge the two on load.
 const HISTORY_MIRROR_PATH = path.resolve(
   electronApp.getPath("userData"),
   "song-history.json",
@@ -2160,31 +2165,38 @@ function mergeHistory(...sources: SongHistoryItem[][]): SongHistoryItem[] {
 
 // TODO: write a db interface and call these from within mutating methods instead of at their call sites
 function saveDb() {
-  if (!fs.existsSync(TEMP_FOLDER)) {
-    fs.mkdirSync(TEMP_FOLDER);
+  // Best-effort, like every other disk write in this file: a mutation
+  // (moveSong, clearQueue, ...) must not fail outright over a transient
+  // write error.
+  try {
+    if (!fs.existsSync(TEMP_FOLDER)) {
+      fs.mkdirSync(TEMP_FOLDER);
+    }
+    fs.writeFileSync(
+      DB_PATH,
+      JSON.stringify({
+        ...db,
+        pitchShiftSemis: 0,
+        currentSong: null,
+        currentSongAdhocLyrics: [],
+        // Re-queue the in-flight song so it survives a restart, but only if
+        // there is one; a bare [db.currentSong, ...] spread persisted a null
+        // on every idle-time save, which then broke the (non-nullable) queue
+        // query on the next launch.
+        songQueue: [db.currentSong, ...db.songQueue].filter(
+          (song): song is QueueItem => song !== null,
+        ),
+        downloadQueue: [],
+        // A fresh process is never mid-song; restoring a stale PLAYING from a
+        // session killed mid-song left the renderer waiting forever (no BGM,
+        // idle screen) for a song that isn't there.
+        playbackState: PlaybackState.WAITING,
+      }),
+      "utf-8",
+    );
+  } catch (e) {
+    console.error("[db] failed to save queue.json", e);
   }
-  fs.writeFileSync(
-    DB_PATH,
-    JSON.stringify({
-      ...db,
-      pitchShiftSemis: 0,
-      currentSong: null,
-      currentSongAdhocLyrics: [],
-      // Re-queue the in-flight song so it survives a restart, but only if
-      // there is one; a bare [db.currentSong, ...] spread persisted a null
-      // on every idle-time save, which then broke the (non-nullable) queue
-      // query on the next launch.
-      songQueue: [db.currentSong, ...db.songQueue].filter(
-        (song): song is QueueItem => song !== null,
-      ),
-      downloadQueue: [],
-      // A fresh process is never mid-song; restoring a stale PLAYING from a
-      // session killed mid-song left the renderer waiting forever (no BGM,
-      // idle screen) for a song that isn't there.
-      playbackState: PlaybackState.WAITING,
-    }),
-    "utf-8",
-  );
   writeHistoryMirror();
 }
 
@@ -2235,9 +2247,9 @@ function loadDb(): NotARealDb {
   // Re-derived per launch rather than restored, because `run-dev` and the
   // packaged build share one OS temp dir and so one queue.json: a `true`
   // persisted by the packaged app would otherwise spread over the dev
-  // default and quietly turn test-queue recording back on. Erring the other
-  // way is also better, since a toggle flipped off for one test session can't
-  // silently eat the next party's history.
+  // default and turn test-queue recording back on. Erring the other way is
+  // also better, since a toggle flipped off for one test session can't
+  // affect the next party's history.
   loaded.historyRecordingEnabled = DEFAULT_HISTORY_RECORDING;
   return loaded;
 }
@@ -2345,7 +2357,7 @@ function hasMaxSongsInQueue(userIdentity: UserIdentity): boolean {
   const owns = (x: { userIdentity: UserIdentity }) =>
     itemBelongsToPerson(x.userIdentity, person);
 
-  // Not very efficient, but surely the queue won't ever get so big that this would be considered expensive
+  // O(n) over the queue on every call; acceptable since queue sizes stay small.
   const songsQueuedByUser: number = db.songQueue.filter(owns).length;
 
   const songsDownloadingByUser: number = db.downloadQueue.filter(owns).length;
@@ -2404,8 +2416,10 @@ function pushSongToQueue(
   );
 
   if (pushToHead === true) {
-    // To give things time to download, we don't actually push to the front, but the second.
-    // Due to :js:, this is OK regardless of the size of db.songQueue
+    // Index 1, not 0, so the song already at the front of the queue isn't
+    // displaced while it downloads. Array.prototype.splice clamps an
+    // out-of-range start index, so this is safe even when songQueue has
+    // fewer than two items.
     db.songQueue.splice(1, 0, enrichedItem);
   } else {
     db.songQueue.push(enrichedItem);
@@ -3433,10 +3447,7 @@ const resolvers = {
     people: (): Person[] => listPeople(),
     personByDevice: (_: any, args: { deviceId: string }): Person | null =>
       personByDevice(args.deviceId),
-    queue: () => {
-      if (!db.songQueue.length) return [];
-      return db.songQueue;
-    },
+    queue: () => db.songQueue,
     serviceHealth: (): ServiceHealthState =>
       currentServiceHealth ?? {
         damAvailable: true,
@@ -4026,7 +4037,8 @@ const resolvers = {
       dataSources.minsei
         .getMusicStreamingUrls(queueItem.songId)
         .then((data) => {
-          // XXX: This should be already be a number but typescript tells me it is not
+          // XXX: TypeScript types streamingUrlIdx as a string, though it is
+          // always numeric here.
           const selectedIndex = data.list[+queueItem.streamingUrlIdx];
           // Streaming-absent songs (physical-machine-only licenses) return an
           // empty list; leave the song queued and let the guarded
@@ -4451,6 +4463,11 @@ const resolvers = {
         (item) =>
           item.songId === args.songId && item.timestamp === args.timestamp,
       );
+      // A miss must be a no-op: findIndex's -1 is a valid splice start (from
+      // the end of the array), so without this check a stale/mismatched
+      // songId+timestamp would delete the last item in the queue instead of
+      // nothing.
+      if (songIdx === -1) return false;
       db.songQueue.splice(songIdx, 1);
       pubsub.publish(SubscriptionEvent.QueueChanged, {
         queueChanged: {
@@ -5295,56 +5312,64 @@ export function applyGraphQLMiddleware(app: Application) {
   triggerHealthCheck();
   setInterval(triggerHealthCheck, HEALTH_CHECK_INTERVAL_MS);
 
-  server.start().then(() => {
-    app.use(
-      "/graphql",
-      // Past express's 100kb default: the renderer posts each JOYSOUND song's
-      // telop layout (publishSongTelop), which runs 60-80kb of JSON for a
-      // typical song and more for a long one.
-      express.json({ limit: "4mb" }),
-      expressMiddleware(server, {
-        context: async () => {
-          return {
-            dataSources: {
-              minsei: new MinseiAPI(minseiCredentialsProvider, {
-                cache: server.cache,
-                fetch: fetcher,
-              }),
-              joysound: new JoysoundAPI(joysoundCredentialsProvider, {
-                cache: server.cache,
-                fetch: fetcher,
-              }),
-              dkwebsys: new DkwebsysAPI({
-                cache: server.cache,
-                fetch: fetcher,
-              }),
-              youtube: innertubeApiProvider,
-            },
-          };
-        },
-      }),
-    );
-    httpServer.listen(karafriendsConfig.remoconPort, () => {
-      console.log(
-        `Server is now running on http://localhost:${karafriendsConfig.remoconPort}`,
+  server
+    .start()
+    .then(() => {
+      app.use(
+        "/graphql",
+        // Past express's 100kb default: the renderer posts each JOYSOUND song's
+        // telop layout (publishSongTelop), which runs 60-80kb of JSON for a
+        // typical song and more for a long one.
+        express.json({ limit: "4mb" }),
+        expressMiddleware(server, {
+          context: async () => {
+            return {
+              dataSources: {
+                minsei: new MinseiAPI(minseiCredentialsProvider, {
+                  cache: server.cache,
+                  fetch: fetcher,
+                }),
+                joysound: new JoysoundAPI(joysoundCredentialsProvider, {
+                  cache: server.cache,
+                  fetch: fetcher,
+                }),
+                dkwebsys: new DkwebsysAPI({
+                  cache: server.cache,
+                  fetch: fetcher,
+                }),
+                youtube: innertubeApiProvider,
+              },
+            };
+          },
+        }),
       );
-    });
+      httpServer.listen(karafriendsConfig.remoconPort, () => {
+        console.log(
+          `Server is now running on http://localhost:${karafriendsConfig.remoconPort}`,
+        );
+      });
 
-    // Warm the Top 100 charts in the background so they're ready (and, after
-    // the first run, persisted) before anyone opens the ranking pages. Prime
-    // DAM's canonical readings for each resolved chart's rows too, so the
-    // romaji is cached before anyone opens a page rather than on first visit.
-    const rankingDkwebsys = new DkwebsysAPI({
-      cache: server.cache,
-      fetch: fetcher,
-    });
-    primeRankings(
-      new JoysoundAPI(joysoundCredentialsProvider, {
+      // Warm the Top 100 charts in the background so they're ready (and, after
+      // the first run, persisted) before anyone opens the ranking pages. Prime
+      // DAM's canonical readings for each resolved chart's rows too, so the
+      // romaji is cached before anyone opens a page rather than on first visit.
+      const rankingDkwebsys = new DkwebsysAPI({
         cache: server.cache,
         fetch: fetcher,
-      }),
-      (entries) => primeRankingReadings(entries, rankingDkwebsys),
-      (entries) => primeRankingArtistReadings(entries, rankingDkwebsys),
-    );
-  });
+      });
+      primeRankings(
+        new JoysoundAPI(joysoundCredentialsProvider, {
+          cache: server.cache,
+          fetch: fetcher,
+        }),
+        (entries) => primeRankingReadings(entries, rankingDkwebsys),
+        (entries) => primeRankingArtistReadings(entries, rankingDkwebsys),
+      );
+    })
+    .catch((e) => {
+      // An unhandled rejection here (e.g. httpServer.listen failing on a
+      // port already in use) would otherwise take down the whole app via
+      // main's unhandledRejection handler.
+      console.error("Failed to start the GraphQL server", e);
+    });
 }

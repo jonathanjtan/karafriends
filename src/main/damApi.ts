@@ -25,8 +25,8 @@ const BASE_MINSEI_REQUEST = {
 };
 
 // Structurally matches promise-retry's OperationOptions (from the "retry"
-// package, which PnP won't let us import directly as it's not a declared
-// dependency).
+// package, which PnP does not allow importing directly since it is not a
+// declared dependency).
 export type RetryOptions = {
   retries?: number;
   factor?: number;
@@ -351,7 +351,11 @@ export class DkwebsysAPI extends RESTDataSource {
 
   getMusicByKeyword(keyword: string, first: number, after: number) {
     const firstPage = Math.floor(after / 30) + 1;
-    const pageCount = Math.ceil(first / 30);
+    // At least one page even when first <= 0 (e.g. a GraphQL client that
+    // omits `first` gets 0 via `args.first || 0`), so `data` (totalCount,
+    // artist name/yomi) is still populated; results.reduce below relies on
+    // a non-empty array.
+    const pageCount = Math.max(1, Math.ceil(first / 30));
 
     return Promise.all(
       [...Array(pageCount).keys()].map((pageOffset) =>
@@ -392,7 +396,11 @@ export class DkwebsysAPI extends RESTDataSource {
 
   getArtistByKeyword(keyword: string, first: number, after: number) {
     const firstPage = Math.floor(after / 30) + 1;
-    const pageCount = Math.ceil(first / 30);
+    // At least one page even when first <= 0 (e.g. a GraphQL client that
+    // omits `first` gets 0 via `args.first || 0`), so `data` (totalCount,
+    // artist name/yomi) is still populated; results.reduce below relies on
+    // a non-empty array.
+    const pageCount = Math.max(1, Math.ceil(first / 30));
 
     return Promise.all(
       [...Array(pageCount).keys()].map((pageOffset) =>
@@ -433,7 +441,11 @@ export class DkwebsysAPI extends RESTDataSource {
 
   getMusicListByArtist(artistCode: string, first: number, after: number) {
     const firstPage = Math.floor(after / 30) + 1;
-    const pageCount = Math.ceil(first / 30);
+    // At least one page even when first <= 0 (e.g. a GraphQL client that
+    // omits `first` gets 0 via `args.first || 0`), so `data` (totalCount,
+    // artist name/yomi) is still populated; results.reduce below relies on
+    // a non-empty array.
+    const pageCount = Math.max(1, Math.ceil(first / 30));
 
     return Promise.all(
       [...Array(pageCount).keys()].map((pageOffset) =>

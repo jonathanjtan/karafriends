@@ -6,18 +6,17 @@ import { fileURLToPath } from "url";
 import { default as nativeAudioUrl } from "url:../../native/index.node";
 const nativeAudio = require(fileURLToPath(nativeAudioUrl)); // tslint:disable-line:no-var-requires
 
-// Crash reporting used to go out to Sentry here, but the DSN was upstream's:
-// every event this fork sent landed in a project nobody here can read, in
-// exchange for `debug: true` console chatter and @sentry/node's
-// require-in-the-middle patching (half of the "first GraphQL request after
-// launch throws" flake). Removed on both dev and prod. If reporting comes
-// back, it needs our own DSN, read from config rather than hardcoded.
+// No crash reporting is wired up here: a hardcoded Sentry DSN sent every
+// event to a project this fork cannot read, while still paying for
+// `debug: true` console chatter and @sentry/node's require-in-the-middle
+// patching (a contributor to the "first GraphQL request after launch
+// throws" flake). If reporting is added back, it needs its own DSN read
+// from config rather than hardcoded.
 function handleError(err: unknown) {
   console.error("Fatal error:", err);
-  // The old `await Sentry.close(...)` incidentally gave stderr time to drain
-  // before exiting. `console.error` to a pipe, which is what `run-dev` has via
-  // concurrently, is async, so exiting in the same tick can truncate the
-  // message that is now the only record of a fatal error. Give it a tick.
+  // `console.error` to a pipe, which is what `run-dev` has via concurrently,
+  // is async, so exiting in the same tick can truncate the message that is
+  // now the only record of a fatal error. Give it a tick to drain.
   setTimeout(() => process.exit(1), 100);
 }
 
@@ -41,7 +40,7 @@ process.on("SIGTERM", flushCachesAndExit);
 
 import inspector from "inspector";
 
-// Start a debug server if we don't have one already. If we already have one, this would throw.
+// Start a debug server if one isn't already open; inspector.open() throws if one is.
 if (inspector.url() === undefined) inspector.open();
 
 import fs from "fs";
@@ -217,8 +216,8 @@ function createWindow() {
   session.webRequest.onHeadersReceived(
     ignoreCORSFilter,
     (details, callback) => {
-      // Chrome is not happy if ACAO is set twice, which is what happens
-      // when the Express static middleware is setting this one
+      // ACAO cannot be set twice; the Express static middleware already
+      // sets it.
       delete details.responseHeaders!["access-control-allow-origin"];
       details.responseHeaders!["Access-Control-Allow-Origin"] = ["*"];
       callback({ responseHeaders: details.responseHeaders });
@@ -226,11 +225,12 @@ function createWindow() {
   );
 
   if (karafriendsConfig.proxyEnable) {
-    session.setProxy({
-      proxyRules: `${karafriendsConfig.proxyHost}:${karafriendsConfig.proxyPort}`,
-      proxyBypassRules: "<local>,192.168.0.0/16,172.16.0.0/12,10.0.0.0/8",
-    });
-    // Technically should await this promise
+    session
+      .setProxy({
+        proxyRules: `${karafriendsConfig.proxyHost}:${karafriendsConfig.proxyPort}`,
+        proxyBypassRules: "<local>,192.168.0.0/16,172.16.0.0/12,10.0.0.0/8",
+      })
+      .catch((err) => console.error("Failed to set proxy:", err));
 
     // session.setProxy only covers Chromium's network stack. ffmpeg is
     // *spawned*, so the one thing it can inherit is http_proxy, and
@@ -423,7 +423,7 @@ app.on("login", (event, webContents, request, authInfo, callback) => {
     callback(proxyUser, proxyPass);
     event.preventDefault();
   } else {
-    // Well that's strange...
+    // Unexpected: a login challenge with the proxy disabled.
     console.log("Received login event even though proxy is not enabled?");
     if (rendererWindow) {
       dialog.showMessageBoxSync(rendererWindow, {

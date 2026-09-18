@@ -101,8 +101,8 @@ function isSameSinger(
 
 // This singer's most recent measurement at the current estimator version, or
 // null. Older versions are excluded rather than shown: they were produced on a
-// different scale, and a stale band would quietly mis-target every song
-// suggestion built on top of it.
+// different scale, and a stale band would mis-target every song suggestion
+// built on top of it.
 export function latestVocalRangeFor(
   nickname: string,
   personId: string | null,

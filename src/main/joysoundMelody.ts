@@ -21,8 +21,8 @@ function melodyCacheFilename(songId: string): string {
   return `${TEMP_FOLDER}/joysound-${songId}-melody.bin`;
 }
 
-// A durable copy beside config.yaml, because the temp dir is not a cache we
-// control: macOS sweeps /var/folders by *age* (about three days untouched),
+// A durable copy beside config.yaml, because the temp dir is not a controlled
+// cache: macOS sweeps /var/folders by *age* (about three days untouched),
 // not only on reboot, so a melody extracted last week is simply gone. Same
 // reasoning as song-history.json and the people registry.
 //
@@ -191,7 +191,7 @@ export function ensureJoysoundGuideMelody(
 ): void {
   if (inFlightExtractions.has(songId)) return;
   // readMelodyCache rather than an existsSync on the temp path: after a sweep
-  // the mirror still has it, and re-extracting a melody we already own would
+  // the mirror still has it, and re-extracting an already-cached melody would
   // cost an ffmpeg decode and a pitch-track pass for nothing.
   if (readMelodyCache(songId) !== null) return;
 
