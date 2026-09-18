@@ -98,9 +98,15 @@ function QRCode(props: {
     }
 
     update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  });
+
+    // The sidebar is drag-resizable, and a drag changes the canvas's width
+    // without firing a window resize event, so the canvas itself is watched
+    // instead (it has width: 100% in CSS, so it tracks its container).
+    if (!canvasRef.current) return;
+    const observer = new ResizeObserver(update);
+    observer.observe(canvasRef.current);
+    return () => observer.disconnect();
+  }, [props.hostname, props.inverted, props.oledFriendly]);
 
   return <canvas ref={canvasRef} className="qrcode" />;
 }

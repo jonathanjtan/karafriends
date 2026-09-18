@@ -1,6 +1,5 @@
 import "materialize-css/dist/css/materialize.css"; // tslint:disable-line:no-submodule-imports
 import React, { useEffect, useRef, useState } from "react";
-import { graphql, useMutation } from "react-relay";
 
 import useOledFriendly from "../common/hooks/useOledFriendly";
 import useServiceHealth from "../common/hooks/useServiceHealth";
@@ -13,18 +12,12 @@ import {
   subscribeSettingsPanelMessages,
 } from "./settingsPanelBus";
 import Sidebar from "./Sidebar";
-import { SettingsPanelClearQueueMutation } from "./__generated__/SettingsPanelClearQueueMutation.graphql";
+import useClearQueue from "./useClearQueue";
 
 // Keep asking the big screen for a snapshot until one arrives. The panel is
 // useless without one, and a single request lost to a reload on the other side
 // would leave it stuck on the placeholder forever.
 const OWNER_STATE_RETRY_INTERVAL_MS = 500;
-
-const clearQueueMutation = graphql`
-  mutation SettingsPanelClearQueueMutation {
-    clearQueue
-  }
-`;
 
 // Root of the popped-out settings window: the same <Sidebar>, filling its own
 // window instead of a column beside the video. Every setting it shows is
@@ -38,8 +31,7 @@ export default function SettingsPanel() {
   const { oledFriendly } = useOledFriendly();
   // No onTransition: the big screen already toasts service flips to the room.
   const { serviceHealth, isRechecking, recheck } = useServiceHealth();
-  const [commitClearQueue, isClearingQueue] =
-    useMutation<SettingsPanelClearQueueMutation>(clearQueueMutation);
+  const { clearQueue, isClearingQueue } = useClearQueue();
 
   useEffect(() => {
     const unsubscribe = subscribeSettingsPanelMessages((message) => {
@@ -94,11 +86,7 @@ export default function SettingsPanel() {
       isRecheckingServiceHealth={isRechecking}
       onRecheckServiceHealth={recheck}
       isClearingQueue={isClearingQueue}
-      onClearQueue={() => {
-        if (window.confirm("Clear the queue and skip the current song?")) {
-          commitClearQueue({ variables: {} });
-        }
-      }}
+      onClearQueue={clearQueue}
       onDock={closeSettingsPanelWindow}
       onPopOutQr={openQrPanelWindow}
     />

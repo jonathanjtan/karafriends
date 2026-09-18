@@ -1102,6 +1102,16 @@ function Player(props: {
 
               videoRef.current.play();
               break;
+            default:
+              // Relay's "%other" branch: a queue item type this build doesn't
+              // recognize. It carries no other fields to act on, so the only
+              // correct move is to skip it and resume the queue rather than
+              // leaving playbackState on PLAYING with nothing loaded.
+              console.error(
+                `popSong returned an unrecognized queue item type (${popSong.__typename}), skipping`,
+              );
+              pollQueue();
+              return;
           }
           setPlaybackState("PLAYING");
         },

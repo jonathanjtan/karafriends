@@ -2,7 +2,7 @@ import M from "materialize-css";
 import "materialize-css/dist/css/materialize.css"; // tslint:disable-line:no-submodule-imports
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FaChevronLeft, FaChevronRight } from "react-icons/fa"; // tslint:disable-line:no-submodule-imports
-import { graphql, useMutation, useSubscription } from "react-relay";
+import { graphql, useSubscription } from "react-relay";
 
 import useBgmTrack from "../common/hooks/useBgmTrack";
 import useBgmVolume from "../common/hooks/useBgmVolume";
@@ -27,8 +27,8 @@ import {
   subscribeSettingsPanelMessages,
 } from "./settingsPanelBus";
 import Sidebar from "./Sidebar";
+import useClearQueue from "./useClearQueue";
 import KarafriendsAudio from "./webAudio";
-import { AppClearQueueMutation } from "./__generated__/AppClearQueueMutation.graphql";
 import { AppQueueAddedSubscription } from "./__generated__/AppQueueAddedSubscription.graphql";
 
 // OLED mode used to be renderer-local; it now lives in the main process
@@ -76,12 +76,6 @@ const songAddedSubscription = graphql`
         artistName
       }
     }
-  }
-`;
-
-const clearQueueMutation = graphql`
-  mutation AppClearQueueMutation {
-    clearQueue
   }
 `;
 
@@ -230,8 +224,7 @@ function App(props: {
       });
     },
   });
-  const [commitClearQueue, isClearingQueue] =
-    useMutation<AppClearQueueMutation>(clearQueueMutation);
+  const { clearQueue, isClearingQueue } = useClearQueue();
 
   const setMics = (newMics: InputDevice[]) => {
     const micsToSave = newMics.map((mic) => ({
@@ -449,11 +442,7 @@ function App(props: {
           isRecheckingServiceHealth={isRechecking}
           onRecheckServiceHealth={recheck}
           isClearingQueue={isClearingQueue}
-          onClearQueue={() => {
-            if (window.confirm("Clear the queue and skip the current song?")) {
-              commitClearQueue({ variables: {} });
-            }
-          }}
+          onClearQueue={clearQueue}
           onPopOut={openSettingsPanelWindow}
           onPopOutQr={openQrPanelWindow}
           poppedOut={settingsPoppedOut}
