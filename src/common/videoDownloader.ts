@@ -98,9 +98,9 @@ function youtubeCookieArgs(): string[] {
 // it can't run YouTube's player JS, so it falls back to clients YouTube
 // bot-walls (android_vr) and warns that JS-less extraction is deprecated.
 // Electron's own binary runs as plain Node when ELECTRON_RUN_AS_NODE is set
-// (youtubeSpawnEnv does that for the runtime yt-dlp spawns), so we can point
-// yt-dlp at it instead of shipping a separate runtime. If it somehow isn't
-// usable yt-dlp just warns and carries on exactly as it does today.
+// (youtubeSpawnEnv does that for the runtime yt-dlp spawns), so yt-dlp can be
+// pointed at it instead of shipping a separate runtime. If it isn't usable,
+// yt-dlp just warns and carries on as it does without a runtime at all.
 function youtubeJsRuntimeArgs(): string[] {
   return ["--js-runtimes", `node:${process.execPath}`];
 }
@@ -121,15 +121,13 @@ interface YoutubeDownloadFailure extends Error {
   rateLimited?: boolean;
 }
 
-// Breathing room before retrying a failed (but not rate-limited) YouTube
-// download. The retry used to fire instantly, which meant a struggling
-// YouTube got hit again immediately.
+// Delay before retrying a failed (but not rate-limited) YouTube download, so
+// a struggling YouTube isn't hit again immediately.
 const YOUTUBE_RETRY_BACKOFF_MS = 5000;
 
-// YouTube answers a rate-limited/bot-walled extraction the same way no matter
-// how many times we ask, so an immediate retry can't succeed. It just spends
-// more of the quota that got us walled in the first place. Detect those and
-// skip the retry.
+// YouTube answers a rate-limited/bot-walled extraction the same way regardless
+// of retry count, so an immediate retry can't succeed. It only spends more of
+// the quota that caused the wall. Detect those and skip the retry.
 function isYoutubeRateLimited(log: string): boolean {
   return (
     log.includes("Sign in to confirm you") ||
@@ -569,8 +567,16 @@ function downloadJoysoundYoutubeVideoPromise(
 
     ytdlp.on("exit", (code, signal) => {
       if (code === 0) {
-        fs.unlinkSync(tempFilename);
-        fs.renameSync(tempFilename + ".mp4", tempFilename);
+        // Runs on an event-emitter callback: an uncaught throw here is an
+        // uncaughtException, which kills the whole app rather than just this
+        // song's download.
+        try {
+          fs.unlinkSync(tempFilename);
+          fs.renameSync(tempFilename + ".mp4", tempFilename);
+        } catch (e) {
+          reject(e);
+          return;
+        }
 
         resolve(code);
       } else {
@@ -594,12 +600,12 @@ function downloadJoysoundYoutubeVideoPromise(
 // track it gets composited under: the MV may open with a non-song intro
 // (album art, a spoken bit, a visual hook), and the karaoke arrangement may
 // itself have extra material at the head (a count-off, a longer intro) that
-// the original recording doesn't. We estimate the signed offset between the
-// two by cross-correlating cheap amplitude envelopes of several windows of
-// the karaoke audio against the MV's own audio. Windows are sampled from
-// *inside* the song rather than just its head, because the head is exactly
-// where karaoke arrangements diverge most from the original (count-offs,
-// re-arranged intros).
+// the original recording doesn't. The signed offset between the two is
+// estimated by cross-correlating cheap amplitude envelopes of several
+// windows of the karaoke audio against the MV's own audio. Windows are
+// sampled from *inside* the song rather than just its head, because the head
+// is exactly where karaoke arrangements diverge most from the original
+// (count-offs, re-arranged intros).
 //
 // The estimate runs in three stages:
 //
@@ -698,7 +704,7 @@ const INTRO_SYNC_MELODY_TRANSPOSE_SEMIS = [0, 1, -1, 2, -2, 3, -3];
 // Onset-alignment fallback (used when the interior-window cross-correlation
 // can't reach a confident consensus, which is the common case, because a
 // JOYSOUND karaoke re-recording rarely envelope-correlates with the original
-// master). We detect where the music actually starts in each track and align
+// master). Detects where the music actually starts in each track and aligns
 // those points. ONSET_HEAD_SEC bounds the region used to establish the loud
 // reference level; ONSET_THRESHOLD_FRAC of that level marks "music has
 // started"; ONSET_SMOOTH_MS smooths out transient clicks before the crossing.
@@ -799,8 +805,8 @@ function decodeToPcm(
       }
     });
 
-    // If ffmpeg exits (or never starts reading) while we're still writing a
-    // large buffer to its stdin, Node emits an "error" (e.g. EPIPE) on the
+    // If ffmpeg exits (or never starts reading) while a large buffer is still
+    // being written to its stdin, Node emits an "error" (e.g. EPIPE) on the
     // stdin stream itself, not on the ChildProcess. Left unhandled, that's
     // an uncaught exception that crashes the whole process rather than just
     // rejecting this promise. The process-level "error"/"exit" handlers
@@ -890,7 +896,7 @@ function anchorPositionsMs(karaokeEnvelope: number[]): number[] {
   ) {
     anchorsMs.push(anchorSec * 1000);
   }
-  // Very short track: fall back to matching what we have from the head.
+  // Very short track: fall back to matching from the head.
   if (anchorsMs.length === 0 && referenceWindows <= karaokeEnvelope.length) {
     anchorsMs.push(0);
   }
@@ -1748,9 +1754,8 @@ function constantOffsetBeatingDrift(
 //
 // videoFilename is the MV yt-dlp already downloaded (audio included, see the
 // "-f bv+ba/b" fetch): reading its audio off disk keeps this to zero extra
-// YouTube requests. It used to re-download the same video's audio with a
-// second "-f ba" extraction, which doubled our request volume per song and
-// helped earn us HTTP 429s.
+// YouTube requests, instead of a second "-f ba" extraction that doubled
+// request volume per song and contributed to HTTP 429s.
 //
 // guideMelodyNotes (when available, i.e. the song has a usable guide
 // melody channel) powers the melody-salience candidate selection; without
@@ -1901,8 +1906,16 @@ function stretchJoysoundVideoPromise(
 
     const onExit = (code: number, signal: number) => {
       if (code === 0) {
-        fs.unlinkSync(tempFilename);
-        fs.renameSync(stretchedFilename, tempFilename);
+        // Runs on an event-emitter callback: an uncaught throw here is an
+        // uncaughtException, which kills the whole app rather than just this
+        // song's download.
+        try {
+          fs.unlinkSync(tempFilename);
+          fs.renameSync(stretchedFilename, tempFilename);
+        } catch (e) {
+          reject(e);
+          return;
+        }
 
         resolve(code);
       } else {
@@ -1937,7 +1950,7 @@ function composeJoysoundVideoPromise(
   // material, so trim it off here with -ss and the visuals aren't out of sync
   // with the karaoke audio track. Negative: the karaoke track has extra head
   // material instead; the caller delays the video afterwards via
-  // padJoysoundVideoPromise, so here we just play from the top. Null: no
+  // padJoysoundVideoPromise, so here it just plays from the top. Null: no
   // confident measurement (JOYSOUND default video, or all detection failed).
   introOffsetMs: number | null = null,
 ): Promise<JoysoundVideoData> {
@@ -1953,12 +1966,12 @@ function composeJoysoundVideoPromise(
     // change away from compositing the MV's vocals over the karaoke.
     const streamMapArgs = ["-map", "0:v:0", "-map", "1:a:0"];
 
-    // With a measured offset we align the heads and play the video through
-    // exactly once, capped at the song length: the MV runs its full course,
-    // including its outro, and the player holds the last frame for whatever
-    // karaoke tail it doesn't cover. Looping instead would jarringly restart
-    // the MV over the final seconds. Without a measurement we can't trust the
-    // head alignment, so we keep the legacy loop-to-fill (a possibly-short
+    // With a measured offset, the heads are aligned and the video plays
+    // through exactly once, capped at the song length: the MV runs its full
+    // course, including its outro, and the player holds the last frame for
+    // whatever karaoke tail it doesn't cover. Looping instead would restart
+    // the MV over the final seconds. Without a measurement the head alignment
+    // can't be trusted, so it falls back to loop-to-fill (a possibly-short
     // default video shouldn't freeze on one frame for the whole song).
     const ffmpegArgs =
       introOffsetMs !== null
@@ -2006,7 +2019,7 @@ function composeJoysoundVideoPromise(
         /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/,
       );
 
-      // XXX: We assume that the video duration always comes first
+      // XXX: assumes the video duration always comes first
       if (durationMatchData && videoPlaytime === 0) {
         videoPlaytime += parseInt(durationMatchData[1], 10) * 3600;
         videoPlaytime += parseInt(durationMatchData[2], 10) * 60;
@@ -2017,7 +2030,15 @@ function composeJoysoundVideoPromise(
     };
 
     const onExit = (code: number, signal: number) => {
-      fs.unlinkSync(tempFilename);
+      // Runs on an event-emitter callback: an uncaught throw here is an
+      // uncaughtException, which kills the whole app rather than just this
+      // song's download.
+      try {
+        fs.unlinkSync(tempFilename);
+      } catch (e) {
+        reject(e);
+        return;
+      }
 
       if (code === 0) {
         const metadata: JoysoundVideoData = {
@@ -2050,6 +2071,38 @@ function composeJoysoundVideoPromise(
   });
 }
 
+// Runs one ffmpeg step of the Joysound pad pipeline, rejecting with the exit
+// code on failure. padJoysoundVideoPromise's five steps all wrapped an
+// identical makeJoysoundFFmpegCall/onExit pair around different args.
+function runJoysoundFFmpegStep(
+  songId: string,
+  ffmpegArgs: string[],
+  ffmpegLogFilename: string,
+): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const onExit = (code: number, signal: number) => {
+      if (code === 0) {
+        resolve(code);
+      } else {
+        console.error(
+          `Error downloading Joysound video with ID ${songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
+        );
+
+        reject(code);
+      }
+    };
+
+    makeJoysoundFFmpegCall(
+      songId,
+      ffmpegArgs,
+      ffmpegLogFilename,
+      null,
+      onExit,
+      null,
+    );
+  });
+}
+
 function padJoysoundVideoPromise(
   data: JoysoundVideoData,
   videoFilename: string,
@@ -2070,41 +2123,15 @@ function padJoysoundVideoPromise(
   const videoOutFilename = videoBaseFilename + "-out.mp4";
   const videoListFilename = videoBaseFilename + "-list.txt";
 
-  return new Promise<number>((resolve, reject) => {
-    const ffmpegArgs = [
-      "-i",
-      videoFilename,
-      "-c",
-      "copy",
-      "-an",
-      "-y",
-      videoNoSoundFilename,
-    ];
-
-    const onExit = (code: number, signal: number) => {
-      if (code === 0) {
-        resolve(code);
-      } else {
-        console.error(
-          `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-        );
-
-        reject(code);
-      }
-    };
-
-    makeJoysoundFFmpegCall(
-      data.songId,
-      ffmpegArgs,
-      ffmpegLogFilename,
-      null,
-      onExit,
-      null,
-    );
-  })
-    .then(() => {
-      return new Promise<number>((resolve, reject) => {
-        const ffmpegArgs = [
+  return runJoysoundFFmpegStep(
+    data.songId,
+    ["-i", videoFilename, "-c", "copy", "-an", "-y", videoNoSoundFilename],
+    ffmpegLogFilename,
+  )
+    .then(() =>
+      runJoysoundFFmpegStep(
+        data.songId,
+        [
           "-i",
           videoNoSoundFilename,
           "-frames:v",
@@ -2114,38 +2141,19 @@ function padJoysoundVideoPromise(
           "-an",
           "-y",
           videoPadFrameFilename,
-        ];
-
-        const onExit = (code: number, signal: number) => {
-          if (code === 0) {
-            resolve(code);
-          } else {
-            console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-            );
-
-            reject(code);
-          }
-        };
-
-        makeJoysoundFFmpegCall(
-          data.songId,
-          ffmpegArgs,
-          ffmpegLogFilename,
-          null,
-          onExit,
-          null,
-        );
-      });
-    })
+        ],
+        ffmpegLogFilename,
+      ),
+    )
     .then(() => {
-      return new Promise<number>((resolve, reject) => {
-        const offset =
-          overridePadMs !== null
-            ? overridePadMs
-            : Math.max(data.songPlaytime - data.videoPlaytime, 0);
+      const offset =
+        overridePadMs !== null
+          ? overridePadMs
+          : Math.max(data.songPlaytime - data.videoPlaytime, 0);
 
-        const ffmpegArgs = [
+      return runJoysoundFFmpegStep(
+        data.songId,
+        [
           "-stream_loop",
           "-1",
           "-i",
@@ -2156,41 +2164,22 @@ function padJoysoundVideoPromise(
           `${offset}ms`,
           "-y",
           videoPadFilename,
-        ];
-
-        const onExit = (code: number, signal: number) => {
-          if (code === 0) {
-            resolve(code);
-          } else {
-            console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-            );
-
-            reject(code);
-          }
-        };
-
-        makeJoysoundFFmpegCall(
-          data.songId,
-          ffmpegArgs,
-          ffmpegLogFilename,
-          null,
-          onExit,
-          null,
-        );
-      });
+        ],
+        ffmpegLogFilename,
+      );
     })
     .then(() => {
-      return new Promise<number>((resolve, reject) => {
-        let listFile = "";
+      let listFile = "";
 
-        listFile += `file '${videoPadFilename.replace(/\\/g, "/")}'`;
-        listFile += "\n";
-        listFile += `file '${videoNoSoundFilename.replace(/\\/g, "/")}'`;
+      listFile += `file '${videoPadFilename.replace(/\\/g, "/")}'`;
+      listFile += "\n";
+      listFile += `file '${videoNoSoundFilename.replace(/\\/g, "/")}'`;
 
-        fs.writeFileSync(videoListFilename, listFile);
+      fs.writeFileSync(videoListFilename, listFile);
 
-        const ffmpegArgs = [
+      return runJoysoundFFmpegStep(
+        data.songId,
+        [
           "-f",
           "concat",
           "-safe",
@@ -2201,33 +2190,14 @@ function padJoysoundVideoPromise(
           "copy",
           "-y",
           videoConcatFilename,
-        ];
-
-        const onExit = (code: number, signal: number) => {
-          if (code === 0) {
-            resolve(code);
-          } else {
-            console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-            );
-
-            reject(code);
-          }
-        };
-
-        makeJoysoundFFmpegCall(
-          data.songId,
-          ffmpegArgs,
-          ffmpegLogFilename,
-          null,
-          onExit,
-          null,
-        );
-      });
+        ],
+        ffmpegLogFilename,
+      );
     })
-    .then(() => {
-      return new Promise<number>((resolve, reject) => {
-        const ffmpegArgs = [
+    .then(() =>
+      runJoysoundFFmpegStep(
+        data.songId,
+        [
           "-i",
           videoFilename,
           "-i",
@@ -2247,39 +2217,60 @@ function padJoysoundVideoPromise(
             : ["-shortest"]),
           "-y",
           videoOutFilename,
-        ];
+        ],
+        ffmpegLogFilename,
+      ),
+    )
+    .then((code) => {
+      fs.renameSync(videoFilename, videoTempFilename);
+      fs.renameSync(videoOutFilename, videoFilename);
 
-        const onExit = (code: number, signal: number) => {
-          if (code === 0) {
-            fs.renameSync(videoFilename, videoTempFilename);
-            fs.renameSync(videoOutFilename, videoFilename);
+      // Best-effort past this point: the renames above already landed the
+      // correct result at videoFilename, so a leftover intermediate is disk
+      // clutter, not a reason to discard a valid composite.
+      for (const filename of [
+        videoNoSoundFilename,
+        videoPadFrameFilename,
+        videoPadFilename,
+        videoTempFilename,
+        videoConcatFilename,
+        videoListFilename,
+      ]) {
+        try {
+          fs.unlinkSync(filename);
+        } catch (e) {
+          console.error(
+            `Failed cleaning up pad intermediate ${filename} for ${data.songId}`,
+            e,
+          );
+        }
+      }
 
-            fs.unlinkSync(videoNoSoundFilename);
-            fs.unlinkSync(videoPadFrameFilename);
-            fs.unlinkSync(videoPadFilename);
-            fs.unlinkSync(videoTempFilename);
-            fs.unlinkSync(videoConcatFilename);
-            fs.unlinkSync(videoListFilename);
+      return code;
+    })
+    .catch((error) => {
+      // A step failing before the renames above leaves videoFilename as the
+      // pre-pad composite, which is not the finished file
+      // downloadJoysoundData's "already exists" check expects, and the
+      // intermediates created so far have no other cleanup path. Remove both,
+      // or a later request resumes the cached-but-unpadded file, and this
+      // pipeline leaks an intermediate file per failed attempt.
+      for (const filename of [
+        videoNoSoundFilename,
+        videoPadFrameFilename,
+        videoPadFilename,
+        videoTempFilename,
+        videoOutFilename,
+        videoConcatFilename,
+        videoListFilename,
+        videoFilename,
+      ]) {
+        if (fs.existsSync(filename)) {
+          fs.unlinkSync(filename);
+        }
+      }
 
-            resolve(code);
-          } else {
-            console.error(
-              `Error downloading Joysound video with ID ${data.songId}: code=${code}, signal=${signal}, log=${ffmpegLogFilename}`,
-            );
-
-            reject(code);
-          }
-        };
-
-        makeJoysoundFFmpegCall(
-          data.songId,
-          ffmpegArgs,
-          ffmpegLogFilename,
-          null,
-          onExit,
-          null,
-        );
-      });
+      throw error;
     });
 }
 
@@ -2390,12 +2381,11 @@ export function downloadJoysoundData(
 
   if (queueItem.youtubeVideoId) {
     // YouTube intermittently rejects a format or throttles a request; one
-    // retry rescues most of those before the catch below gives up and
-    // silently falls back to the song's default video. But a rate-limit /
-    // bot-wall answers the same way however often we ask, so retrying it
-    // can't succeed. It just spends more of the quota that got us walled.
-    // Back off briefly first: the old retry fired instantly, which hammered
-    // YouTube hardest exactly when it was already pushing back.
+    // retry rescues most of those before the catch below gives up and falls
+    // back to the song's default video. A rate-limit / bot-wall answers the
+    // same way regardless of retry count, so retrying it can't succeed; it
+    // only spends more of the quota that caused the wall. Back off briefly
+    // first so the retry doesn't hit YouTube again immediately.
     videoDataPromise = downloadJoysoundYoutubeVideoPromise(
       songId,
       queueItem.youtubeVideoId,
@@ -2532,10 +2522,9 @@ export function downloadJoysoundData(
 
       // Positive / null offsets need no post-compose step: compose already
       // trimmed the video head (-ss) or left the heads aligned, and holds the
-      // last frame for any uncovered tail. The old "assume video and song end
-      // together" pad used to fire here on a null measurement, but it blindly
-      // shoved the whole video several seconds late (desyncing songs whose
-      // heads were already aligned), so it's gone.
+      // last frame for any uncovered tail. There is no "assume video and song
+      // end together" pad here anymore: it shifted the whole video several
+      // seconds late, desyncing songs whose heads were already aligned.
     })
     .then(() => {
       // The download-queue entry lives until the song actually lands in the
@@ -2671,10 +2660,31 @@ export function downloadYoutubeVideo(
     handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
   });
 
+  // If yt-dlp fails to even launch (e.g. missing binary), Node emits "error"
+  // instead of "exit". An unhandled "error" event throws, which is an
+  // uncaughtException that kills the whole app rather than just this
+  // download.
+  ytdlp.on("error", (err) => {
+    console.error(
+      `Error spawning yt-dlp for Youtube Video with ID ${videoId}: ${err.message}`,
+    );
+    removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+    if (fs.existsSync(tempFilename)) {
+      fs.unlinkSync(tempFilename);
+    }
+  });
+
   ytdlp.on("exit", (code, signal) => {
     removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
 
-    fs.unlinkSync(tempFilename);
+    // Best-effort: the .tmp marker only guards against a concurrent
+    // re-download, and a throw here would be an uncaughtException that
+    // kills the whole app.
+    try {
+      fs.unlinkSync(tempFilename);
+    } catch (e) {
+      console.error(`Failed cleaning up Youtube download ${videoId}`, e);
+    }
 
     if (code !== 0) {
       console.error(
@@ -2776,10 +2786,31 @@ export function downloadNicoVideo(
     handleYoutubeDownloadLog(data.toString(), downloadQueueItem);
   });
 
+  // If yt-dlp fails to even launch (e.g. missing binary), Node emits "error"
+  // instead of "exit". An unhandled "error" event throws, which is an
+  // uncaughtException that kills the whole app rather than just this
+  // download.
+  ytdlp.on("error", (err) => {
+    console.error(
+      `Error spawning yt-dlp for Niconico Video with ID ${videoId}: ${err.message}`,
+    );
+    removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
+    if (fs.existsSync(tempFilename)) {
+      fs.unlinkSync(tempFilename);
+    }
+  });
+
   ytdlp.on("exit", (code, signal) => {
     removeVideoDownloadFromQueue(downloadQueue, downloadQueueItem);
 
-    fs.unlinkSync(tempFilename);
+    // Best-effort: the .tmp marker only guards against a concurrent
+    // re-download, and a throw here would be an uncaughtException that
+    // kills the whole app.
+    try {
+      fs.unlinkSync(tempFilename);
+    } catch (e) {
+      console.error(`Failed cleaning up Niconico download ${videoId}`, e);
+    }
 
     if (code === 0) {
       onComplete();
