@@ -1,3 +1,7 @@
+// Local alias so the long var() calls don't drown out the layout rules
+// below; the values themselves live in theme.scss.
+$accent: var(--accent);
+
 .container {
   margin: 8px 0;
   display: flex;
@@ -7,4 +11,62 @@
     min-height: 64px;
     margin-bottom: 8px;
   }
+}
+
+// The two reading-guide rows sit directly above the queue button, so what
+// you are about to queue reads top to bottom the way it will on screen.
+.pickers {
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface-sunken);
+}
+
+.pickerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+
+  & + & {
+    margin-top: 8px;
+  }
+}
+
+.pickerLabel {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.segmented {
+  display: flex;
+  gap: 6px;
+}
+
+.segment {
+  min-width: 64px;
+  padding: 6px 0;
+  border: 1px solid $accent;
+  border-radius: 4px;
+  background-color: var(--surface-raised);
+  color: $accent;
+  font-size: 13px;
+  line-height: 16px;
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
+.segmentActive {
+  background-color: var(--accent-surface);
+  color: var(--on-accent);
+}
+
+// Shown only when the picks differ from the room's own settings, so the
+// singer knows the change is theirs alone and lasts one song.
+.pickerNote {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
 }

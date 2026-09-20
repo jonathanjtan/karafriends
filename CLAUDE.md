@@ -301,6 +301,16 @@ These stay here. The first two are whole-app contracts, the third spans
   compresses them under the piano roll on the TV). Both surfaces place rows
   through it; the TV re-lays the playing song out on a guide change and
   republishes, so the phone never reads the setting itself.
+  A song can also be **queued with its own pair** (`topAnnotation` /
+  `bottomAnnotation` on `JoysoundQueueItem`). There is still only one place
+  anything reads the guides from: `popSong` lends the room's settings to such
+  a song and takes them back when it ends
+  (`applyJoysoundAnnotationOverride` / `releaseJoysoundAnnotationOverride`),
+  which is why changing them live mid-song still works. Two rules keep that
+  honest: a change made during the song is deliberate, so release only
+  restores a room still showing exactly what was lent, and `loadDb` hands
+  them back on launch, since a song killed mid-play has no ending left to
+  release them.
   The extraction was verified pixel-identical against the pre-refactor
   renderer with a Chrome harness (`.claude/telop-harness/compare.mjs`).
   Sync: Player reports `video.currentTime` stamped with `Date.now()` on every

@@ -4,6 +4,7 @@ import { Subscription } from "relay-runtime";
 import { invariant } from "ts-invariant";
 
 import environment from "../../../common/graphqlEnvironment";
+import { TelopAnnotations } from "../../../common/telopLayout";
 import Button from "../Button";
 import * as buttonStyles from "../Button/Button.module.scss";
 import useProcessingLabel from "../Button/useProcessingLabel";
@@ -56,6 +57,9 @@ interface Props {
   youtubeVideoId: string | null;
   youtubeVideoSyncEnabled: boolean;
   userIdentity: JoysoundQueueButtonMutation$variables["input"]["userIdentity"];
+  // Reading guides for this song alone, or null to take the room's whatever
+  // they are when it comes up.
+  annotations: TelopAnnotations | null;
   isDisabled: boolean;
   setDisabled: (isDisabled: boolean) => void;
   // Queue this song transposed, from a key suggestion. Absent means 0, exactly
@@ -69,6 +73,7 @@ const JoysoundQueueButton = ({
   youtubeVideoId,
   youtubeVideoSyncEnabled,
   userIdentity,
+  annotations,
   isDisabled,
   setDisabled,
   pitchShiftSemis,
@@ -164,6 +169,8 @@ const JoysoundQueueButton = ({
           playtime: null,
           artistName: song.artistName,
           userIdentity,
+          topAnnotation: annotations?.top ?? null,
+          bottomAnnotation: annotations?.bottom ?? null,
           youtubeVideoId,
           youtubeVideoSyncEnabled,
           pitchShiftSemis,

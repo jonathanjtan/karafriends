@@ -72,6 +72,18 @@ export const TELOP_ANNOTATIONS: readonly TelopAnnotation[] = [
   "ROMAJI",
 ];
 
+// The three guides in the order every surface offers them, with the names
+// it calls them. Shared so the settings screens and the queue page can't
+// drift into labelling or ordering the same choice differently.
+export const TELOP_ANNOTATION_CHOICES: {
+  label: string;
+  value: TelopAnnotation;
+}[] = [
+  { label: "Furigana", value: "FURIGANA" },
+  { label: "Romaji", value: "ROMAJI" },
+  { label: "Off", value: "NONE" },
+];
+
 // Which guide is drawn above the main text and which below it. A room
 // setting, so the TV re-lays the current song out when it changes and the
 // phone follows the republished layout.

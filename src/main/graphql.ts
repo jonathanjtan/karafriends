@@ -1701,6 +1701,12 @@ interface QueueItemInterface {
 
 export interface JoysoundQueueItem extends QueueItemInterface {
   readonly __typename: "JoysoundQueueItem";
+  // Reading guides asked for at queue time, applied to the room settings
+  // for the length of this song (see applyJoysoundAnnotationOverride).
+  // Absent on older clients and on everything already in queue.json, which
+  // means "no opinion" and leaves the room's own setting alone.
+  readonly topAnnotation?: TelopAnnotation | null;
+  readonly bottomAnnotation?: TelopAnnotation | null;
   readonly youtubeVideoId: string | null;
   // null/undefined (older clients and persisted queue items) means enabled.
   readonly youtubeVideoSyncEnabled?: boolean | null;
@@ -1774,6 +1780,8 @@ type QueueJoysoundSongInput = {
   readonly artistName: string;
   readonly playtime?: number | null;
   readonly userIdentity: UserIdentity;
+  readonly topAnnotation?: TelopAnnotation | null;
+  readonly bottomAnnotation?: TelopAnnotation | null;
   readonly youtubeVideoId: string | null;
   readonly youtubeVideoSyncEnabled?: boolean | null;
 };
@@ -1874,6 +1882,15 @@ type NotARealDb = {
   // TelopAnnotations in common/telopLayout.ts).
   joysoundTopAnnotation: TelopAnnotation;
   joysoundBottomAnnotation: TelopAnnotation;
+  // Set while a song queued with its own reading guides is playing: what
+  // the room's settings were before it started, and what was applied on its
+  // behalf. Null the rest of the time. See applyJoysoundAnnotationOverride.
+  joysoundAnnotationOverride: {
+    restoreTop: TelopAnnotation;
+    restoreBottom: TelopAnnotation;
+    appliedTop: TelopAnnotation;
+    appliedBottom: TelopAnnotation;
+  } | null;
   micOutputEnabled: boolean;
   micRmsGateEnabled: boolean;
   micRmsGateThreshold: number;
@@ -1976,6 +1993,7 @@ let db: NotARealDb = {
   joysoundRomajiWordSegmentation: true,
   joysoundTopAnnotation: DEFAULT_TELOP_ANNOTATIONS.top,
   joysoundBottomAnnotation: DEFAULT_TELOP_ANNOTATIONS.bottom,
+  joysoundAnnotationOverride: null,
   micOutputEnabled: false,
   micRmsGateEnabled: false,
   micRmsGateThreshold: DEFAULT_MIC_RMS_GATE_THRESHOLD,
@@ -2033,6 +2051,78 @@ let pitchTraceSubscribers = 0;
 
 function currentSongKey(): string | null {
   return db.currentSong ? queueItemKey(db.currentSong) : null;
+}
+
+// A JOYSOUND song can be queued asking for reading guides other than the
+// room's (JoysoundQueueItem.topAnnotation). Rather than give the TV and the
+// phones a second place to read the guides from, the room's own settings are
+// lent to the song for as long as it plays and taken back when it ends. One
+// pair of values stays the answer to "what is on screen", so changing them
+// live mid-song still works and still reaches every surface.
+function publishJoysoundAnnotations(): void {
+  pubsub.publish(SubscriptionEvent.JoysoundTopAnnotationChanged, {
+    joysoundTopAnnotationChanged: db.joysoundTopAnnotation,
+  });
+  pubsub.publish(SubscriptionEvent.JoysoundBottomAnnotationChanged, {
+    joysoundBottomAnnotationChanged: db.joysoundBottomAnnotation,
+  });
+}
+
+// Gives the room's settings back when an overridden song ends. A change made
+// during the song is somebody's deliberate choice and is left standing: only
+// a room still showing exactly what was lent is restored. Idempotent, since
+// Player polls popSong while the queue is idle.
+function releaseJoysoundAnnotationOverride(): void {
+  const held = db.joysoundAnnotationOverride;
+
+  if (!held) {
+    return;
+  }
+
+  db.joysoundAnnotationOverride = null;
+
+  if (
+    db.joysoundTopAnnotation !== held.appliedTop ||
+    db.joysoundBottomAnnotation !== held.appliedBottom
+  ) {
+    return;
+  }
+
+  db.joysoundTopAnnotation = held.restoreTop;
+  db.joysoundBottomAnnotation = held.restoreBottom;
+  publishJoysoundAnnotations();
+}
+
+// Lends the room's settings to a song queued with its own, remembering what
+// to give back. An absent guide on the item means its queuer had no opinion
+// about that row, which leaves the room's own setting for it alone.
+function applyJoysoundAnnotationOverride(song: QueueItem | null): void {
+  if (song?.__typename !== "JoysoundQueueItem") {
+    return;
+  }
+
+  const top = asTelopAnnotation(song.topAnnotation, db.joysoundTopAnnotation);
+  const bottom = asTelopAnnotation(
+    song.bottomAnnotation,
+    db.joysoundBottomAnnotation,
+  );
+
+  if (
+    top === db.joysoundTopAnnotation &&
+    bottom === db.joysoundBottomAnnotation
+  ) {
+    return;
+  }
+
+  db.joysoundAnnotationOverride = {
+    restoreTop: db.joysoundTopAnnotation,
+    restoreBottom: db.joysoundBottomAnnotation,
+    appliedTop: top,
+    appliedBottom: bottom,
+  };
+  db.joysoundTopAnnotation = top;
+  db.joysoundBottomAnnotation = bottom;
+  publishJoysoundAnnotations();
 }
 
 // Called whenever the current song changes. A new song starts at 0, stopped,
@@ -2227,6 +2317,7 @@ function loadDb(): NotARealDb {
     joysoundRomajiWordSegmentation: true,
     joysoundTopAnnotation: DEFAULT_TELOP_ANNOTATIONS.top,
     joysoundBottomAnnotation: DEFAULT_TELOP_ANNOTATIONS.bottom,
+    joysoundAnnotationOverride: null,
     micOutputEnabled: false,
     micRmsGateEnabled: false,
     micRmsGateThreshold: DEFAULT_MIC_RMS_GATE_THRESHOLD,
@@ -2261,6 +2352,26 @@ function loadDb(): NotARealDb {
     loaded.joysoundBottomAnnotation,
     DEFAULT_TELOP_ANNOTATIONS.bottom,
   );
+  // A song holding the room's reading guides when the app went down. Nothing
+  // is playing now, so give them back rather than leaving the room on a
+  // setting nobody chose, with no song left to end and release it.
+  const heldAnnotations = loaded.joysoundAnnotationOverride;
+  if (heldAnnotations) {
+    if (
+      loaded.joysoundTopAnnotation === heldAnnotations.appliedTop &&
+      loaded.joysoundBottomAnnotation === heldAnnotations.appliedBottom
+    ) {
+      loaded.joysoundTopAnnotation = asTelopAnnotation(
+        heldAnnotations.restoreTop,
+        DEFAULT_TELOP_ANNOTATIONS.top,
+      );
+      loaded.joysoundBottomAnnotation = asTelopAnnotation(
+        heldAnnotations.restoreBottom,
+        DEFAULT_TELOP_ANNOTATIONS.bottom,
+      );
+    }
+    loaded.joysoundAnnotationOverride = null;
+  }
   loaded.playbackState = PlaybackState.WAITING;
   // Whichever of the two survived the last sweep, plus anything the other
   // one has that it doesn't.
@@ -4328,6 +4439,13 @@ const resolvers = {
     },
     popSong: (_: any, args: {}): QueueItem | null => {
       const newSong = db.songQueue.shift() || null;
+
+      // The song that just ended hands the room's reading guides back before
+      // the incoming one can ask for its own. This is the only place either
+      // happens: pollQueue reaches popSong when a song ends, on a skip, and
+      // while the queue is idle, but never mid-song.
+      releaseJoysoundAnnotationOverride();
+      applyJoysoundAnnotationOverride(newSong);
 
       db.currentSongAdhocLyrics = [];
 

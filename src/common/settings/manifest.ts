@@ -5,7 +5,11 @@ import {
   MAX_MIC_RMS_GATE_THRESHOLD,
   MIN_MIC_RMS_GATE_THRESHOLD,
 } from "../constants";
-import { asTelopAnnotation, TelopAnnotation } from "../telopLayout";
+import {
+  asTelopAnnotation,
+  TelopAnnotation,
+  TELOP_ANNOTATION_CHOICES,
+} from "../telopLayout";
 import { Control, RoomSettings } from "./useRoomSettings";
 
 // The two places a room setting can be operated: the big screen's sidebar
@@ -109,12 +113,6 @@ const decibels = {
   fromDisplay: dbfsToLinear,
   format: (display: number) => `${display} dB`,
 };
-
-const LYRICS_ANNOTATION_OPTIONS = [
-  { label: "Off", value: "NONE" },
-  { label: "Furigana", value: "FURIGANA" },
-  { label: "Romaji", value: "ROMAJI" },
-];
 
 // The select presenters deal in plain strings; a guide setting only takes the
 // three above, so anything else leaves it where it was.
@@ -229,7 +227,7 @@ export const SETTINGS: SettingDef[] = [
     label: "Above Lyrics",
     hint: "Reading guide over each JOYSOUND line: the kana JOYSOUND puts on its kanji, or romaji.",
     get: (s) => annotationSelect(s.joysoundTopAnnotation),
-    options: LYRICS_ANNOTATION_OPTIONS,
+    options: TELOP_ANNOTATION_CHOICES,
   },
   {
     kind: "select",
@@ -237,7 +235,7 @@ export const SETTINGS: SettingDef[] = [
     label: "Below Lyrics",
     hint: "Reading guide under each JOYSOUND line. With both rows on, lines spread out to make room.",
     get: (s) => annotationSelect(s.joysoundBottomAnnotation),
-    options: LYRICS_ANNOTATION_OPTIONS,
+    options: TELOP_ANNOTATION_CHOICES,
   },
   {
     kind: "toggle",

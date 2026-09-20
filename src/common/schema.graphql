@@ -784,6 +784,11 @@ input QueueJoysoundSongInput {
   artistName: String!
   playtime: Int
   userIdentity: UserIdentityInput!
+  # Reading guides for this song only, overriding the room's while it plays
+  # (see JoysoundQueueItem). Null/absent means no opinion, which is what
+  # queueing without touching the pickers sends.
+  topAnnotation: LyricsAnnotation
+  bottomAnnotation: LyricsAnnotation
   youtubeVideoId: String
   # Whether to time-align the attached YouTube video with the karaoke track
   # (waveform sync / end-together pad). Null means enabled.
@@ -1114,6 +1119,12 @@ type JoysoundQueueItem implements QueueItemInterface {
   timestamp: String!
   userIdentity: UserIdentity!
   pitchShiftSemis: Int
+  # The reading guides this song was queued with, if whoever queued it asked
+  # for something other than the room's. They are applied to the room
+  # settings while the song plays and released when it ends, so the TV and
+  # the phones keep reading one pair of values.
+  topAnnotation: LyricsAnnotation
+  bottomAnnotation: LyricsAnnotation
   youtubeVideoId: String
   scoringData: [Int!]
 }
