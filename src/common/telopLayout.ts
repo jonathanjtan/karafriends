@@ -2,7 +2,7 @@
 // that draws them. Shared by the TV (JoysoundRenderer, which uploads what this
 // draws as WebGL textures) and the remocon's lyrics panel (which draws the
 // same thing into a 2D canvas), so the phone mirrors the TV glyph for glyph:
-// same furigana or romaji, same word segmentation, same colors, same wipe.
+// same reading guides, same word segmentation, same colors, same wipe.
 //
 // The layout is built once per song from the parser's output
 // (toTelopLayout in joysoundParser.ts) on the TV, which is the only place
@@ -17,7 +17,7 @@ import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "./constants";
 // Bumped whenever the shape below changes, so a phone running a stale bundle
 // can tell it is looking at a layout it can't draw rather than drawing it
 // wrong.
-export const TELOP_LAYOUT_VERSION = 1;
+export const TELOP_LAYOUT_VERSION = 2;
 
 // The virtual screen JOYSOUND authors every telop position in.
 export const TELOP_SCREEN_WIDTH = 720;
@@ -48,7 +48,7 @@ export const BREAK_FONT_STROKE = 3;
 // Where the "（間奏　約N秒）" notice goes when the piano roll is hidden:
 // JOYSOUND's own bottom-of-screen subtitle position. With the roll visible
 // the TV instead centers the notice in the (ducked) roll's band, the one
-// region remapLyricsYPos guarantees lyrics never occupy. Backing vocals can
+// region placeTelopRows guarantees lyrics never occupy. Backing vocals can
 // keep singing through a guide-melody gap, and the bottom position collided
 // with their telop.
 export const BREAK_Y_FRACTION = 0.82;
@@ -60,6 +60,49 @@ export const BREAK_TEXT_DURATION_MS = 5000;
 const TEXT_PADDING = TELOP_TEXT_PADDING;
 const SCREEN_WIDTH = TELOP_SCREEN_WIDTH;
 const SCREEN_HEIGHT = TELOP_SCREEN_HEIGHT;
+
+// A reading guide drawn on one side of the main text. The same three values
+// as the LyricsAnnotation GraphQL enum, so a synced setting is a layout value
+// with no mapping in between.
+export type TelopAnnotation = "NONE" | "FURIGANA" | "ROMAJI";
+
+export const TELOP_ANNOTATIONS: readonly TelopAnnotation[] = [
+  "NONE",
+  "FURIGANA",
+  "ROMAJI",
+];
+
+// Which guide is drawn above the main text and which below it. A room
+// setting, so the TV re-lays the current song out when it changes and the
+// phone follows the republished layout.
+export interface TelopAnnotations {
+  top: TelopAnnotation;
+  bottom: TelopAnnotation;
+}
+
+// Kana over the kanji as JOYSOUND authored it, and the pronunciation under
+// the whole line for whoever can't read the kana either.
+export const DEFAULT_TELOP_ANNOTATIONS: TelopAnnotations = {
+  top: "FURIGANA",
+  bottom: "ROMAJI",
+};
+
+// Narrows a value read off the wire or off disk (a persisted queue.json, a
+// Relay "%future added value") to an annotation, else `fallback`.
+export function asTelopAnnotation(
+  value: unknown,
+  fallback: TelopAnnotation,
+): TelopAnnotation {
+  return TELOP_ANNOTATIONS.includes(value as TelopAnnotation)
+    ? (value as TelopAnnotation)
+    : fallback;
+}
+
+// The title card's field labels follow the reader: anyone who wanted romaji
+// under the lyrics wants "Lyrics:" rather than "作詞" too.
+export function telopUsesLatinLabels(annotations: TelopAnnotations): boolean {
+  return annotations.top === "ROMAJI" || annotations.bottom === "ROMAJI";
+}
 
 // One glyph of the main text row, already decoded (with the block's flags,
 // which is what tells the card-suit glyphs apart from the Shift-JIS characters
@@ -130,9 +173,10 @@ export interface TelopBreak {
 
 export interface TelopLayout {
   version: number;
-  // Whether the annotation row is romaji rather than furigana. Per queued
-  // song, chosen on the remocon when it was queued.
-  isRomaji: boolean;
+  // The reading guides this layout was drawn with. Every block carries both
+  // its furigana and its romaji regardless; this says which of them went
+  // where.
+  annotations: TelopAnnotations;
   title: TelopTitle;
   blocks: TelopBlock[];
   breaks: TelopBreak[];
@@ -163,6 +207,44 @@ function getFontFace(raster: TelopRaster, fontCode: number): string {
   }
 }
 
+// --- Block geometry --------------------------------------------------------
+//
+// A block's image stacks, top to bottom: the top guide row (if any), the main
+// text row, the bottom guide row (if any), with TEXT_PADDING around the lot.
+// Each row is a stroke box (font size plus a stroke either side); adjacent
+// stroke boxes touch, and the glyphs' own side bearings are the air between
+// them. The block's authored yPos sits MAIN_ROW_OFFSET above the main row's
+// stroke box, which is where JOYSOUND's own renderer puts it.
+
+// A furigana or romaji row's stroke box. Both guides use RUBY_FONT_SIZE, and
+// the taller furigana stroke sizes the row so switching guides doesn't move
+// anything.
+const GUIDE_ROW_HEIGHT = RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2;
+const MAIN_ROW_HEIGHT = MAIN_FONT_SIZE + MAIN_FONT_STROKE * 2;
+const MAIN_ROW_OFFSET = 8;
+// Between the main row and a bottom guide row. Kanji ink stops short of the
+// bottom of its em box and kana starts below the top of its own, so the rows
+// can nearly touch and still read as spaced like the top guide does.
+const BOTTOM_GUIDE_GAP = 2;
+// The least air placeTelopRows leaves between one row's lowest stroke box and
+// the next row's highest. JOYSOUND's own row pitch (94) leaves 16 above a
+// furigana row, so a layout with no bottom guide is never respaced.
+const ROW_AIR = 8;
+// Kept clear below the lowest row, so glyphs don't sit flush against the
+// bottom of the screen. The gap above the rows is the caller's, folded into
+// the clearance it passes.
+const SCREEN_BOTTOM_MARGIN = 8;
+
+function getTopGuideHeight(annotations: TelopAnnotations): number {
+  return annotations.top === "NONE" ? 0 : GUIDE_ROW_HEIGHT;
+}
+
+function getBottomGuideHeight(annotations: TelopAnnotations): number {
+  return annotations.bottom === "NONE"
+    ? 0
+    : BOTTOM_GUIDE_GAP + GUIDE_ROW_HEIGHT;
+}
+
 export function getLyricsBlockWidth(lyricsBlock: TelopBlock): number {
   const mainBlockWidth = lyricsBlock.glyphs.reduce(
     (acc, curr) => acc + curr.width,
@@ -184,27 +266,37 @@ export function getLyricsBlockWidth(lyricsBlock: TelopBlock): number {
   );
 }
 
-export function getLyricsBlockHeight(_lyricsBlock?: TelopBlock): number {
+export function getLyricsBlockHeight(annotations: TelopAnnotations): number {
   return (
-    MAIN_FONT_SIZE +
-    MAIN_FONT_STROKE * 2 +
-    RUBY_FONT_SIZE +
-    RUBY_FONT_STROKE * 2 +
+    getTopGuideHeight(annotations) +
+    MAIN_ROW_HEIGHT +
+    getBottomGuideHeight(annotations) +
     TEXT_PADDING * 2
   );
 }
 
-// A lyrics block's quad extends above its yPos by the furigana row and below
-// it by the main text row; see getLyricsBlockRect and getLyricsBlockHeight.
-export const LYRICS_BLOCK_ASCENT =
-  RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2 + 8 + TEXT_PADDING;
-export const LYRICS_BLOCK_DESCENT =
-  MAIN_FONT_SIZE +
-  MAIN_FONT_STROKE * 2 +
-  RUBY_FONT_SIZE +
-  RUBY_FONT_STROKE * 2 +
-  TEXT_PADDING * 2 -
-  LYRICS_BLOCK_ASCENT;
+// How far a block's image extends above its yPos (the top guide row and the
+// padding) and below it (the rest). Ascent plus descent is the height.
+export function getLyricsBlockAscent(annotations: TelopAnnotations): number {
+  return getTopGuideHeight(annotations) + MAIN_ROW_OFFSET + TEXT_PADDING;
+}
+
+export function getLyricsBlockDescent(annotations: TelopAnnotations): number {
+  return getLyricsBlockHeight(annotations) - getLyricsBlockAscent(annotations);
+}
+
+// The same two measured to the block's ink rather than to its image: a block
+// carries TEXT_PADDING of transparency on every side so a stroke or a
+// descender can't be clipped by the canvas it is drawn into. That padding is
+// not margin, and fitting rows into a band must not spend the band on it, or
+// the lyrics shrink for space nothing is drawn in.
+function getInkAscent(annotations: TelopAnnotations): number {
+  return getLyricsBlockAscent(annotations) - TEXT_PADDING;
+}
+
+function getInkDescent(annotations: TelopAnnotations): number {
+  return getLyricsBlockDescent(annotations) - TEXT_PADDING;
+}
 
 export interface TelopRect {
   left: number;
@@ -214,25 +306,161 @@ export interface TelopRect {
 }
 
 // Where a block's rasterized image goes, in telop units, with the block drawn
-// at `yPos` (its own, unless the TV has remapped it clear of the piano roll).
-// Its texture covers exactly this rect.
+// at `yPos` (its own, unless placeTelopRows has moved its row). Its texture
+// covers exactly this rect.
 export function getLyricsBlockRect(
   lyricsBlock: TelopBlock,
+  annotations: TelopAnnotations,
   yPos: number = lyricsBlock.yPos,
 ): TelopRect {
   return {
     left: lyricsBlock.xPos - TEXT_PADDING,
-    top: yPos - (RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2) - 8 - TEXT_PADDING,
+    top: yPos - getLyricsBlockAscent(annotations),
     width: getLyricsBlockWidth(lyricsBlock),
-    height: getLyricsBlockHeight(lyricsBlock),
+    height: getLyricsBlockHeight(annotations),
   };
 }
 
-// The part of the telop screen a song's lyrics ever occupy, clamped to the
-// screen. JOYSOUND's template keeps its rows in the lower 60% of the screen
-// (the video shows above), so a surface with no video to show can crop to
-// this and spend its pixels on text.
+// --- Row placement ---------------------------------------------------------
+
+// Where a song's rows land on a surface: each authored yPos mapped to the
+// yPos it's drawn at, and one scale every block shrinks by (about its own
+// yPos and horizontal center) when the rows had to be compressed to fit.
+export interface TelopRowPlacement {
+  scale: number;
+  rows: Map<number, number>;
+}
+
+// JOYSOUND authors its rows 94 units apart, enough for a furigana row above
+// each line and nothing below it. A bottom guide row makes a line taller than
+// that, so with both guides on, one row's romaji would sit on the next row's
+// furigana. This spreads the rows apart until every pair clears, keeping the
+// lowest row where JOYSOUND put it (the band JOYSOUND leaves the video above
+// its lyrics is part of the look) and moving the others up. Only if the top
+// row would then leave the screen does the whole set slide down, and only if
+// that isn't enough does it shrink.
+//
+// `clearance` is how much of the top of the screen something else owns, on
+// the TV the piano roll. With any clearance the rows are instead centered in
+// the band below it, scaled down when the band can't hold them, so the
+// lyrics don't hug the bottom of the screen as the roll grows. Compressing
+// the spacing alone let a squeezed row's furigana overlap the main text of the
+// row above it, so the blocks shrink in lockstep with the spacing. With no
+// clearance and nothing to spread this is an exact no-op.
+//
+// Both surfaces run this: the phone with clearance 0, the TV with whatever
+// the roll takes. It's what keeps a bottom guide row off the next line on
+// both.
+export function placeTelopRows(
+  layout: TelopLayout,
+  clearance: number,
+): TelopRowPlacement {
+  const authored = [...new Set(layout.blocks.map((block) => block.yPos))].sort(
+    (a, b) => a - b,
+  );
+  const rows = new Map<number, number>();
+
+  if (authored.length === 0) {
+    return { scale: 1, rows };
+  }
+
+  const ascent = getInkAscent(layout.annotations);
+  const descent = getInkDescent(layout.annotations);
+  // Stroke box to stroke box: the padding on either side is transparent.
+  const requiredPitch = ascent + descent + ROW_AIR;
+
+  const offsets = [0];
+  for (let i = 1; i < authored.length; i++) {
+    offsets.push(
+      offsets[i - 1] + Math.max(authored[i] - authored[i - 1], requiredPitch),
+    );
+  }
+  const span = offsets[offsets.length - 1];
+  const spread = span > authored[authored.length - 1] - authored[0];
+
+  if (clearance <= 0 && !spread) {
+    authored.forEach((yPos) => rows.set(yPos, yPos));
+    return { scale: 1, rows };
+  }
+
+  let scale = 1;
+  let first: number;
+
+  const floor = SCREEN_HEIGHT - SCREEN_BOTTOM_MARGIN;
+
+  if (clearance > 0) {
+    // scale satisfies: scaled span plus the scaled ink above the first row
+    // and below the last fits between the roll and the floor, so blocks
+    // shrink in lockstep with spacing.
+    scale = Math.max(
+      0,
+      Math.min(1, (floor - clearance) / (span + ascent + descent)),
+    );
+    const minAllowedYPos = clearance + ascent * scale;
+    const maxAllowedYPos = floor - descent * scale;
+    first =
+      minAllowedYPos +
+      Math.max(0, (maxAllowedYPos - minAllowedYPos - span * scale) / 2);
+  } else {
+    let last = authored[authored.length - 1];
+    if (last - span - ascent < 0) {
+      last = floor - descent;
+    }
+    if (last - span - ascent < 0) {
+      scale = floor / (span + ascent + descent);
+      last = floor - descent * scale;
+    }
+    first = last - span * scale;
+  }
+
+  authored.forEach((yPos, i) => rows.set(yPos, first + offsets[i] * scale));
+
+  return { scale, rows };
+}
+
+// A block's on-screen rect once its row has been placed: getLyricsBlockRect
+// at the placed yPos, shrunk about the block's horizontal center and its
+// placed yPos by the placement's scale.
+export function getPlacedLyricsBlockRect(
+  lyricsBlock: TelopBlock,
+  annotations: TelopAnnotations,
+  placement: TelopRowPlacement,
+): TelopRect {
+  const yPos = placement.rows.get(lyricsBlock.yPos) ?? lyricsBlock.yPos;
+  const rect = getLyricsBlockRect(lyricsBlock, annotations, yPos);
+  const { scale } = placement;
+  const centerX = rect.left + rect.width / 2;
+
+  return {
+    left: centerX - (rect.width / 2) * scale,
+    top: yPos + (rect.top - yPos) * scale,
+    width: rect.width * scale,
+    height: rect.height * scale,
+  };
+}
+
+// A telop x within a block (its wipe position, say) mapped through the same
+// shrink as getPlacedLyricsBlockRect, so the wipe stays on the glyph it was
+// authored for however small the block is drawn.
+export function placeLyricsBlockX(
+  lyricsBlock: TelopBlock,
+  placement: TelopRowPlacement,
+  x: number,
+): number {
+  const centerX =
+    lyricsBlock.xPos - TEXT_PADDING + getLyricsBlockWidth(lyricsBlock) / 2;
+
+  return centerX + (x - centerX) * placement.scale;
+}
+
+// The part of the telop screen a song's lyrics ever occupy (rows placed as a
+// surface with nothing else on it places them), clamped to the screen.
+// JOYSOUND's template keeps its rows in the lower 60% of the screen (the
+// video shows above), so a surface with no video to show can crop to this and
+// spend its pixels on text.
 export function getTelopLyricsBounds(layout: TelopLayout): TelopRect {
+  const placement = placeTelopRows(layout, 0);
+
   let left = Infinity;
   let top = Infinity;
   let right = -Infinity;
@@ -246,7 +474,7 @@ export function getTelopLyricsBounds(layout: TelopLayout): TelopRect {
       continue;
     }
 
-    const rect = getLyricsBlockRect(block);
+    const rect = getPlacedLyricsBlockRect(block, layout.annotations, placement);
     left = Math.min(left, rect.left);
     top = Math.min(top, rect.top);
     right = Math.max(right, rect.left + rect.width);
@@ -334,11 +562,12 @@ function setupTextCanvas(
   textCtx: CanvasRenderingContext2D,
   raster: TelopRaster,
   lyricsBlock: TelopBlock,
+  annotations: TelopAnnotations,
   fillColor: number[],
   strokeColor: number[],
 ): void {
   textCtx.canvas.width = getLyricsBlockWidth(lyricsBlock) * raster.x;
-  textCtx.canvas.height = getLyricsBlockHeight(lyricsBlock) * raster.y;
+  textCtx.canvas.height = getLyricsBlockHeight(annotations) * raster.y;
   textCtx.clearRect(0, 0, textCtx.canvas.width, textCtx.canvas.height);
 
   textCtx.textBaseline = "top";
@@ -437,9 +666,11 @@ export function drawTitleCard(
   textCtx: CanvasRenderingContext2D,
   raster: TelopRaster,
   title: TelopTitle,
-  isRomaji: boolean,
+  annotations: TelopAnnotations,
 ): void {
   setupTitleCanvas(textCtx, raster);
+
+  const latinLabels = telopUsesLatinLabels(annotations);
 
   const titleFontSize =
     title.musicName.length < 48 ? TITLE_FONT_SIZE : ARTIST_FONT_SIZE;
@@ -474,13 +705,15 @@ export function drawTitleCard(
 
   textCtx.font = `${METADATA_FONT_SIZE * raster.rate}px ${raster.jpFont}`;
 
-  const lyricistText = (isRomaji ? "Lyrics: " : "作詞 ") + title.lyricistName;
+  const lyricistText =
+    (latinLabels ? "Lyrics: " : "作詞 ") + title.lyricistName;
   const lyricistMeasure = textCtx.measureText(lyricistText);
   const lyricistHeight =
     lyricistMeasure.actualBoundingBoxAscent +
     lyricistMeasure.actualBoundingBoxDescent;
 
-  const composerText = (isRomaji ? "Composer: " : "作曲 ") + title.composerName;
+  const composerText =
+    (latinLabels ? "Composer: " : "作曲 ") + title.composerName;
   const composerMeasure = textCtx.measureText(composerText);
   const composerHeight =
     composerMeasure.actualBoundingBoxAscent +
@@ -600,16 +833,50 @@ export function drawLyricsBlockImage(
   lyricsBlock: TelopBlock,
   fillColor: number[],
   strokeColor: number[],
-  isRomaji: boolean,
+  annotations: TelopAnnotations,
 ): void {
-  setupTextCanvas(textCtx, raster, lyricsBlock, fillColor, strokeColor);
+  setupTextCanvas(
+    textCtx,
+    raster,
+    lyricsBlock,
+    annotations,
+    fillColor,
+    strokeColor,
+  );
 
-  drawMainTextToCanvas(textCtx, raster, lyricsBlock);
+  const mainRowTop = getTopGuideHeight(annotations);
 
-  if (isRomaji) {
-    drawRomajiTextToCanvas(textCtx, raster, lyricsBlock);
-  } else {
-    drawFuriganaTextToCanvas(textCtx, raster, lyricsBlock);
+  drawMainTextToCanvas(textCtx, raster, lyricsBlock, mainRowTop);
+  drawGuideRowToCanvas(textCtx, raster, lyricsBlock, annotations.top, 0);
+  drawGuideRowToCanvas(
+    textCtx,
+    raster,
+    lyricsBlock,
+    annotations.bottom,
+    mainRowTop + MAIN_ROW_HEIGHT + BOTTOM_GUIDE_GAP,
+  );
+}
+
+// One guide row, whichever kind, with its stroke box's top at `rowTop` (in
+// block-canvas telop units, padding excluded). The same furigana or romaji
+// positions serve above and below: JOYSOUND's ruby x positions and the
+// romaji's source spans are horizontal facts about the main text.
+function drawGuideRowToCanvas(
+  textCtx: CanvasRenderingContext2D,
+  raster: TelopRaster,
+  lyricsBlock: TelopBlock,
+  kind: TelopAnnotation,
+  rowTop: number,
+): void {
+  switch (kind) {
+    case "FURIGANA":
+      drawFuriganaTextToCanvas(textCtx, raster, lyricsBlock, rowTop);
+      break;
+    case "ROMAJI":
+      drawRomajiTextToCanvas(textCtx, raster, lyricsBlock, rowTop);
+      break;
+    case "NONE":
+      break;
   }
 }
 
@@ -710,6 +977,7 @@ function drawMainTextToCanvas(
   textCtx: CanvasRenderingContext2D,
   raster: TelopRaster,
   lyricsBlock: TelopBlock,
+  rowTop: number,
 ): void {
   let currX = 0;
 
@@ -727,7 +995,7 @@ function drawMainTextToCanvas(
       MAIN_FONT_SIZE,
       MAIN_FONT_STROKE,
       xPos,
-      RUBY_FONT_SIZE + RUBY_FONT_STROKE * 2,
+      rowTop,
       glyph.text,
       glyph.font,
     );
@@ -740,6 +1008,7 @@ function drawFuriganaTextToCanvas(
   textCtx: CanvasRenderingContext2D,
   raster: TelopRaster,
   lyricsBlock: TelopBlock,
+  rowTop: number,
 ): void {
   for (const furiganaBlock of lyricsBlock.furigana) {
     let currX = furiganaBlock.xPos;
@@ -751,7 +1020,7 @@ function drawFuriganaTextToCanvas(
         RUBY_FONT_SIZE,
         RUBY_FONT_STROKE,
         currX,
-        0,
+        rowTop,
         unicodeChar,
       );
 
@@ -764,6 +1033,7 @@ function drawRomajiTextToCanvas(
   textCtx: CanvasRenderingContext2D,
   raster: TelopRaster,
   lyricsBlock: TelopBlock,
+  rowTop: number,
 ): void {
   for (const romajiBlock of lyricsBlock.romaji) {
     textCtx.font = `${ROMAJI_FONT_SIZE}px ${getFontFace(raster, 0)}`;
@@ -782,7 +1052,7 @@ function drawRomajiTextToCanvas(
       ROMAJI_FONT_SIZE,
       ROMAJI_FONT_STROKE,
       xPos + xOff,
-      0,
+      rowTop,
       romajiBlock.phrase,
     );
   }

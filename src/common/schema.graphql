@@ -165,6 +165,11 @@ type Query {
   # boundaries (e.g. "arumono"). Synced so it can be A/B toggled live from the
   # remocon or renderer sidebar without restarting or re-downloading the song.
   joysoundRomajiWordSegmentation: Boolean!
+  # The reading guides drawn above and below each JOYSOUND lyric line. Room
+  # settings: the TV re-lays the playing song out when they change and the
+  # remocon's lyrics panel follows the republished layout.
+  joysoundTopAnnotation: LyricsAnnotation!
+  joysoundBottomAnnotation: LyricsAnnotation!
   songHistory(first: Int, after: String): SongHistoryConnection!
   # How many times this singer has already sung this song, counted over
   # songHistory and including the play in progress. Zero only when history
@@ -331,6 +336,8 @@ type Mutation {
   setPianoRollSize(size: Float!): Boolean!
   setPitchShiftSemis(semis: Int!): Boolean!
   setJoysoundRomajiWordSegmentation(enabled: Boolean!): Boolean!
+  setJoysoundTopAnnotation(annotation: LyricsAnnotation!): Boolean!
+  setJoysoundBottomAnnotation(annotation: LyricsAnnotation!): Boolean!
   setPlaybackState(playbackState: PlaybackState!): Boolean!
   setQueueIntermissionEnabled(enabled: Boolean!): Boolean!
   setSettingsCollapsed(collapsed: Boolean!): Boolean!
@@ -356,6 +363,8 @@ type Subscription {
   emote: Emote!
   guideMelodyVolumeChanged: Float!
   joysoundRomajiWordSegmentationChanged: Boolean!
+  joysoundTopAnnotationChanged: LyricsAnnotation!
+  joysoundBottomAnnotationChanged: LyricsAnnotation!
   micOutputEnabledChanged: Boolean!
   micRmsGateEnabledChanged: Boolean!
   micRmsGateThresholdChanged: Float!
@@ -775,7 +784,6 @@ input QueueJoysoundSongInput {
   artistName: String!
   playtime: Int
   userIdentity: UserIdentityInput!
-  isRomaji: Boolean!
   youtubeVideoId: String
   # Whether to time-align the attached YouTube video with the karaoke track
   # (waveform sync / end-together pad). Null means enabled.
@@ -1106,7 +1114,6 @@ type JoysoundQueueItem implements QueueItemInterface {
   timestamp: String!
   userIdentity: UserIdentity!
   pitchShiftSemis: Int
-  isRomaji: Boolean!
   youtubeVideoId: String
   scoringData: [Int!]
 }
@@ -1278,6 +1285,15 @@ type NicoVideoInfoError {
 }
 
 union NicoVideoInfoResult = NicoVideoInfo | NicoVideoInfoError
+
+# A reading guide drawn on one side of JOYSOUND's main lyric text: the kana
+# JOYSOUND authored over its kanji, or the romaji the TV derives for the whole
+# line. The same three values as TelopAnnotation in common/telopLayout.ts.
+enum LyricsAnnotation {
+  NONE
+  FURIGANA
+  ROMAJI
+}
 
 enum PlaybackState {
   PAUSED

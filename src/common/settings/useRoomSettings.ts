@@ -7,7 +7,9 @@ import useBreakMessage from "../hooks/useBreakMessage";
 import useExperimentalScoringEnabled from "../hooks/useExperimentalScoringEnabled";
 import useGuideMelodyVolume from "../hooks/useGuideMelodyVolume";
 import useHistoryRecordingEnabled from "../hooks/useHistoryRecordingEnabled";
+import useJoysoundBottomAnnotation from "../hooks/useJoysoundBottomAnnotation";
 import useJoysoundRomajiWordSegmentation from "../hooks/useJoysoundRomajiWordSegmentation";
+import useJoysoundTopAnnotation from "../hooks/useJoysoundTopAnnotation";
 import useMicOutputEnabled from "../hooks/useMicOutputEnabled";
 import useMicRmsGateEnabled from "../hooks/useMicRmsGateEnabled";
 import useMicRmsGateThreshold from "../hooks/useMicRmsGateThreshold";
@@ -17,6 +19,7 @@ import usePianoRollSize from "../hooks/usePianoRollSize";
 import useQueueIntermissionEnabled from "../hooks/useQueueIntermissionEnabled";
 import useSettingsCollapsed from "../hooks/useSettingsCollapsed";
 import useSidebarCollapsed from "../hooks/useSidebarCollapsed";
+import { TelopAnnotation } from "../telopLayout";
 
 // One read/write handle on a synced setting. Every setting hook in
 // common/hooks already has this shape under a different pair of names; this
@@ -54,6 +57,8 @@ export interface RoomSettings {
   queueIntermissionEnabled: Control<boolean>;
   oledFriendly: Control<boolean>;
   joysoundRomajiWordSegmentation: Control<boolean>;
+  joysoundTopAnnotation: Control<TelopAnnotation>;
+  joysoundBottomAnnotation: Control<TelopAnnotation>;
   // Stored inverted (`collapsed`); exposed as "is it showing" so a switch
   // being on means the thing is visible on both surfaces.
   tvSettingsPanelVisible: Control<boolean>;
@@ -90,6 +95,10 @@ export default function useRoomSettings(): RoomSettings {
   const { oledFriendly, setOledFriendly } = useOledFriendly();
   const { joysoundRomajiWordSegmentation, setJoysoundRomajiWordSegmentation } =
     useJoysoundRomajiWordSegmentation();
+  const { joysoundTopAnnotation, setJoysoundTopAnnotation } =
+    useJoysoundTopAnnotation();
+  const { joysoundBottomAnnotation, setJoysoundBottomAnnotation } =
+    useJoysoundBottomAnnotation();
   const { settingsCollapsed, setSettingsCollapsed } = useSettingsCollapsed();
   const { sidebarCollapsed, setSidebarCollapsed } = useSidebarCollapsed();
   const { breakEndsAt, setBreakEndsAt } = useBreakEndsAt();
@@ -144,6 +153,14 @@ export default function useRoomSettings(): RoomSettings {
     joysoundRomajiWordSegmentation: {
       value: joysoundRomajiWordSegmentation,
       set: setJoysoundRomajiWordSegmentation,
+    },
+    joysoundTopAnnotation: {
+      value: joysoundTopAnnotation,
+      set: setJoysoundTopAnnotation,
+    },
+    joysoundBottomAnnotation: {
+      value: joysoundBottomAnnotation,
+      set: setJoysoundBottomAnnotation,
     },
     tvSettingsPanelVisible: {
       value: !settingsCollapsed,

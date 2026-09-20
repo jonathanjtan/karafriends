@@ -38,14 +38,16 @@ songs an individual guest can have queued at once.
 
 **Romaji**
 Japanese written in Latin letters instead of kanji/kana. JOYSOUND
-lyrics can be displayed in "romaji mode" so non-Japanese-readers can
-sing along phonetically.
+lyrics can carry a romaji guide above or below each line (the "Above
+Lyrics" / "Below Lyrics" room settings) so non-Japanese-readers can sing
+along phonetically.
 
 **Furigana**
 Small phonetic annotations (in hiragana) placed above kanji characters
 in Japanese text, to indicate pronunciation. JOYSOUND lyrics include
-furigana data; karafriends renders them as small text above kanji using
-the constants in [common/constants.ts](../src/common/constants.ts).
+furigana data; karafriends renders them as small text in the guide row
+above (or below) each line using the constants in
+[common/constants.ts](../src/common/constants.ts).
 
 **Kuroshiro / Kuromoji**
 A Japanese NLP library (Kuroshiro) and the morphological analyzer it

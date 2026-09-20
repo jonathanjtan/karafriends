@@ -14,12 +14,16 @@ import {
   drawLyricsBlockImage,
   drawTitleCard,
   getActiveBreakNoticeIndex,
-  getLyricsBlockRect,
+  getLyricsBlockWidth,
+  getPlacedLyricsBlockRect,
   getScrollXPos,
   getTelopLyricsBounds,
+  placeLyricsBlockX,
+  placeTelopRows,
   TelopLayout,
   TelopRaster,
   TelopRect,
+  TelopRowPlacement,
   TELOP_SCREEN_HEIGHT,
   TELOP_SCREEN_WIDTH,
 } from "../../../common/telopLayout";
@@ -56,6 +60,10 @@ function release(canvas: HTMLCanvasElement) {
 export default class TelopPainter {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly layout: TelopLayout;
+  // Where each row sits on a surface with nothing else on it, exactly as the
+  // TV places them with no piano roll: with both reading guides on, the rows
+  // spread apart so one line's bottom guide clears the next line's furigana.
+  private readonly placement: TelopRowPlacement;
   // The part of the telop screen shown: the lyrics' bounding box.
   readonly crop: TelopRect;
 
@@ -70,6 +78,10 @@ export default class TelopPainter {
     jpFont: TELOP_JP_FONT,
     krFont: TELOP_KR_FONT,
   };
+  // The raster lyrics blocks are drawn at: `raster` times the placement's
+  // scale, so a block that had to shrink to fit is rasterized at the size it
+  // is drawn rather than drawn scaled.
+  private blockRaster: TelopRaster = this.raster;
 
   private blocks = new Map<number, BlockImages>();
   private title: HTMLCanvasElement | null = null;
@@ -81,6 +93,7 @@ export default class TelopPainter {
     if (!ctx) throw new Error("2D canvas unavailable");
     this.ctx = ctx;
     this.layout = layout;
+    this.placement = placeTelopRows(layout, 0);
     this.crop = getTelopLyricsBounds(layout);
   }
 
@@ -106,6 +119,13 @@ export default class TelopPainter {
       rate: this.scale,
       x: this.scale,
       y: this.scale,
+    };
+    const blockScale = this.scale * this.placement.scale;
+    this.blockRaster = {
+      ...this.raster,
+      rate: blockScale,
+      x: blockScale,
+      y: blockScale,
     };
 
     this.invalidate();
@@ -197,19 +217,19 @@ export default class TelopPainter {
     const post = newCanvasContext();
     drawLyricsBlockImage(
       pre,
-      this.raster,
+      this.blockRaster,
       block,
       block.preFill,
       block.preBorder,
-      this.layout.isRomaji,
+      this.layout.annotations,
     );
     drawLyricsBlockImage(
       post,
-      this.raster,
+      this.blockRaster,
       block,
       block.postFill,
       block.postBorder,
-      this.layout.isRomaji,
+      this.layout.annotations,
     );
 
     const images = { pre: pre.canvas, post: post.canvas };
@@ -220,19 +240,26 @@ export default class TelopPainter {
   // The TV's shader draws the pre-colored texture where x > the wipe and the
   // post-colored one where x <= it; two clips do the same here. The images go
   // down 1:1 on whole device pixels (the TV stretches its textures by a
-  // sub-pixel remainder; at phone sizes that just blurs the text).
+  // sub-pixel remainder; at phone sizes that just blurs the text), at the
+  // block's placed rect, with the wipe through the same placement.
   private paintBlock(index: number, refreshTime: number) {
     const ctx = this.ctx;
     const block = this.layout.blocks[index];
     const { pre, post } = this.blockImages(index);
-    const rect = getLyricsBlockRect(block);
+    const rect = getPlacedLyricsBlockRect(
+      block,
+      this.layout.annotations,
+      this.placement,
+    );
 
     const dx = Math.round(this.toDeviceX(rect.left));
     const dy = Math.round(this.toDeviceY(rect.top));
     const scrollXPos = Math.floor(getScrollXPos(block, refreshTime));
-    const wipeX = Math.round(this.toDeviceX(scrollXPos));
+    const wipeX = Math.round(
+      this.toDeviceX(placeLyricsBlockX(block, this.placement, scrollXPos)),
+    );
 
-    if (scrollXPos <= block.xPos + rect.width) {
+    if (scrollXPos <= block.xPos + getLyricsBlockWidth(block)) {
       ctx.save();
       ctx.beginPath();
       ctx.rect(wipeX, dy, dx + pre.width - wipeX, pre.height);
@@ -274,7 +301,7 @@ export default class TelopPainter {
         titleCtx,
         { ...this.raster, rate, x: rate, y: rate },
         this.layout.title,
-        this.layout.isRomaji,
+        this.layout.annotations,
       );
       this.title = titleCtx.canvas;
     }

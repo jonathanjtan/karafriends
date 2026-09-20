@@ -114,7 +114,6 @@ const popSongMutation = graphql`
         timestamp
         name
         artistName
-        isRomaji
         youtubeVideoId
         scoringData
         userIdentity {
@@ -223,7 +222,6 @@ function Player(props: {
 
   const [joysoundTelop, setJoysoundTelop] = useState<ArrayBuffer | null>(null);
   const [shouldShowJoysound, setShouldShowJoysound] = useState<boolean>(false);
-  const [joysoundIsRomaji, setJoysoundIsRomaji] = useState<boolean>(false);
   // Which queue entry joysoundTelop is, so the layout JoysoundRenderer
   // publishes for the remocon's lyrics panel can't land on the wrong song.
   const [joysoundSongKey, setJoysoundSongKey] = useState<string>("");
@@ -978,7 +976,6 @@ function Player(props: {
                 .then((resp) => resp.arrayBuffer())
                 .then((data) => {
                   setJoysoundTelop(data);
-                  setJoysoundIsRomaji(popSong.isRomaji);
                   setJoysoundSongKey(queueItemKey(popSong));
 
                   invariant(videoRef.current);
@@ -1378,7 +1375,6 @@ function Player(props: {
       {shouldShowJoysound && joysoundTelop !== null ? (
         <JoysoundRenderer
           telop={joysoundTelop}
-          isRomaji={joysoundIsRomaji}
           kuroshiro={props.kuroshiro}
           videoRef={videoRef}
           pianoRollVisible={shouldShowPianoRoll}

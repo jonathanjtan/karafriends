@@ -14,7 +14,9 @@ import {
   PIANO_ROLL_LOOKAHEAD_SECS,
   PIANO_ROLL_TOP_FRACTION,
 } from "../common/constants";
+import useJoysoundBottomAnnotation from "../common/hooks/useJoysoundBottomAnnotation";
 import useJoysoundRomajiWordSegmentation from "../common/hooks/useJoysoundRomajiWordSegmentation";
+import useJoysoundTopAnnotation from "../common/hooks/useJoysoundTopAnnotation";
 import usePianoRollSize from "../common/hooks/usePianoRollSize";
 import { InstrumentalBreak } from "../common/scoringData";
 import {
@@ -25,13 +27,16 @@ import {
   drawLyricsBlockImage,
   drawTitleCard,
   getActiveBreakNoticeIndex,
-  getLyricsBlockRect,
+  getLyricsBlockWidth,
+  getPlacedLyricsBlockRect,
   getScrollXPos,
-  LYRICS_BLOCK_ASCENT,
-  LYRICS_BLOCK_DESCENT,
+  placeLyricsBlockX,
+  placeTelopRows,
+  TelopAnnotations,
   TelopBlock,
   TelopLayout,
   TelopRaster,
+  TelopRowPlacement,
   TELOP_SCREEN_HEIGHT,
   TELOP_SCREEN_WIDTH,
   TELOP_TEXT_PADDING,
@@ -211,7 +216,7 @@ function createTitleTexture(
   layout: TelopLayout,
 ): WebGLTexture {
   return createTextTexture(gl, (textCtx) =>
-    drawTitleCard(textCtx, raster, layout.title, layout.isRomaji),
+    drawTitleCard(textCtx, raster, layout.title, layout.annotations),
   );
 }
 
@@ -243,7 +248,7 @@ function createLyricsBlockTextures(
       lyricsBlock,
       lyricsBlock.preFill,
       lyricsBlock.preBorder,
-      layout.isRomaji,
+      layout.annotations,
     );
     const preTexture = createTextureFromImage(gl, textCtx.canvas);
 
@@ -253,7 +258,7 @@ function createLyricsBlockTextures(
       lyricsBlock,
       lyricsBlock.postFill,
       lyricsBlock.postBorder,
-      layout.isRomaji,
+      layout.annotations,
     );
     const postTexture = createTextureFromImage(gl, textCtx.canvas);
 
@@ -317,75 +322,35 @@ function drawLyricsTexture(
   gl.drawArrays(gl.TRIANGLES, 0, positions.length / 2);
 }
 
-// Keeps lyrics rows from hiding behind the piano roll: while the roll is on
-// screen, the whole set of rows is centered vertically in the space between
-// the roll's bottom edge and the bottom of the screen (so lyrics don't hug
-// the bottom of the screen as the roll grows). When that space can't fit the
-// original layout, the returned scale shrinks the row spacing AND the drawn
-// block size by the same factor. Compressing spacing alone let a squeezed
-// row's furigana overlap the main text of the row above it at piano roll
-// sizes M/L. With no piano roll on screen (clearance 0) this is an exact
-// no-op.
-function remapLyricsYPos(
-  yPos: number,
-  minYPos: number,
-  maxYPos: number,
-  pianoRollClearance: number,
-): { yPos: number; scale: number } {
-  if (pianoRollClearance <= 0) {
-    return { yPos, scale: 1 };
-  }
-
-  // scale satisfies: scaled span + scaled ascent + scaled descent fits in
-  // the space below the roll, so blocks shrink in lockstep with spacing.
-  const scale = Math.max(
-    0,
-    Math.min(
-      1,
-      (SCREEN_HEIGHT - pianoRollClearance) /
-        (maxYPos - minYPos + LYRICS_BLOCK_ASCENT + LYRICS_BLOCK_DESCENT),
-    ),
-  );
-  const minAllowedYPos = pianoRollClearance + LYRICS_BLOCK_ASCENT * scale;
-  const maxAllowedYPos = SCREEN_HEIGHT - LYRICS_BLOCK_DESCENT * scale;
-  const spanHeight = (maxYPos - minYPos) * scale;
-  const centeredMinYPos =
-    minAllowedYPos +
-    Math.max(0, (maxAllowedYPos - minAllowedYPos - spanHeight) / 2);
-
-  return { yPos: centeredMinYPos + (yPos - minYPos) * scale, scale };
-}
-
+// Draws one block at its placed rect (placeTelopRows decides where its row
+// sits and how much the rows had to shrink to clear the piano roll or each
+// other). The wipe boundary goes through the same transform as the quad, so
+// highlight timing stays glyph-accurate however small the block is drawn.
 function drawLyricsBlock(
   gl: WebGL2RenderingContext,
   glBuffers: JoysoundDisplayBuffers,
   lyricsBlock: TelopBlock,
+  annotations: TelopAnnotations,
   lyricsBlockTextures: LyricsBlockTextures[],
   index: number,
   refreshTime: number,
-  yPos: number,
-  scale: number,
+  placement: TelopRowPlacement,
 ) {
   const scrollXPos = Math.floor(getScrollXPos(lyricsBlock, refreshTime));
 
   const currX = lyricsBlock.xPos;
-  const rect = getLyricsBlockRect(lyricsBlock, yPos);
-  const rectWidth = rect.width;
+  const rectWidth = getLyricsBlockWidth(lyricsBlock);
+  const rect = getPlacedLyricsBlockRect(lyricsBlock, annotations, placement);
 
-  // Shrink the block around its own center-x / yPos when remapLyricsYPos
-  // compressed the rows, keeping the wipe boundary (scroll) in the same
-  // transformed space as the quad so highlight timing stays glyph-accurate.
-  const anchorX = currX + rectWidth / 2 - TEXT_PADDING;
-  const toScreenX = (x: number) => (anchorX + (x - anchorX) * scale) * raster.x;
-  const toScreenY = (y: number) => (yPos + (y - yPos) * scale) * raster.y;
-
-  const scrollArray = new Float32Array(6).fill(toScreenX(scrollXPos));
+  const scrollArray = new Float32Array(6).fill(
+    placeLyricsBlockX(lyricsBlock, placement, scrollXPos) * raster.x,
+  );
 
   const positions = quadToTriangles(
-    toScreenX(rect.left),
-    toScreenY(rect.top),
-    toScreenX(rect.left + rect.width),
-    toScreenY(rect.top + rect.height),
+    rect.left * raster.x,
+    rect.top * raster.y,
+    (rect.left + rect.width) * raster.x,
+    (rect.top + rect.height) * raster.y,
   );
 
   if (scrollXPos <= currX + rectWidth) {
@@ -411,11 +376,57 @@ function drawLyricsBlock(
   }
 }
 
+// Parses the telop, degrading stepwise on failure: retry without word
+// segmentation, then without romaji at all; only when the plain parse also
+// fails does this give up (null). A plain parse beats no lyrics (the EZ
+// Romaji 6969-sentinel crash used to freeze the canvas on the previous
+// song's title card for the whole song).
+async function parseTelop(
+  telop: ArrayBuffer,
+  kuroshiro: KuroshiroSingleton,
+  wordSegmentation: boolean,
+): Promise<JoysoundTelopData | null> {
+  const parseAttempts = [
+    { wordSegmentation, skipRomaji: false },
+    ...(wordSegmentation
+      ? [{ wordSegmentation: false, skipRomaji: false }]
+      : []),
+    { wordSegmentation: false, skipRomaji: true },
+  ];
+
+  let parseError: unknown = null;
+
+  for (const attempt of parseAttempts) {
+    try {
+      return await parseJoysoundData(
+        telop,
+        kuroshiro,
+        attempt.wordSegmentation,
+        attempt.skipRomaji,
+      );
+    } catch (e) {
+      parseError = e;
+      console.error(
+        `parseJoysoundData failed (wordSegmentation=${attempt.wordSegmentation}, skipRomaji=${attempt.skipRomaji})`,
+        e,
+      );
+    }
+  }
+
+  console.error("All parseJoysoundData attempts failed", parseError);
+  return null;
+}
+
+interface ParseCacheEntry {
+  telop: ArrayBuffer;
+  wordSegmentation: boolean;
+  result: Promise<JoysoundTelopData | null>;
+}
+
 export default function JoysoundRenderer(props: {
   telop: ArrayBuffer;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   kuroshiro: KuroshiroSingleton;
-  isRomaji: boolean;
   pianoRollVisible: boolean;
   onTitleFadeout?: () => void;
   breaks: InstrumentalBreak[];
@@ -423,10 +434,10 @@ export default function JoysoundRenderer(props: {
   // The queue entry this telop belongs to (queueItemKey), handed back with
   // the layout so a caller can't pair one song's lyrics with the next song.
   songKey: string;
-  // Called with exactly what this canvas draws, once per parse (a new song, a
-  // romaji mode, or a word-segmentation toggle), or with null when no parse
-  // succeeded and the canvas shows no lyrics at all. It's what the remocon's
-  // lyrics panel mirrors.
+  // Called with exactly what this canvas draws, once per layout (a new song,
+  // a reading-guide change, or a word-segmentation toggle), or with null when
+  // no parse succeeded and the canvas shows no lyrics at all. It's what the
+  // remocon's lyrics panel mirrors.
   onLayout?: (songKey: string, layout: TelopLayout | null) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -437,6 +448,10 @@ export default function JoysoundRenderer(props: {
   const { pianoRollSize } = usePianoRollSize();
   const { joysoundRomajiWordSegmentation } =
     useJoysoundRomajiWordSegmentation();
+  // Which reading guides go above and below the lyrics: room settings, so
+  // flipping one on a phone re-lays the song out here mid-play.
+  const { joysoundTopAnnotation } = useJoysoundTopAnnotation();
+  const { joysoundBottomAnnotation } = useJoysoundBottomAnnotation();
   const pianoRollClearanceRef = useRef(0);
   pianoRollClearanceRef.current =
     props.pianoRollVisible && pianoRollSize > 0
@@ -456,6 +471,13 @@ export default function JoysoundRenderer(props: {
         BREAK_FONT_STROKE -
         TEXT_PADDING
       : SCREEN_HEIGHT * BREAK_Y_FRACTION;
+
+  // The last parse, kept so a reading-guide change mid-song only
+  // re-rasterizes the blocks rather than re-running kuromoji over the whole
+  // telop (a second or more of blank lyrics on a long song). Keyed by the
+  // telop buffer and the word-segmentation setting, the two things the parse
+  // depends on; the guides only decide what gets drawn from it.
+  const parseCacheRef = useRef<ParseCacheEntry | null>(null);
 
   const updateSize = () => {
     const canvasElement = canvasRef.current;
@@ -500,59 +522,52 @@ export default function JoysoundRenderer(props: {
     // next feels like it.
     let releaseGlResources: (() => void) | null = null;
 
+    const annotations: TelopAnnotations = {
+      top: joysoundTopAnnotation,
+      bottom: joysoundBottomAnnotation,
+    };
+
     const refresh = async () => {
       updateSize();
       window.addEventListener("resize", updateSize);
 
-      // Reparses the telop data on every re-render.
-      //
-      // A parse failure here must not throw out of refresh(): by the time
-      // this effect runs, the previous effect instance's draw loop is already
-      // cancelled, so bailing would freeze the canvas on its last-drawn frame,
-      // typically the PREVIOUS song's title card, for the entire song (the
-      // EZ Romaji 6969-sentinel crash did exactly this). Degrade stepwise
-      // instead: retry without word segmentation, then without romaji at all;
-      // only when the plain parse also fails does this give up and clear the
-      // canvas so the room sees the bare MV rather than stale telop.
-      const parseAttempts = [
-        {
-          wordSegmentation: joysoundRomajiWordSegmentation,
-          skipRomaji: false,
-        },
-        ...(joysoundRomajiWordSegmentation
-          ? [{ wordSegmentation: false, skipRomaji: false }]
-          : []),
-        { wordSegmentation: false, skipRomaji: true },
-      ];
+      // A parse failure must not throw out of refresh(): by the time this
+      // effect runs, the previous effect instance's draw loop is already
+      // cancelled, so bailing would freeze the canvas on its last-drawn
+      // frame, typically the PREVIOUS song's title card, for the entire
+      // song. parseTelop degrades instead, and only when even the plain
+      // parse fails does this clear the canvas so the room sees the bare MV
+      // rather than stale telop.
+      const cached = parseCacheRef.current;
+      const parse =
+        cached !== null &&
+        cached.telop === props.telop &&
+        cached.wordSegmentation === joysoundRomajiWordSegmentation
+          ? cached.result
+          : parseTelop(
+              props.telop,
+              props.kuroshiro,
+              joysoundRomajiWordSegmentation,
+            );
+      parseCacheRef.current = {
+        telop: props.telop,
+        wordSegmentation: joysoundRomajiWordSegmentation,
+        result: parse,
+      };
 
-      let joysoundData: JoysoundTelopData | null = null;
-      let parseError: unknown = null;
+      const joysoundData = await parse;
 
-      for (const { wordSegmentation, skipRomaji } of parseAttempts) {
-        try {
-          joysoundData = await parseJoysoundData(
-            props.telop,
-            props.kuroshiro,
-            wordSegmentation,
-            skipRomaji,
-          );
-        } catch (e) {
-          parseError = e;
-          console.error(
-            `parseJoysoundData failed (wordSegmentation=${wordSegmentation}, skipRomaji=${skipRomaji})`,
-            e,
-          );
-        }
-        if (cancelled) {
-          return;
-        }
-        if (joysoundData !== null) {
-          break;
-        }
+      if (cancelled) {
+        return;
       }
 
       if (joysoundData === null) {
-        console.error("All parseJoysoundData attempts failed", parseError);
+        // Not worth keeping: the toast below would repeat on every
+        // reading-guide change for the rest of the song.
+        if (parseCacheRef.current?.result === parse) {
+          parseCacheRef.current = null;
+        }
+
         M.toast({
           html: "<span>⚠️ Lyrics failed to render for this song</span>",
         });
@@ -573,14 +588,16 @@ export default function JoysoundRenderer(props: {
         return;
       }
 
-      const layout = toTelopLayout(joysoundData, props.isRomaji, props.breaks);
+      const layout = toTelopLayout(joysoundData, annotations, props.breaks);
       const lyricsData = layout.blocks;
 
       props.onLayout?.(props.songKey, layout);
 
-      const lyricYPositions = lyricsData.map((block) => block.yPos);
-      const minLyricYPos = Math.min(...lyricYPositions);
-      const maxLyricYPos = Math.max(...lyricYPositions);
+      // Where the rows sit for the current piano roll clearance. Recomputed
+      // only when the clearance changes (a size preset mid-song), not per
+      // frame.
+      let placementClearance = pianoRollClearanceRef.current;
+      let placement = placeTelopRows(layout, placementClearance);
 
       invariant(canvasRef.current);
       const gl = canvasRef.current.getContext("webgl2", {
@@ -669,6 +686,11 @@ export default function JoysoundRenderer(props: {
           TELOP_TIMING_OFFSET_MS;
         invariant(Number.isFinite(refreshTime));
 
+        if (pianoRollClearanceRef.current !== placementClearance) {
+          placementClearance = pianoRollClearanceRef.current;
+          placement = placeTelopRows(layout, placementClearance);
+        }
+
         gl.clearColor(0.0, 0.0, 0.0, 0.2);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -725,22 +747,15 @@ export default function JoysoundRenderer(props: {
             refreshTime >= lyricsBlock.fadeinTime &&
             refreshTime < lyricsBlock.fadeoutTime
           ) {
-            const { yPos: remappedYPos, scale: lyricsScale } = remapLyricsYPos(
-              lyricsBlock.yPos,
-              minLyricYPos,
-              maxLyricYPos,
-              pianoRollClearanceRef.current,
-            );
-
             drawLyricsBlock(
               gl,
               glBuffers,
               lyricsBlock,
+              layout.annotations,
               lyricsBlockTextures,
               i,
               refreshTime,
-              remappedYPos,
-              lyricsScale,
+              placement,
             );
           }
         }
@@ -790,9 +805,10 @@ export default function JoysoundRenderer(props: {
     };
   }, [
     props.telop,
-    props.isRomaji,
     props.songKey,
     joysoundRomajiWordSegmentation,
+    joysoundTopAnnotation,
+    joysoundBottomAnnotation,
   ]);
 
   return <canvas ref={canvasRef} className="joysoundDisplay"></canvas>;

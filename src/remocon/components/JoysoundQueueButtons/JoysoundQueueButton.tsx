@@ -56,7 +56,6 @@ interface Props {
   youtubeVideoId: string | null;
   youtubeVideoSyncEnabled: boolean;
   userIdentity: JoysoundQueueButtonMutation$variables["input"]["userIdentity"];
-  isRomaji: boolean;
   isDisabled: boolean;
   setDisabled: (isDisabled: boolean) => void;
   // Queue this song transposed, from a key suggestion. Absent means 0, exactly
@@ -70,13 +69,14 @@ const JoysoundQueueButton = ({
   youtubeVideoId,
   youtubeVideoSyncEnabled,
   userIdentity,
-  isRomaji,
   isDisabled,
   setDisabled,
   pitchShiftSemis,
   label,
 }: Props) => {
-  const defaultText = label ?? `Queue ${isRomaji ? "Romaji" : "Furigana"}`;
+  // Which reading guides the lyrics get (furigana, romaji, both) is a room
+  // setting now, switchable mid-song, so there's one way to queue.
+  const defaultText = label ?? "Queue song";
 
   const [text, setText] = useState(defaultText);
   const [commit] = useMutation<JoysoundQueueButtonMutation>(
@@ -164,7 +164,6 @@ const JoysoundQueueButton = ({
           playtime: null,
           artistName: song.artistName,
           userIdentity,
-          isRomaji,
           youtubeVideoId,
           youtubeVideoSyncEnabled,
           pitchShiftSemis,

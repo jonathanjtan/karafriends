@@ -13,6 +13,9 @@ interface Props {
   youtubeVideoSyncEnabled: boolean;
 }
 
+// One button. Whether the lyrics get furigana, romaji or both is a room
+// setting (the Lyrics section of the settings), switchable while the song
+// plays, rather than something decided per queued song.
 const JoysoundQueueButtons = ({
   song,
   youtubeVideoId,
@@ -22,55 +25,24 @@ const JoysoundQueueButtons = ({
   const userIdentity = useUserIdentity();
   const [isDisabled, setIsDisabled] = useState(false);
 
-  if (youtubeVideoId && !validatedYoutubeId) {
-    return (
-      <div className={styles.container}>
-        <JoysoundQueueButton
-          song={song}
-          youtubeVideoId={youtubeVideoId}
-          youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
-          userIdentity={userIdentity}
-          isRomaji={false}
-          isDisabled={true}
-          setDisabled={setIsDisabled}
-        />
+  // A pasted video that hasn't been validated yet: wait for it rather than
+  // queue the song without its video.
+  const awaitingVideo = youtubeVideoId !== null && validatedYoutubeId === null;
 
-        <JoysoundQueueButton
-          song={song}
-          youtubeVideoId={youtubeVideoId}
-          youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
-          userIdentity={userIdentity}
-          isRomaji={true}
-          isDisabled={true}
-          setDisabled={setIsDisabled}
-        />
-      </div>
-    );
-  } else {
-    return (
-      <div className={styles.container}>
-        <JoysoundQueueButton
-          song={song}
-          youtubeVideoId={validatedYoutubeId}
-          youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
-          userIdentity={userIdentity}
-          isRomaji={false}
-          isDisabled={isDisabled}
-          setDisabled={setIsDisabled}
-        />
+  return (
+    <div className={styles.container}>
+      <JoysoundQueueButton
+        song={song}
+        youtubeVideoId={awaitingVideo ? youtubeVideoId : validatedYoutubeId}
+        youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
+        userIdentity={userIdentity}
+        isDisabled={awaitingVideo || isDisabled}
+        setDisabled={setIsDisabled}
+      />
 
-        <JoysoundQueueButton
-          song={song}
-          youtubeVideoId={validatedYoutubeId}
-          youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
-          userIdentity={userIdentity}
-          isRomaji={true}
-          isDisabled={isDisabled}
-          setDisabled={setIsDisabled}
-        />
-
-        {/* Under the normal buttons, which are untouched. A suggestion adds a
-            way to queue; it never replaces or disables the plain one. */}
+      {awaitingVideo ? null : (
+        /* Under the normal button, which is untouched. A suggestion adds a
+           way to queue; it never replaces or disables the plain one. */
         <ComfortableHint
           source="JOYSOUND"
           songId={song.id}
@@ -81,7 +53,6 @@ const JoysoundQueueButtons = ({
               youtubeVideoId={validatedYoutubeId}
               youtubeVideoSyncEnabled={youtubeVideoSyncEnabled}
               userIdentity={userIdentity}
-              isRomaji={false}
               isDisabled={isDisabled}
               setDisabled={setIsDisabled}
               pitchShiftSemis={semis}
@@ -89,9 +60,9 @@ const JoysoundQueueButtons = ({
             />
           )}
         />
-      </div>
-    );
-  }
+      )}
+    </div>
+  );
 };
 
 export default JoysoundQueueButtons;

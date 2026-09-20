@@ -89,8 +89,10 @@ This is the UI shown on the TV. It's a React app. Specifically:
   files for JOYSOUND/YouTube/Niconico, with a `<video>` element doing
   the work. Lyrics overlay on top.
 - `JoysoundRenderer.tsx` parses JOYSOUND's binary lyric format and draws
-  the lyrics in the JOYSOUND visual style (colored highlights, furigana,
-  romaji mode). It uses Kuroshiro for kanji-to-kana conversion.
+  the lyrics in the JOYSOUND visual style (colored highlights, and a
+  reading guide above and below each line, each of which can be furigana,
+  romaji or nothing). It uses Kuroshiro for kanji-to-kana conversion, and
+  `common/telopLayout.ts` for the drawing and the row placement.
 - `AdhocLyrics.tsx` shows lyrics that someone typed into the remocon for
   a YouTube/Niconico song.
 - `PianoRoll.tsx` draws the pitch-scoring graph using WebGL shaders

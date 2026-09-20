@@ -293,7 +293,14 @@ These stay here. The first two are whole-app contracts, the third spans
   on the next song). The phone draws the same layout with the same functions,
   so it gets the romaji without shipping kuromoji. **Change how the TV draws
   telop only inside `telopLayout.ts`**, or the phone stops matching, with no
-  error surfaced.
+  error surfaced. That includes _where rows go_: the reading guides above and
+  below each line (`joysoundTopAnnotation` / `joysoundBottomAnnotation`, room
+  settings, each furigana / romaji / off) ride in the layout as
+  `annotations`, and `placeTelopRows` spreads JOYSOUND's 94-unit rows apart
+  when a bottom guide would otherwise sit on the next line's furigana (and
+  compresses them under the piano roll on the TV). Both surfaces place rows
+  through it; the TV re-lays the playing song out on a guide change and
+  republishes, so the phone never reads the setting itself.
   The extraction was verified pixel-identical against the pre-refactor
   renderer with a Chrome harness (`.claude/telop-harness/compare.mjs`).
   Sync: Player reports `video.currentTime` stamped with `Date.now()` on every

@@ -37,10 +37,12 @@ goes out of its way to recreate:
   karafriends parses that data and draws the lyrics itself, with the right
   highlight timing as each syllable plays.
 - **Furigana and romaji.** Japanese lyrics often contain kanji that not
-  every singer can read. Karafriends can render small phonetic hints
-  (_furigana_) above kanji, or convert lyrics entirely to romaji (Latin
-  letters) for the brave. This uses a Japanese natural-language library
-  called Kuroshiro along with a kanji-reading dictionary.
+  every singer can read. Karafriends draws a reading guide above each
+  JOYSOUND line and another below it, each of which can be the small kana
+  hints JOYSOUND authors over its kanji (_furigana_), the line in romaji
+  (Latin letters), or nothing. Both are room settings, changeable mid-song
+  from the TV or a phone. The romaji comes from a Japanese natural-language
+  library called Kuroshiro along with a kanji-reading dictionary.
 - **Pitch scoring.** A native (Rust) audio module listens to your mic, runs
   a pitch-detection algorithm, and the renderer overlays your detected
   pitch against the song's pitch track on a piano-roll-style graph.

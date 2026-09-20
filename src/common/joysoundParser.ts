@@ -9,6 +9,7 @@ import { toKatakana } from "wanakana";
 import { RUBY_FONT_SIZE, RUBY_FONT_STROKE } from "../common/constants";
 import kanjiToReading from "./dictionary.json";
 import {
+  TelopAnnotations,
   TelopBlock,
   TelopBreak,
   TelopLayout,
@@ -1166,12 +1167,12 @@ async function parseJoysoundData(
 // decisions get made.
 export function toTelopLayout(
   data: JoysoundTelopData,
-  isRomaji: boolean,
+  annotations: TelopAnnotations,
   breaks: TelopBreak[],
 ): TelopLayout {
   return {
     version: TELOP_LAYOUT_VERSION,
-    isRomaji,
+    annotations: { ...annotations },
     title: {
       musicName: data.metadata.musicName,
       artistName: data.metadata.artistName,

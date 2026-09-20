@@ -49,7 +49,12 @@ import {
 } from "../common/joysoundParser";
 import { SCORING_FORMULA_VERSION } from "../common/scoring";
 import { parseScoringData } from "../common/scoringData";
-import { queueItemKey } from "../common/telopLayout";
+import {
+  asTelopAnnotation,
+  DEFAULT_TELOP_ANNOTATIONS,
+  queueItemKey,
+  TelopAnnotation,
+} from "../common/telopLayout";
 import {
   buildTuningExercise,
   DEFAULT_PRESET_ID,
@@ -1696,7 +1701,6 @@ interface QueueItemInterface {
 
 export interface JoysoundQueueItem extends QueueItemInterface {
   readonly __typename: "JoysoundQueueItem";
-  readonly isRomaji: boolean;
   readonly youtubeVideoId: string | null;
   // null/undefined (older clients and persisted queue items) means enabled.
   readonly youtubeVideoSyncEnabled?: boolean | null;
@@ -1770,7 +1774,6 @@ type QueueJoysoundSongInput = {
   readonly artistName: string;
   readonly playtime?: number | null;
   readonly userIdentity: UserIdentity;
-  readonly isRomaji: boolean;
   readonly youtubeVideoId: string | null;
   readonly youtubeVideoSyncEnabled?: boolean | null;
 };
@@ -1867,6 +1870,10 @@ type NotARealDb = {
   hostname: string | null;
   idToAdhocLyrics: Record<string, string[]>;
   joysoundRomajiWordSegmentation: boolean;
+  // The reading guides drawn above and below JOYSOUND lyrics (see
+  // TelopAnnotations in common/telopLayout.ts).
+  joysoundTopAnnotation: TelopAnnotation;
+  joysoundBottomAnnotation: TelopAnnotation;
   micOutputEnabled: boolean;
   micRmsGateEnabled: boolean;
   micRmsGateThreshold: number;
@@ -1906,6 +1913,8 @@ enum SubscriptionEvent {
   GuideMelodyVolumeChanged = "GuideMelodyVolumeChanged",
   HistoryRecordingEnabledChanged = "HistoryRecordingEnabledChanged",
   JoysoundRomajiWordSegmentationChanged = "JoysoundRomajiWordSegmentationChanged",
+  JoysoundTopAnnotationChanged = "JoysoundTopAnnotationChanged",
+  JoysoundBottomAnnotationChanged = "JoysoundBottomAnnotationChanged",
   MicOutputEnabledChanged = "MicOutputEnabledChanged",
   MicRmsGateEnabledChanged = "MicRmsGateEnabledChanged",
   MicRmsGateThresholdChanged = "MicRmsGateThresholdChanged",
@@ -1965,6 +1974,8 @@ let db: NotARealDb = {
   hostname: null,
   idToAdhocLyrics: {},
   joysoundRomajiWordSegmentation: true,
+  joysoundTopAnnotation: DEFAULT_TELOP_ANNOTATIONS.top,
+  joysoundBottomAnnotation: DEFAULT_TELOP_ANNOTATIONS.bottom,
   micOutputEnabled: false,
   micRmsGateEnabled: false,
   micRmsGateThreshold: DEFAULT_MIC_RMS_GATE_THRESHOLD,
@@ -2214,6 +2225,8 @@ function loadDb(): NotARealDb {
     hostname: null,
     idToAdhocLyrics: {},
     joysoundRomajiWordSegmentation: true,
+    joysoundTopAnnotation: DEFAULT_TELOP_ANNOTATIONS.top,
+    joysoundBottomAnnotation: DEFAULT_TELOP_ANNOTATIONS.bottom,
     micOutputEnabled: false,
     micRmsGateEnabled: false,
     micRmsGateThreshold: DEFAULT_MIC_RMS_GATE_THRESHOLD,
@@ -2238,6 +2251,16 @@ function loadDb(): NotARealDb {
   // songQueue (from the unconditional currentSong prepend) and a stale
   // non-WAITING playbackState from a session killed mid-song.
   loaded.songQueue = loaded.songQueue.filter((song) => song !== null);
+  // Persisted by whatever version last ran; anything but a known guide
+  // falls back to the default rather than reaching the renderer.
+  loaded.joysoundTopAnnotation = asTelopAnnotation(
+    loaded.joysoundTopAnnotation,
+    DEFAULT_TELOP_ANNOTATIONS.top,
+  );
+  loaded.joysoundBottomAnnotation = asTelopAnnotation(
+    loaded.joysoundBottomAnnotation,
+    DEFAULT_TELOP_ANNOTATIONS.bottom,
+  );
   loaded.playbackState = PlaybackState.WAITING;
   // Whichever of the two survived the last sweep, plus anything the other
   // one has that it doesn't.
@@ -3930,6 +3953,8 @@ const resolvers = {
     historyRecordingEnabled: () => db.historyRecordingEnabled,
     hostname: () => currentHostname(),
     joysoundRomajiWordSegmentation: () => db.joysoundRomajiWordSegmentation,
+    joysoundTopAnnotation: () => db.joysoundTopAnnotation,
+    joysoundBottomAnnotation: () => db.joysoundBottomAnnotation,
     micOutputEnabled: () => db.micOutputEnabled,
     micRmsGateEnabled: () => db.micRmsGateEnabled,
     micRmsGateThreshold: () => db.micRmsGateThreshold,
@@ -4733,6 +4758,34 @@ const resolvers = {
       saveDb();
       return true;
     },
+    setJoysoundTopAnnotation: (
+      _: any,
+      args: { annotation: TelopAnnotation },
+    ): boolean => {
+      db.joysoundTopAnnotation = asTelopAnnotation(
+        args.annotation,
+        db.joysoundTopAnnotation,
+      );
+      pubsub.publish(SubscriptionEvent.JoysoundTopAnnotationChanged, {
+        joysoundTopAnnotationChanged: db.joysoundTopAnnotation,
+      });
+      saveDb();
+      return true;
+    },
+    setJoysoundBottomAnnotation: (
+      _: any,
+      args: { annotation: TelopAnnotation },
+    ): boolean => {
+      db.joysoundBottomAnnotation = asTelopAnnotation(
+        args.annotation,
+        db.joysoundBottomAnnotation,
+      );
+      pubsub.publish(SubscriptionEvent.JoysoundBottomAnnotationChanged, {
+        joysoundBottomAnnotationChanged: db.joysoundBottomAnnotation,
+      });
+      saveDb();
+      return true;
+    },
     setSidebarCollapsed: (_: any, args: { collapsed: boolean }): boolean => {
       db.sidebarCollapsed = args.collapsed;
       pubsub.publish(SubscriptionEvent.SidebarCollapsedChanged, {
@@ -4899,6 +4952,18 @@ const resolvers = {
       subscribe: () =>
         pubsub.asyncIterableIterator([
           SubscriptionEvent.JoysoundRomajiWordSegmentationChanged,
+        ]),
+    },
+    joysoundTopAnnotationChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.JoysoundTopAnnotationChanged,
+        ]),
+    },
+    joysoundBottomAnnotationChanged: {
+      subscribe: () =>
+        pubsub.asyncIterableIterator([
+          SubscriptionEvent.JoysoundBottomAnnotationChanged,
         ]),
     },
     sidebarCollapsedChanged: {

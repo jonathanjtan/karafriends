@@ -5,6 +5,7 @@ import {
   MAX_MIC_RMS_GATE_THRESHOLD,
   MIN_MIC_RMS_GATE_THRESHOLD,
 } from "../constants";
+import { asTelopAnnotation, TelopAnnotation } from "../telopLayout";
 import { Control, RoomSettings } from "./useRoomSettings";
 
 // The two places a room setting can be operated: the big screen's sidebar
@@ -19,6 +20,7 @@ export type SettingSection =
   | "microphone"
   | "scoring"
   | "pianoRoll"
+  | "lyrics"
   | "session"
   | "display"
   | "services";
@@ -33,6 +35,7 @@ export const SECTIONS: { id: SettingSection; label: string }[] = [
   { id: "microphone", label: "Microphone" },
   { id: "scoring", label: "Scoring" },
   { id: "pianoRoll", label: "Piano Roll" },
+  { id: "lyrics", label: "Lyrics" },
   { id: "session", label: "Session" },
   { id: "display", label: "Display" },
   { id: "services", label: "Services" },
@@ -106,6 +109,30 @@ const decibels = {
   fromDisplay: dbfsToLinear,
   format: (display: number) => `${display} dB`,
 };
+
+const LYRICS_ANNOTATION_OPTIONS = [
+  { label: "Off", value: "NONE" },
+  { label: "Furigana", value: "FURIGANA" },
+  { label: "Romaji", value: "ROMAJI" },
+];
+
+// The select presenters deal in plain strings; a guide setting only takes the
+// three above, so anything else leaves it where it was.
+function annotationSelect(
+  control: Control<TelopAnnotation>,
+): Control<string | null> {
+  return {
+    value: control.value,
+    set: (value) => control.set(asTelopAnnotation(value, control.value)),
+  };
+}
+
+function romajiShown(s: RoomSettings): boolean {
+  return (
+    s.joysoundTopAnnotation.value === "ROMAJI" ||
+    s.joysoundBottomAnnotation.value === "ROMAJI"
+  );
+}
 
 // Mirrored by both surfaces so the roll's size presets always match.
 export const PIANO_ROLL_SIZE_PRESETS = [
@@ -197,6 +224,30 @@ export const SETTINGS: SettingDef[] = [
     presets: PIANO_ROLL_SIZE_PRESETS,
   },
   {
+    kind: "select",
+    section: "lyrics",
+    label: "Above Lyrics",
+    hint: "Reading guide over each JOYSOUND line: the kana JOYSOUND puts on its kanji, or romaji.",
+    get: (s) => annotationSelect(s.joysoundTopAnnotation),
+    options: LYRICS_ANNOTATION_OPTIONS,
+  },
+  {
+    kind: "select",
+    section: "lyrics",
+    label: "Below Lyrics",
+    hint: "Reading guide under each JOYSOUND line. With both rows on, lines spread out to make room.",
+    get: (s) => annotationSelect(s.joysoundBottomAnnotation),
+    options: LYRICS_ANNOTATION_OPTIONS,
+  },
+  {
+    kind: "toggle",
+    section: "lyrics",
+    label: "EZ Romaji",
+    hint: "Space JOYSOUND romaji lyrics into words instead of running them together.",
+    get: (s) => s.joysoundRomajiWordSegmentation,
+    visibleWhen: romajiShown,
+  },
+  {
     kind: "toggle",
     section: "session",
     label: "Intermission",
@@ -228,13 +279,6 @@ export const SETTINGS: SettingDef[] = [
     label: "OLED Mode",
     hint: "Dark theme for the big screen, easier on an OLED panel.",
     get: (s) => s.oledFriendly,
-  },
-  {
-    kind: "toggle",
-    section: "display",
-    label: "EZ Romaji",
-    hint: "Space JOYSOUND romaji lyrics into words instead of running them together.",
-    get: (s) => s.joysoundRomajiWordSegmentation,
   },
   {
     kind: "toggle",
